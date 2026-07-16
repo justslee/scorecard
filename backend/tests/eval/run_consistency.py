@@ -62,6 +62,7 @@ def run(args: argparse.Namespace) -> int:
     calls_made = 0
     reports: list[dict] = []
     any_inconsistent = False
+    any_no_signal = False
     aborted = False
 
     for probe in probes:
@@ -95,7 +96,9 @@ def run(args: argparse.Namespace) -> int:
 
         substances = [extract_substance(a, scenario.situation.player.club_distances) for a in answers]
         report = substance_variance(substances, yardage_tolerance=probe.yardage_tolerance)
-        if not report.consistent:
+        if not report.has_signal:
+            any_no_signal = True
+        elif not report.consistent:
             any_inconsistent = True
         reports.append({
             "scenario_id": probe.scenario_id,
@@ -116,13 +119,18 @@ def run(args: argparse.Namespace) -> int:
                 "hazard_symmetric_diff_max": report.hazard_symmetric_diff_max,
                 "yardage_spread_max": report.yardage_spread_max,
                 "distinct_endorsements": report.distinct_endorsements,
+                "has_signal": report.has_signal,
                 "consistent": report.consistent,
                 "notes": report.notes,
             },
         })
+        # NO-SIGNAL is its own outcome — never printed as if it were a plain
+        # `consistent=False` (a real disagreement) OR a plain pass; a probe
+        # that measured nothing is neither.
+        verdict = "NO-SIGNAL" if not report.has_signal else f"consistent={report.consistent}"
         print(
             f"{probe.scenario_id}: {len(answers)}/{probe.n} sampled — "
-            f"consistent={report.consistent} (running cost ${total_cost:.4f})"
+            f"{verdict} (running cost ${total_cost:.4f})"
         )
 
     out = {
@@ -133,6 +141,7 @@ def run(args: argparse.Namespace) -> int:
         "budget_usd": args.budget_usd,
         "candidate_model": args.candidate_model,
         "any_inconsistent": any_inconsistent,
+        "any_no_signal": any_no_signal,
         "reports": reports,
     }
     # Key-free by construction: answers + substance + counts + $ only — never
@@ -145,6 +154,10 @@ def run(args: argparse.Namespace) -> int:
 
     if aborted:
         return 3
+    if any_no_signal:
+        # Not a clean pass — a NO-SIGNAL probe measured nothing, so exit
+        # non-zero even though it is not a "real" disagreement either.
+        return 4
     if any_inconsistent:
         return 1
     return 0

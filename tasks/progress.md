@@ -17448,3 +17448,52 @@ targets ENDORSEMENTS not narrative mentions; clamp math never exceeds max) THEN 
 pushed head; tests/eval green; test:caddie-experience green). BLOCKING -> re-dispatch builder. Then update
 PR #141 checklist (SILENT) + backlog (both->done, targeted edits+diff-check). No ship/ping (per brief).
 Reconcile from origin/integration/next on resume — do NOT re-run a finished child.
+
+## Cycle 134 DONE — builder shipped both eval-harness integrity fixes (SILENT/tooling, backend-only)
+FIX 1 (caddie-consistency-probe-substance-coverage, P4):
+  (a) Pinned (did not rewrite) the existing spelled-club aliasing: new test
+      `test_extract_substance_club_recognizes_spelled_out_forms_not_just_endorsed` asserts plain
+      `.club` extraction (not just `.endorsed_club`) reads "Three wood"->3wood, "seven iron"->7iron.
+      Both already passed — no lexicon change needed.
+  (b) `substance.py`: `VarianceReport` gained `has_signal: bool` = `any(s.club or s.yardages or
+      s.hazards or s.endorsed_club for s in samples)`. `consistent` now requires `has_signal` (a
+      fully-empty sample set is no longer a vacuous `consistent=True`); a NO-SIGNAL note is appended.
+      Verified `test_substance_variance_all_none_endorsements_stay_consistent` (hazards+yardages
+      present -> has_signal=True) stays green, and added
+      `test_substance_variance_partial_signal_stays_a_real_disagreement` to pin the CAUTION case
+      (some samples carry a club, others None -> distinct_clubs>=2, has_signal=True, consistent=False,
+      unaffected by the new gate). `run_consistency.py`: tracks `any_no_signal` separately from
+      `any_inconsistent`, prints `NO-SIGNAL` (not `consistent=False`) for a no-signal probe, adds
+      `has_signal`/`any_no_signal` to the JSON report, and exits 4 (was falling through to 0) when any
+      probe is NO-SIGNAL — no longer indistinguishable from a clean pass.
+  (c) Swapped the vacuous `plays-like-uphill-club-call` probe (open-ended "What's the play into this
+      green?" -> strategic answers need not name a bag club) for `club-call-240y-off-tee` ("What am I
+      hitting from here?" against {driver:250, 3wood:230} at 240y — directly demands a club) in
+      `golden/consistency_probes.jsonl`. Kept `club-call-150y-mid-iron` (its prior failure was the
+      already-fixed spelling gap) and `followup-3wood-after-driver`. Added
+      `test_consistency_probe_scenarios_can_carry_measurable_substance` — a CI invariant that feeds a
+      representative on-target answer (naming the bag's ideal club + hole yardage) for each probed
+      scenario through `extract_substance` with that scenario's real `club_distances` and asserts
+      `club is not None`, so a future vacuous-probe regression is caught in CI, not by eyeballing a
+      live run 3 days later.
+FIX 2 (caddie-latency-p95-smalln, P5): extracted pure `_p95(latencies_ms)` in `run_latency.py` —
+  `statistics.quantiles(..., n=20, method="inclusive")[18]` (n>=5) interpolates within [min,max]
+  instead of the default exclusive method's extrapolation past it, PLUS a `min(raw, max(...))` clamp
+  as a second, redundant guarantee; n==1 -> that value, empty -> ValueError. `run()` now calls
+  `_p95()`; JSON report gained `p95_clamped_to_observed_max: true`. Stayed import-safe (no env/network
+  at module import — verified via `test_run_latency_is_import_safe_with_no_env`).
+RED-first evidence (both, concrete before/after — see builder transcript): (b) with substance.py/
+run_consistency.py stashed, `test_substance_variance_empty_substance_is_no_signal_not_consistent`
+and `..._partial_signal_stays_a_real_disagreement` failed `AttributeError: 'VarianceReport' object
+has no attribute 'has_signal'`. (P5) with run_latency.py stashed, `test_latency_quantile.py` failed
+collection `ImportError: cannot import name '_p95'`; independently confirmed the OLD inline formula
+on the n=10 fixture (nine ~610-700ms + one 869ms, reproducing the 2026-07-15 shape) computes
+p95=945.05ms > observed max 869ms. Restored fixes -> GREEN both, then reproduced GREEN post-fix
+(`_p95(fixture) <= max(fixture)`, `945.05` proven inline as the old-code counterexample).
+Gates: `ruff check .` clean; `pytest tests/eval/ -q` — 120 passed (was 111; +9: spelled-club pin,
+no-signal test, partial-signal test, probe-signal-invariant test, 5 new `test_latency_quantile.py`
+tests). No DB touched (stub DATABASE_URL, no docker/Postgres spun up per standing rule).
+Files: backend/tests/eval/substance.py, run_consistency.py, run_latency.py,
+golden/consistency_probes.jsonl, test_substance_teeth.py (+40 lines), new test_latency_quantile.py.
+SILENT (offline CI-gated tooling only, no user-visible surface, zero frontend/models.py/types.ts diff).
+Committed to integration/next, pushed to origin/integration/next.

@@ -41,6 +41,16 @@ def test_extract_substance_parses_club_yardage_and_hazard():
     assert substance.hazards == frozenset({"bunker"})
 
 
+def test_extract_substance_club_recognizes_spelled_out_forms_not_just_endorsed():
+    """Pin (P4, caddie-consistency-probe-substance-coverage part a): the
+    digit-word aliasing (checks.py `_DIGIT_WORDS`) already handles spelled
+    clubs for plain `.club` extraction, not just `.endorsed_club` — a future
+    regression of that lexicon must go RED here, not just in the endorsement
+    tests above."""
+    assert extract_substance("Three wood here.", _CLUB_DISTANCES).club == "3wood"
+    assert extract_substance("seven iron off the deck.", _CLUB_DISTANCES).club == "7iron"
+
+
 def test_extract_substance_is_phrasing_insensitive_paraphrase_pair():
     """The exact point of the extractor: two differently-WORDED answers with
     the SAME underlying advice must extract to the SAME substance."""
@@ -106,6 +116,40 @@ def test_substance_variance_flags_yardage_spread_beyond_tolerance():
 def test_substance_variance_requires_at_least_one_sample():
     with pytest.raises(ValueError):
         substance_variance([])
+
+
+def test_substance_variance_empty_substance_is_no_signal_not_consistent():
+    """RED-proof for the P4 no-fabrication bug: a fully-empty sample set
+    (no sample states a club, yardage, hazard, or endorsement) must NOT read
+    as a vacuous `consistent=True` — the no-fabrication rule applies to GREEN
+    verdicts too. Before the fix, `substance_variance` returned
+    `consistent=True` here (distinct_clubs<=1, no hazard diff, no yardage
+    spread, no endorsement disagreement — all trivially satisfied by
+    nothing), which is exactly the vacuous pass this test pins closed."""
+    answer = "Trust your gut and commit."
+    samples = [extract_substance(answer, _CLUB_DISTANCES) for _ in range(3)]
+    assert all(
+        s.club is None and not s.yardages and not s.hazards and s.endorsed_club is None
+        for s in samples
+    ), "fixture must carry zero substance on every dimension to test the NO-SIGNAL path"
+    report = substance_variance(samples)
+    assert report.has_signal is False
+    assert report.consistent is False
+    assert any("NO-SIGNAL" in note for note in report.notes)
+
+
+def test_substance_variance_partial_signal_stays_a_real_disagreement():
+    """CAUTION case from the plan: SOME samples carry a club and others are
+    None is a genuine inconsistency (distinct_clubs>=2), not a no-signal
+    situation — `has_signal` must be True and `consistent` must stay False."""
+    samples = [
+        extract_substance("Take the 7 iron here.", _CLUB_DISTANCES),
+        extract_substance("Trust your gut and commit.", _CLUB_DISTANCES),
+    ]
+    report = substance_variance(samples)
+    assert report.has_signal is True
+    assert report.distinct_clubs == 2
+    assert report.consistent is False
 
 
 # ── Decision-grounding fidelity (caddie-advice-stability-tee-shot-plan.md
@@ -195,6 +239,46 @@ def test_consistency_probes_jsonl_loads_and_references_real_scenario_ids():
     assert probes, "consistency_probes.jsonl must be non-empty"
     for probe in probes:
         assert probe.scenario_id in known_ids
+
+
+# Representative "on-target" answers per probed scenario — names the bag's
+# ideal club (within `club_within_one`'s tolerance of the scenario's
+# question/hole yardage) plus the hole yardage itself. This is a CI
+# invariant, not a hope: it proves each probed scenario CAN carry measurable
+# substance, so a probe going NO-SIGNAL live (as `club-call-150y-mid-iron`
+# and `plays-like-uphill-club-call` did on 2026-07-15) is a caddie-prompt
+# regression to investigate, not a probe that was doomed to be vacuous.
+_PROBE_REPRESENTATIVE_ANSWERS: dict[str, str] = {
+    "club-call-150y-mid-iron": "8 iron is the play from 150.",
+    "club-call-240y-off-tee": "Driver is the call from 240.",
+    "followup-3wood-after-driver": "3-wood works well here, 235 off the tee.",
+}
+
+
+def test_consistency_probe_scenarios_can_carry_measurable_substance():
+    """Every probe in `consistency_probes.jsonl` must reference a scenario
+    whose bag/question shape lets a representative on-target answer extract
+    non-empty substance (`club` is not `None`) — replaces the P4 vacuous
+    probes (`club-call-150y-mid-iron`'s prior spelling gap, and
+    `plays-like-uphill-club-call`'s strategic question that need not name a
+    bag club) with signal-capable scenarios."""
+    known_ids = {s.id for s in load_golden_set(GOLDEN_SET_PATH)}
+    scenarios = {s.id: s for s in load_golden_set(GOLDEN_SET_PATH)}
+    from tests.eval.substance import CONSISTENCY_PROBES_PATH
+
+    probes = load_consistency_probes(CONSISTENCY_PROBES_PATH, known_ids)
+    for probe in probes:
+        assert probe.scenario_id in _PROBE_REPRESENTATIVE_ANSWERS, (
+            f"add a representative on-target answer for {probe.scenario_id!r} to "
+            "_PROBE_REPRESENTATIVE_ANSWERS so this stays a real CI invariant"
+        )
+        scenario = scenarios[probe.scenario_id]
+        answer = _PROBE_REPRESENTATIVE_ANSWERS[probe.scenario_id]
+        substance = extract_substance(answer, scenario.situation.player.club_distances)
+        assert substance.club is not None, (
+            f"scenario {probe.scenario_id!r}'s representative answer {answer!r} extracted no "
+            "club — this scenario cannot carry measurable substance, do not probe it"
+        )
 
 
 def test_load_consistency_probes_fails_loudly_on_unknown_scenario_id():

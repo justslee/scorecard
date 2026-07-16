@@ -39,6 +39,32 @@ from typing import Optional
 _LAST_RUN_PATH = Path(__file__).parent / "last_latency_run.json"  # gitignored
 
 
+def _p95(latencies_ms: list[float]) -> float:
+    """The 95th-percentile latency, CLAMPED to never exceed the largest
+    observed sample (P5 fix, caddie-latency-p95-smalln). `statistics
+    .quantiles(..., n=20)[18]` defaults to the EXCLUSIVE method, which
+    interpolates between a rank BEYOND the data at small n — on the
+    2026-07-15 n=10 run it EXTRAPOLATED to p95=1138ms while the observed max
+    was 869ms, i.e. it reported a latency nobody actually measured. Using
+    `method="inclusive"` interpolates strictly within [min, max] instead of
+    extrapolating past it, and the final `min(p95, max(...))` clamp is a
+    second, redundant belt-and-suspenders guarantee: a REPORTED p95 must
+    never exceed a REAL measurement, no matter which quantile method (or a
+    future change to it) computes the raw value.
+    """
+    if not latencies_ms:
+        raise ValueError("_p95 requires at least one latency sample")
+    if len(latencies_ms) == 1:
+        return latencies_ms[0]
+    if len(latencies_ms) < 5:
+        # statistics.quantiles needs at least `n` points to be meaningful;
+        # below that, the observed max IS the most honest p95 estimate.
+        raw = max(latencies_ms)
+    else:
+        raw = statistics.quantiles(latencies_ms, n=20, method="inclusive")[18]
+    return min(raw, max(latencies_ms))
+
+
 def _redact(response: dict) -> dict:
     """Never print/persist a real client_secret — this tool measures
     latency, it must never leak a usable ephemeral credential."""
@@ -67,13 +93,15 @@ def run(args: argparse.Namespace) -> int:
     latencies_ms = asyncio.run(_run_async(args.n))
 
     p50 = statistics.median(latencies_ms)
-    p95 = statistics.quantiles(latencies_ms, n=20)[18] if len(latencies_ms) >= 5 else max(latencies_ms)
+    p95 = _p95(latencies_ms)
 
     report = {
         "n": args.n,
         "latencies_ms": [round(ms, 1) for ms in latencies_ms],
         "p50_ms": round(p50, 1),
         "p95_ms": round(p95, 1),
+        # A reported p95 must never exceed a real measurement — see `_p95`.
+        "p95_clamped_to_observed_max": True,
     }
     # Key-free by construction: latency numbers only, never a client_secret.
     _LAST_RUN_PATH.write_text(json.dumps(report, indent=2))

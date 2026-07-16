@@ -156,6 +156,13 @@ class VarianceReport:
     # (no probe in the set carries an endorsement cue) stays a single
     # distinct value so the two vacuous probes' verdicts are unaffected.
     distinct_endorsements: int
+    # No-fabrication rule applies to GREEN verdicts too (P4 fix,
+    # caddie-consistency-probe-substance-coverage): a sample set where every
+    # sample carries NO club/yardage/hazard/endorsement measured NOTHING —
+    # `consistent=True` on that set would be a vacuous pass, not a real
+    # measurement of stability. `has_signal` is True iff at least one sample
+    # carries at least one substance dimension.
+    has_signal: bool
     consistent: bool
     notes: list[str] = field(default_factory=list)
 
@@ -201,8 +208,16 @@ def substance_variance(samples: list[AnswerSubstance], *, yardage_tolerance: int
     if yardage_sets and not all(ys == yardage_sets[0] for ys in yardage_sets):
         notes.append("yardage sets differ in which numbers are stated across samples (reported, not failed)")
 
+    has_signal = any(s.club or s.yardages or s.hazards or s.endorsed_club for s in samples)
+    if not has_signal:
+        notes.append(
+            "NO-SIGNAL: no sample stated a club, yardage, hazard, or recommendation — "
+            "verdict is not a pass"
+        )
+
     consistent = (
-        distinct_clubs <= 1
+        has_signal
+        and distinct_clubs <= 1
         and hazard_symmetric_diff_max == 0
         and yardage_spread_max <= yardage_tolerance
         and distinct_endorsements <= 1
@@ -213,6 +228,7 @@ def substance_variance(samples: list[AnswerSubstance], *, yardage_tolerance: int
         hazard_symmetric_diff_max=hazard_symmetric_diff_max,
         yardage_spread_max=yardage_spread_max,
         distinct_endorsements=distinct_endorsements,
+        has_signal=has_signal,
         consistent=consistent,
         notes=notes,
     )
