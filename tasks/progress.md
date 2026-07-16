@@ -16684,10 +16684,19 @@ Fix = Part A abort flag + post-await re-checks (terminal stop); Part B detach ha
 gate; Part C id-keyed dedup (processedUserItems/finalizedResponses/toolBatch, instance-scoped →
 reconnect-safe). No VAD/threshold changes. Secondary Hole-3 = pre-ingest-round caveat (file separate).
 
-## AWAITING — builder implementing the plan on integration/next @ base d35970e
-- On return: reviewer (adversarial: does dedup ever DROP a legit rapid follow-up? re-break
-  priming/no-input/attribution? id-keying across reconnect?) + qa (gates SUCCESS on pushed head) +
-  designer BLOCKING (caddie chat surface). Reconcile from origin/integration/next log on resume.
+**Builder DONE** → e75ae2f pushed to origin/integration/next. Implemented plan exactly (no
+deviations): Part A abort flag + post-await re-checks; Part B detach handlers + onMessage gate;
+Part C processedUserItems/finalizedResponses/toolBatch (instance-scoped). RED→GREEN verified R1/R3/R7
+(6/14 failed pre-fix). Gates green: lint/tsc/build clean, voice-tests 278/0, vitest 144/144 (10
+suites, guards unmodified).
+
+## AWAITING — reviewer + qa + designer (BLOCKING) on e75ae2f
+- reviewer: adversarial — does dedup ever DROP a legit rapid follow-up? re-break priming-echo/
+  no-input-clarifier/attribution/ordering? id-keying correct across reconnect? abort-silent-return safe?
+- qa: run all gates, assert green on pushed head e75ae2f; verify single-emit on repro orderings.
+- designer: BLOCKING review of caddie chat surface (one clean turn, no stray bubbles) vs NORTHSTAR.
+- On return: if all green → update PR #141 checklist (first NOTICEABLE item), progress+backlog, STOP
+  (do NOT ship/ping this cycle per brief). BLOCKING issue → re-dispatch builder. Reconcile from origin log.
 
 ## Cycle 126b (2026-07-15) — builder DONE: caddie double-emit fix implemented, committed to
 ## integration/next @ base 51133b1
