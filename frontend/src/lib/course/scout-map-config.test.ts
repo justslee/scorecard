@@ -3,6 +3,8 @@ import {
   deriveHighlightAction,
   highlightMarkerFor,
   boundsToBBox,
+  pinIconGeometry,
+  QUIET_PIN_ICON,
   SCOUT_MAP_STYLES,
   SCOUT_MAP_BASE_TONE,
   SCOUT_POI_SUPPRESSION,
@@ -31,19 +33,57 @@ describe("deriveHighlightAction", () => {
 });
 
 describe("highlightMarkerFor", () => {
-  it("builds a 40x40 marker with the scaled anchor, zIndex 2, title = name, reusing course-flag.png", () => {
+  it("builds a 36x45 marker with the tip-locked anchor, zIndex 2, no title, using course-flag-highlight.png", () => {
     const marker = highlightMarkerFor({
       name: "Marine Park Golf Course",
       center: { lat: 40.59, lng: -73.93 },
     });
     expect(marker).toEqual({
       coordinate: { lat: 40.59, lng: -73.93 },
-      iconUrl: "assets/course-flag.png",
-      iconSize: { width: 40, height: 40 },
-      iconAnchor: { x: 8, y: 40 },
+      iconUrl: "assets/course-flag-highlight.png",
+      iconSize: { width: 36, height: 45 },
+      iconAnchor: { x: 18, y: 42.75 },
       zIndex: 2,
-      title: "Marine Park Golf Course",
     });
+  });
+
+  it("has no title property (info-window kill is a tested invariant)", () => {
+    const marker = highlightMarkerFor({
+      name: "Marine Park Golf Course",
+      center: { lat: 40.59, lng: -73.93 },
+    });
+    expect("title" in marker).toBe(false);
+  });
+});
+
+describe("pinIconGeometry", () => {
+  it("preserves the source aspect (32:40 = 0.8) for both committed tier heights", () => {
+    for (const height of [27.5, 45]) {
+      const { iconSize } = pinIconGeometry(height);
+      expect(iconSize.width / iconSize.height).toBeCloseTo(32 / 40, 10);
+    }
+  });
+
+  it("anchors on the true tip (0.5, 0.95 normalized) for both committed tier heights", () => {
+    for (const height of [27.5, 45]) {
+      const { iconSize, iconAnchor } = pinIconGeometry(height);
+      expect(iconAnchor.x).toBe(iconSize.width / 2);
+      expect(iconAnchor.y).toBe(0.95 * iconSize.height);
+    }
+  });
+});
+
+describe("QUIET_PIN_ICON", () => {
+  it("equals the committed quiet-tier geometry exactly", () => {
+    expect(QUIET_PIN_ICON).toEqual({
+      iconUrl: "assets/course-flag.png",
+      iconSize: { width: 22, height: 27.5 },
+      iconAnchor: { x: 11, y: 26.125 },
+    });
+  });
+
+  it("has no title property", () => {
+    expect("title" in QUIET_PIN_ICON).toBe(false);
   });
 });
 

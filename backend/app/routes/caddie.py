@@ -33,6 +33,7 @@ from app.caddie.hazards import (
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.guide_writer import format_guide_line, validate_guide
 from app.caddie.voice_prompts import (
+    DECISION_GROUNDING_RULE,
     INPUT_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
     NUMBERS_COHERENCE_RULE,
@@ -841,7 +842,8 @@ or known tendencies when relevant.
 {YARDAGE_GROUNDING_RULE}
 {POSITIONING_SHOT_RULE}
 {NUMBERS_COHERENCE_RULE}
-{MISS_SIDE_GROUNDING_RULE}"""
+{MISS_SIDE_GROUNDING_RULE}
+{DECISION_GROUNDING_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
     volatile_text = f"--- CURRENT SITUATION ---\n{context}"
@@ -1519,7 +1521,8 @@ golf-focused. Never break character.
 {YARDAGE_GROUNDING_RULE}
 {POSITIONING_SHOT_RULE}
 {NUMBERS_COHERENCE_RULE}
-{MISS_SIDE_GROUNDING_RULE}"""
+{MISS_SIDE_GROUNDING_RULE}
+{DECISION_GROUNDING_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
     volatile_text = f"--- CURRENT SITUATION ---\n{context}"

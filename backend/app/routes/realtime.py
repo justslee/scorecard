@@ -18,7 +18,11 @@ from app.caddie.voice_prompts import build_realtime_instructions
 from app.caddie.setup_voice import SETUP_TOOLS, build_setup_instructions
 from app.caddie.keyterms import build_transcription_prompt, golf_baseline_prompt
 from app.caddie import memory as memory_mod
-from app.services.realtime_relay import mint_ephemeral_session, DEFAULT_TOOLS
+from app.services.realtime_relay import (
+    mint_ephemeral_session,
+    clamp_realtime_voice,
+    DEFAULT_TOOLS,
+)
 from app.services.rate_limit import caddie_rate_limited_user
 
 
@@ -95,7 +99,7 @@ async def start_setup_session(
         client_secret=client_secret,
         expires_at=expires_at,
         model=mint.get("model", ""),
-        voice_id=personality.voice_id or mint.get("voice", ""),
+        voice_id=clamp_realtime_voice(personality.voice_id),
         instructions=instructions,
         tools=SETUP_TOOLS,
         realtime_session_id=mint.get("id") or "",
@@ -159,7 +163,7 @@ async def start_realtime_session(
         client_secret=client_secret,
         expires_at=expires_at,
         model=mint.get("model", ""),
-        voice_id=personality.voice_id or mint.get("voice", ""),
+        voice_id=clamp_realtime_voice(personality.voice_id),
         instructions=instructions,
         tools=DEFAULT_TOOLS,
         realtime_session_id=realtime_session_id,

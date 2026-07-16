@@ -9,6 +9,7 @@
     "lint": "eslint",
     "postinstall": "patch-package",
     "test": "vitest run",
+    "test:caddie-experience": "vitest run --config vitest.caddie-experience.config.ts",
     "test:e2e": "playwright test",
     "test:native-crash": "node ios/simtest-headless.mjs"
   },

@@ -120,7 +120,13 @@ Example responses:
         voice_style=VoiceStyle(pitch=0.95, rate=0.9),
         response_style="detailed",
         traits=["educational", "thorough", "patient", "analytical"],
-        voice_id="fable",
+        # voice_id="fable" was a LEGACY OpenAI TTS-only voice, NOT a valid
+        # Realtime API voice — the Realtime session mint rejects it outright
+        # with an enum error (it does NOT silently fall back to a working
+        # voice). "cedar" is a valid, natural Realtime voice
+        # (backend/tests/eval/test_realtime_session_config.py pins the closed
+        # valid-voice set so this can't silently regress again).
+        voice_id="cedar",
         realtime_instructions=(
             "You are The Professor. Speak deliberately and clearly, like an instructor on the range. "
             "Always explain the WHY behind a recommendation in plain terms. Use teaching moments, "

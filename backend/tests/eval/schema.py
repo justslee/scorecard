@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -40,6 +40,10 @@ class Tier1CheckName(str, Enum):
     CONTEXT_CONTAINS = "context_contains"
     CARRIES_TOOL_MATCHES_HAZARDS = "carries_tool_matches_hazards"
     SHOT_DISTANCE_IN_BAND = "shot_distance_in_band"
+    # Multi-turn context-retention (specs/caddie-experience-harness-plan.md §2):
+    # the text mouth's `messages` carry the seeded conversation_history, in
+    # order, strictly before the current transcript.
+    HISTORY_RENDERS_IN_ORDER = "history_renders_in_order"
 
 
 class Tier2DeterministicCheckName(str, Enum):
@@ -56,6 +60,10 @@ class Tier2JudgeProperty(str, Enum):
     DEFERS_TO_OBSERVED_REALITY = "defers_to_observed_reality"
     APPROPRIATELY_CONCISE_AND_CALM = "appropriately_concise_and_calm"
     ASKS_TO_REPEAT_ON_UNINTELLIGIBLE = "asks_to_repeat_on_unintelligible"
+    # Multi-turn (plan §2): the live answer actually USES the seeded history
+    # (references or builds on an earlier turn) rather than answering as if
+    # it arrived with no context.
+    USES_CONVERSATION_CONTEXT = "uses_conversation_context"
 
 
 # Which extra params each check name requires — enforced at load time so a
@@ -75,6 +83,7 @@ _TIER1_REQUIRED_FIELDS: dict[Tier1CheckName, tuple[str, ...]] = {
     # band is universally required; the club-vs-target_yards either/or is
     # enforced by the model validator below (exactly one must be set).
     Tier1CheckName.SHOT_DISTANCE_IN_BAND: ("band",),
+    Tier1CheckName.HISTORY_RENDERS_IN_ORDER: (),
 }
 
 _TIER2_DET_REQUIRED_FIELDS: dict[Tier2DeterministicCheckName, tuple[str, ...]] = {
@@ -90,6 +99,7 @@ _VALID_RULE_NAMES = {
     "GREEN_GROUNDING_RULE", "BEND_GROUNDING_RULE", "INPUT_GROUNDING_RULE",
     "YARDAGE_GROUNDING_RULE", "POSITIONING_SHOT_RULE",
     "NUMBERS_COHERENCE_RULE", "MISS_SIDE_GROUNDING_RULE",
+    "DECISION_GROUNDING_RULE",
 }
 _VALID_MOUTHS = {"text", "realtime"}
 
@@ -138,6 +148,20 @@ class WeatherSituation(BaseModel):
     humidity: float = 50.0
 
 
+class HistoryTurn(BaseModel):
+    """One seeded prior conversation turn (specs/caddie-experience-harness
+    -plan.md §2) — mirrors `app.caddie.session.VoiceCaddieMessage`'s shape
+    (role/content only). Seeded into the synthetic `RoundSession.
+    conversation_history` by `checks.build_round_session` so the REAL
+    `_build_session_voice_prompt` renders it into `messages` exactly as
+    production would."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class Situation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -149,6 +173,16 @@ class Situation(BaseModel):
     # Consumed by Tier 2's live transcript assembly only (not by any Tier 1
     # check — the prompt-assembly checks don't depend on question content).
     player_observation: Optional[str] = None
+    # Multi-turn context-retention (plan §2): prior turns seeded into the
+    # synthetic RoundSession's conversation_history, oldest-first. Empty by
+    # default — most scenarios are single-turn.
+    history: list[HistoryTurn] = Field(default_factory=list)
+    # Decision-grounding fidelity (specs/caddie-advice-stability-tee-shot-plan
+    # .md §3.4): when true, `build_round_session` seeds a REAL engine-computed
+    # `last_recommendation` (via `generate_recommendation`) so the harness
+    # mirrors what production actually sends on a follow-up turn. False by
+    # default — most scenarios have no prior recommendation.
+    seed_recommendation: bool = False
 
 
 # ── Expected checks ──────────────────────────────────────────────────────────

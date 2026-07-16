@@ -28,6 +28,7 @@ import {
 } from "@/lib/voice/realtime";
 import { warmSession } from "@/lib/voice/warm-session";
 import { sortByOrder } from "@/lib/voice/realtime-ordering";
+import { LIVE_STATUS_LABEL } from "@/lib/caddie/live-copy";
 import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
 
 interface SetRoundSetupArgs {
@@ -49,14 +50,15 @@ interface Props {
   autoStart?: boolean;
 }
 
+// Dedupes against live-copy.ts's LIVE_STATUS_LABEL (specs/caddie-coherence-
+// polish-plan.md §2) — spreading it in is what structurally guarantees the
+// two maps can never silently fork again on a name-free status; only `idle`
+// (this surface's legit pre-tap state) and `speaking` (task-like: "Looper",
+// never a persona name — round-setup has no persona chat) are overridden.
 const STATUS_LABEL: Record<RealtimeStatus, string> = {
+  ...LIVE_STATUS_LABEL,
   idle: "Tap to start",
-  connecting: "Connecting…",
-  connected: "Ready — go ahead",
-  listening: "Listening…",
-  speaking: "Caddie speaking…",
-  closed: "Ended",
-  error: "Couldn't connect",
+  speaking: "Looper speaking…",
 };
 
 /** True once the live voice line is open (mic active). */

@@ -26,6 +26,7 @@ from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
 from app.caddie.voice_prompts import (
+    DECISION_GROUNDING_RULE,
     INPUT_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
     NUMBERS_COHERENCE_RULE,
@@ -169,9 +170,12 @@ async def test_voice_prompt_stable_before_volatile_ordering(monkeypatch):
 # aim on an unreachable tee shot) — {numbers_coherence_rule} and
 # {miss_side_grounding_rule} — the deliberate additive lines from
 # caddie-numbers-coherence (owner incident 2026-07, Bethpage Black hole 1:
-# "leaves about 125" beside a 300y driver and a 466y hole) — all referenced
-# via the imported constants so wording edits don't rot this guard.
-# Everything else must stay identical.)
+# "leaves about 125" beside a 300y driver and a 466y hole) — and
+# {decision_rule} — the deliberate additive line from
+# caddie-advice-stability-tee-shot (the club CALL is the engine's decision,
+# not re-decided free at temp each turn; closes the stable block after
+# {miss_side_grounding_rule}) — all referenced via the imported constants so
+# wording edits don't rot this guard. Everything else must stay identical.)
 
 
 _OLD_SESSION_TEMPLATE = """{persona}
@@ -204,7 +208,8 @@ or known tendencies when relevant.
 {yardage_rule}
 {positioning_rule}
 {numbers_coherence_rule}
-{miss_side_grounding_rule}"""
+{miss_side_grounding_rule}
+{decision_rule}"""
 
 
 _OLD_STATELESS_TEMPLATE = """{persona}
@@ -235,7 +240,8 @@ golf-focused. Never break character.
 {yardage_rule}
 {positioning_rule}
 {numbers_coherence_rule}
-{miss_side_grounding_rule}"""
+{miss_side_grounding_rule}
+{decision_rule}"""
 
 
 def _normalized_line_set(text: str) -> set[str]:
@@ -277,6 +283,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         positioning_rule=POSITIONING_SHOT_RULE,
         numbers_coherence_rule=NUMBERS_COHERENCE_RULE,
         miss_side_grounding_rule=MISS_SIDE_GROUNDING_RULE,
+        decision_rule=DECISION_GROUNDING_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 
@@ -310,6 +317,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         positioning_rule=POSITIONING_SHOT_RULE,
         numbers_coherence_rule=NUMBERS_COHERENCE_RULE,
         miss_side_grounding_rule=MISS_SIDE_GROUNDING_RULE,
+        decision_rule=DECISION_GROUNDING_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 

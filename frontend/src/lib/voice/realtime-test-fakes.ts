@@ -88,6 +88,10 @@ export function fakeStream(): MediaStream {
 }
 
 let lastPc: FakePeerConnection | null = null;
+// Every constructed pc this test run — the dedup suite's R1/R2 need to
+// assert "zero (or exactly one) pc ever came into being", which `lastPc`
+// alone can't answer (it only tells you about the MOST RECENT one).
+let allPcs: FakePeerConnection[] = [];
 
 // A real `class` (not an arrow-fn factory) so `new RTCPeerConnection()` in
 // realtime.ts works — constructors that explicitly return an object override
@@ -95,6 +99,7 @@ let lastPc: FakePeerConnection | null = null;
 class RTCPeerConnectionMock {
   constructor() {
     lastPc = new FakePeerConnection();
+    allPcs.push(lastPc);
     return lastPc as unknown as RTCPeerConnectionMock;
   }
 }
@@ -102,6 +107,7 @@ class RTCPeerConnectionMock {
 /** Call from `beforeEach` — stubs RTCPeerConnection / fetch / mediaDevices. */
 export function installFakeWebRTC(): void {
   lastPc = null;
+  allPcs = [];
   vi.stubGlobal('RTCPeerConnection', RTCPeerConnectionMock);
   vi.stubGlobal(
     'fetch',
@@ -124,11 +130,38 @@ export function uninstallFakeWebRTC(): void {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   lastPc = null;
+  allPcs = [];
 }
 
 /** The FakePeerConnection created by the most recent `new RTCPeerConnection()`. */
 export function getLastPc(): FakePeerConnection | null {
   return lastPc;
+}
+
+/** Every FakePeerConnection constructed since the last installFakeWebRTC()
+ *  — additive to getLastPc(), used by realtime-dedup.test.ts to assert a
+ *  zombie session's pc was never created (R1) or that exactly one live pc
+ *  exists across a stop-during-mint + successor race (R2). */
+export function getAllPcs(): FakePeerConnection[] {
+  return allPcs.slice();
+}
+
+/** A controllable promise — resolve/reject from outside, for tests that need
+ *  to hold a mint (or any other await) open while they assert on the
+ *  in-between state (e.g. R1: stop() called while startSetupSession() is
+ *  still pending). */
+export function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (err: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 export const CANONICAL_CLARIFIER = "Didn't catch that — say again?";

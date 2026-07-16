@@ -3,6 +3,8 @@
 import type { CSSProperties } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, Caddy } from "./tokens";
+import { ConversationTurn, type TranscriptTurn } from "./Transcript";
+import { captionPersonaName } from "@/lib/caddie/persona";
 
 /** Long-press guards for hold-to-talk surfaces (no text selection / iOS callout). */
 const HOLD_STYLE = {
@@ -80,15 +82,19 @@ export function VoiceOrb({
 }
 
 /** The calm "thinking" pulse — the VoiceOrb idiom extracted so other voice
- *  surfaces (CaddieSheet) reuse the exact animation instead of duplicating it. */
-export function PulseDot({ accent }: { accent: string }) {
+ *  surfaces (CaddieSheet, Transcript) reuse the exact animation instead of
+ *  duplicating it. `size` is optional (default 22, the original fixed size)
+ *  so every existing caller is behavior-identical; Transcript's inline
+ *  caption-row pulse passes a smaller size to sit next to 9px caption text. */
+export function PulseDot({ accent, size = 22 }: { accent: string; size?: number }) {
+  const dot = Math.round(size * (8 / 22));
   return (
     <span
       style={{
         position: "relative",
         display: "inline-flex",
-        width: 22,
-        height: 22,
+        width: size,
+        height: size,
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
@@ -97,9 +103,9 @@ export function PulseDot({ accent }: { accent: string }) {
       <motion.span
         animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.35, 0.2] }}
         transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-        style={{ position: "absolute", width: 22, height: 22, borderRadius: 99, background: accent }}
+        style={{ position: "absolute", width: size, height: size, borderRadius: 99, background: accent }}
       />
-      <span style={{ position: "relative", width: 8, height: 8, borderRadius: 99, background: accent }} />
+      <span style={{ position: "relative", width: dot, height: dot, borderRadius: 99, background: accent }} />
     </span>
   );
 }
@@ -119,59 +125,30 @@ export function Waveform({ bars = 28, accent, playing = true, height = 22 }: { b
   );
 }
 
-function Turn({ role, text, accent, caddy, state }: { role: "user" | "caddy"; text: string; accent: string; caddy?: Caddy; state: VoiceState | null }) {
-  const isUser = role === "user";
-  const isCaddy = role === "caddy";
-  const speaking = isCaddy && state === "speaking";
-
-  if (isUser) {
-    return (
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.4, color: T.pencilSoft, textTransform: "uppercase", marginBottom: 6 }}>You</div>
-        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 24, lineHeight: 1.22, letterSpacing: -0.4, color: T.ink }}>
-          <span style={{ color: T.pencil, fontSize: 20, verticalAlign: "15%" }}>&ldquo;</span>
-          {text}
-          {state === "listening" && (
-            <motion.span
-              animate={{ opacity: [0, 1, 0] }}
-              transition={{ duration: 0.9, repeat: Infinity }}
-              style={{ display: "inline-block", width: 2, height: 20, background: accent, marginLeft: 2, verticalAlign: "-3px" }}
-            />
-          )}
-        </div>
-      </div>
-    );
-  }
-
+/** VoiceSheet's ink medallion — the caddie avatar shown left of every caddie
+ *  turn. VoiceSheet-only (NOT hoisted into Transcript.tsx): the other three
+ *  surfaces (LooperSheet, CaddieSheet classic + live) have no avatar. Passed
+ *  as ConversationTurn's `leading` slot (plan §3.4). */
+function Medallion({ caddy }: { caddy?: Caddy }) {
   return (
-    <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "flex-start" }}>
-      <div
-        style={{
-          flexShrink: 0,
-          width: 32,
-          height: 32,
-          borderRadius: 99,
-          background: T.ink,
-          color: T.paper,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: T.serif,
-          fontStyle: "italic",
-          fontSize: 15,
-          marginTop: 2,
-        }}
-      >
-        {caddy?.initial || "C"}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>{caddy?.name || "Caddy"}</span>
-          {speaking && <Waveform accent={accent} playing height={14} bars={18} />}
-          {!speaking && <span style={{ fontFamily: T.mono, fontSize: 9, color: T.pencilSoft, letterSpacing: 1.2 }}>SAID</span>}
-        </div>
-        <div style={{ fontFamily: T.serif, fontSize: 18, lineHeight: 1.32, letterSpacing: -0.2, color: T.ink }}>{text}</div>
-      </div>
+    <div
+      style={{
+        flexShrink: 0,
+        width: 32,
+        height: 32,
+        borderRadius: 99,
+        background: T.ink,
+        color: T.paper,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: T.serif,
+        fontStyle: "italic",
+        fontSize: 15,
+        marginTop: 2,
+      }}
+    >
+      {caddy?.initial || "C"}
     </div>
   );
 }
@@ -271,7 +248,30 @@ export function VoiceSheet({
 
           <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8 }}>
             {hasTurns ? (
-              turns.map((t, i) => <Turn key={i} role={t.role} text={t.text} accent={accent} caddy={caddy} state={i === turns.length - 1 ? voiceState : null} />)
+              turns.map((t, i) => {
+                const isCaddie = t.role === "caddy";
+                const isLast = i === turns.length - 1;
+                const speaking = isCaddie && isLast && voiceState === "speaking";
+                const turnData: TranscriptTurn = {
+                  key: String(i),
+                  speaker: isCaddie ? "caddie" : "user",
+                  text: t.text,
+                  streaming: !isCaddie && isLast && voiceState === "listening",
+                };
+                return (
+                  <ConversationTurn
+                    key={i}
+                    turn={turnData}
+                    size="display"
+                    accent={accent}
+                    speakerLabel={captionPersonaName(caddy?.name || "Caddy")}
+                    leading={isCaddie ? <Medallion caddy={caddy} /> : undefined}
+                    captionTrailing={
+                      isCaddie && speaking ? <Waveform accent={accent} playing height={14} bars={18} /> : undefined
+                    }
+                  />
+                );
+              })
             ) : (
               <div style={{ minHeight: 80 }}>
                 <div style={{ fontFamily: T.serif, fontSize: 26, lineHeight: 1.2, letterSpacing: -0.5, color: T.ink, fontStyle: "italic" }}>

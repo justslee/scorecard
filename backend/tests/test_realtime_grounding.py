@@ -86,7 +86,16 @@ def test_no_session_instructions_unchanged():
     """session=None (e.g. setup flow) is completely unaffected."""
     text = build_realtime_instructions(_persona())
     assert "Earlier this round" not in text
-    assert "Last recommendation" not in text
+    # "Last recommendation:" (colon) is the dynamic LINE _situation_block
+    # renders for a seeded recommendation — that's what must stay absent
+    # here. The bare phrase "Last recommendation" (no colon) is no longer a
+    # safe substring to check: DECISION_GROUNDING_RULE (caddie-advice
+    # -stability-tee-shot-plan.md #3.2) always carries a quoted reference to
+    # the label ("...carries a recommendation ('Last recommendation')...")
+    # as part of the always-present Behavior block, independent of session
+    # state — see test_decision_grounding_prompt.py for that rule's own
+    # coverage.
+    assert "Last recommendation:" not in text
     assert "Recent shots" not in text
     assert "Green slope" not in text
 
@@ -209,7 +218,10 @@ def test_last_recommendation_present_reaches_situation_block():
 
 def test_last_recommendation_absent_no_line():
     text = build_realtime_instructions(_persona(), session=_bare_session())
-    assert "Last recommendation" not in text
+    # See test_no_session_instructions_unchanged for why this checks the
+    # colon-bearing dynamic LINE, not the bare phrase (DECISION_GROUNDING_RULE
+    # always quotes the label as part of the static Behavior block).
+    assert "Last recommendation:" not in text
 
 
 # ── Gap 4: recent shots (last 5) ──────────────────────────────────────────────

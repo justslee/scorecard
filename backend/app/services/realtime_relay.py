@@ -8,13 +8,17 @@ Tools are listed in the session config; tool calls flow back to the browser via
 the WebRTC data channel and are dispatched to FastAPI from there.
 """
 
+import logging
 import os
 from typing import Optional
 import httpx
 from fastapi import HTTPException
 
 from app.caddie.tools import realtime_tools
+from app.caddie.types import VALID_REALTIME_VOICES
 
+
+log = logging.getLogger(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")
@@ -47,6 +51,28 @@ _REALTIME_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secret
 # work unchanged.
 
 DEFAULT_TOOLS: list[dict] = realtime_tools()
+
+
+def clamp_realtime_voice(voice_id: Optional[str]) -> str:
+    """Coerce a stored voice_id to one the Realtime API actually accepts.
+
+    Prod `caddie_personas` rows can carry a legacy TTS-only voice (e.g.
+    'fable') that the Realtime API rejects with a hard mint error —
+    `app/caddie/personalities.py::load_personality` is DB-first, so a bad row
+    overrides an already-fixed code-side default. `None` (no persona
+    preference) falls through to OPENAI_REALTIME_DEFAULT_VOICE exactly as
+    before this clamp existed — silently, no warning. An invalid non-empty
+    value also falls back to the default, but logs once so prod visibility
+    into the drifted row isn't lost (see build_session_payload's line-144
+    call site, and the echo-back call sites in routes/realtime.py).
+    """
+    if voice_id and voice_id in VALID_REALTIME_VOICES:
+        return voice_id
+    if voice_id:
+        log.warning(
+            "invalid Realtime voice %r — clamped to %r", voice_id, OPENAI_REALTIME_DEFAULT_VOICE
+        )
+    return OPENAI_REALTIME_DEFAULT_VOICE
 
 
 def build_session_payload(
@@ -141,7 +167,7 @@ def build_session_payload(
                 },
                 # speed: brisk on-course delivery (owner ask); realtime
                 # supports 0.25-1.5, default 1.0.
-                "output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE, "speed": 1.15},
+                "output": {"voice": clamp_realtime_voice(voice_id), "speed": 1.15},
             },
             "tools": tools if tools is not None else DEFAULT_TOOLS,
             "tool_choice": "auto",

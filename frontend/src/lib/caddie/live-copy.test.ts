@@ -6,7 +6,8 @@
 // honest-states claims disagreeing on screen at once.
 
 import { describe, it, expect } from 'vitest';
-import { LIVE_STATUS_LABEL, liveEmptyStateHint } from './live-copy';
+import { LIVE_STATUS_LABEL, liveStatusLabel, liveEmptyStateHint } from './live-copy';
+import { captionPersonaName } from './persona';
 import type { RealtimeStatus } from '@/lib/voice/realtime';
 
 const ALL_STATUSES: RealtimeStatus[] = [
@@ -70,13 +71,13 @@ describe('liveEmptyStateHint', () => {
   });
 });
 
-describe('liveEmptyStateHint vs LIVE_STATUS_LABEL — the never-contradict invariant', () => {
+describe('liveEmptyStateHint vs liveStatusLabel — the never-contradict invariant', () => {
   it('the empty-state hint never claims "listening" while the footer label claims "speaking"', () => {
     for (const status of ALL_STATUSES) {
       for (const paused of [false, true]) {
         const hint = liveEmptyStateHint(status, paused, 'Scotty');
-        const footerLabel = LIVE_STATUS_LABEL[status];
-        if (footerLabel === 'Caddie speaking…') {
+        const footerLabel = liveStatusLabel(status, 'Scotty');
+        if (footerLabel === 'Scotty is speaking…') {
           expect(hint.toLowerCase()).not.toContain('is listening');
         }
       }
@@ -86,7 +87,49 @@ describe('liveEmptyStateHint vs LIVE_STATUS_LABEL — the never-contradict invar
   it('status=speaking, not paused: hint claims speaking and footer claims speaking — agree', () => {
     const hint = liveEmptyStateHint('speaking', false, 'Scotty');
     expect(hint).toBe('Scotty is speaking.');
-    expect(LIVE_STATUS_LABEL.speaking).toBe('Caddie speaking…');
+    // Persona-named, not the old generic "Caddie speaking…" — cycle-133 nit
+    // 2 (specs/caddie-coherence-polish-plan.md §2): a generic label two
+    // lines above a persona-named transcript caption is exactly the
+    // two-honest-states-disagree bug this module exists to prevent.
+    expect(liveStatusLabel('speaking', 'Scotty')).toBe('Scotty is speaking…');
     expect(hint.toLowerCase()).not.toContain('is listening');
+  });
+
+  it('LIVE_STATUS_LABEL stays name-free (speaking is resolved only via liveStatusLabel)', () => {
+    expect(LIVE_STATUS_LABEL.idle).toBe('Connecting…');
+    expect(LIVE_STATUS_LABEL.connecting).toBe('Connecting…');
+    expect(LIVE_STATUS_LABEL.connected).toBe('Ready — go ahead');
+    expect(LIVE_STATUS_LABEL.listening).toBe('Listening…');
+    expect(LIVE_STATUS_LABEL.closed).toBe('Ended');
+    expect(LIVE_STATUS_LABEL.error).toBe("Couldn't connect");
+  });
+});
+
+// specs/caddie-coherence-polish-plan.md §4 — the empty-hint name and the
+// transcript speakerLabel must be byte-identical for a long (>16 char)
+// custom persona name. Both CaddieSheet.tsx call sites resolve
+// `captionPersonaName(caddy.name)` and pass that SAME value into
+// `liveEmptyStateHint`/`liveStatusLabel` (footer) and `Transcript`'s
+// `speakerLabel` prop (:1829) — this guards that the shared resolution,
+// not two independent ones, is what both consumers see.
+describe('long custom persona name — empty-hint/footer name matches transcript speakerLabel', () => {
+  const longName = 'Sunday Money Maker Supreme'; // > 16 chars, multi-word
+  const resolved = captionPersonaName(longName);
+
+  it('captionPersonaName truncates on a word boundary with an ellipsis', () => {
+    expect(longName.length).toBeGreaterThan(16);
+    expect(resolved.length).toBeLessThanOrEqual(17); // 16 chars + '…'
+    expect(resolved.endsWith('…')).toBe(true);
+  });
+
+  it('liveEmptyStateHint (listening) carries the exact resolved name', () => {
+    expect(liveEmptyStateHint('listening', false, resolved)).toBe(
+      `Go ahead — ${resolved} is listening.`,
+    );
+  });
+
+  it('liveEmptyStateHint (speaking) and liveStatusLabel (footer) agree on the exact resolved name', () => {
+    expect(liveEmptyStateHint('speaking', false, resolved)).toBe(`${resolved} is speaking.`);
+    expect(liveStatusLabel('speaking', resolved)).toBe(`${resolved} is speaking…`);
   });
 });

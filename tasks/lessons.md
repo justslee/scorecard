@@ -147,3 +147,57 @@ _(none yet — the first weekly retro will populate this)_
   pushed head SHA — verify Frontend AND Backend gates are SUCCESS, never merge on fail==0
   alone. A cancelled/skipped required gate blocks; re-run it (empty commit) and wait. Related:
   [[ship-gate-verification]].
+
+## Session lessons (2026-07-15 — consolidation retro; v1.1.1→v1.1.7, ~25 cycles, bundles #133–#141)
+The through-line of this burst was the caddie evolving from a "distance calculator with a
+personality" into an **engine-grounded brain**: mock-178 → out-of-reach-flag → context-leak →
+phantom-clarifier → numbers-coherence → corridor-width. The durable lessons:
+
+- **The caddie may only SAY what the engine can PROVE — this is a hard contract, not a style
+  note.** The owner-reported crux bug (#139) was the caddie speaking three truthful-in-isolation
+  numbers from three frames with no shared payload (466−300≠125), then *confabulating backwards
+  physics when challenged* and naming a fabricated greenside bunker. Root cause was a fabricated
+  `yards=400` default on ONE HTTP path (the realtime orb) that the no-fake-default fix had never
+  reached. The fix was structural, and it's the standing rule: every number the caddie speaks
+  derives from ONE solve (`leave = hole − drive`, driven off the same `shot_distance_for_club`
+  the engine uses — parity by construction, not by re-derivation); a challenge triggers
+  **re-derive-and-admit, never invent**; a miss-side/hazard may only be asserted if the hazard
+  payload supports it; absent geometry → honest silence. Wire these as NUMBERS_COHERENCE_RULE /
+  MISS_SIDE_GROUNDING_RULE into *every* mouth (realtime instructions + both text stable_text
+  blocks + the eval registry) — a rule that lives on only one path is a bug waiting for the other
+  path. See [[caddie-numbers-coherence]], [[caddie-shot-context-reachability]],
+  [[no-fake-data-fallbacks]]. Honest-absence over fabrication is the spine of trust for a
+  voice-first product; treat any fabricated fallback as a P0.
+
+- **Verify-FIRST — falsify the brief before you build; the premise is often already false.** Two
+  of this burst's biggest time-savers were *disproving* a task, not doing it. (1) The "ingest
+  woods/trees so the corridor brain can work" epic was FALSIFIED (#117): the OSM ingest already
+  fetched+assigned+stored trees end-to-end since 2026-06-29, prod rows already held them (Black
+  1038 tree nodes / 18 holes), and the corridor-width brain was already LIVE on v1.1.6 — the
+  "ZERO trees" signal was a *stale test fixture*, not reality. A no-op re-ingest was avoided by
+  probing prod data first. (2) The corridor-width fable plan FALSIFIED the "fit the club to the
+  fairway edges" premise — a ±1.5σ dispersion window (~56y) vs a 30–40y fairway would cap every
+  player to an 8-iron on every tee; the real signal is *danger* edges (tree/water lines), not
+  fairway color. Rule: before building against a premise ("X is missing", "fit to Y"), spend one
+  probe proving the premise is TRUE on live data/geometry. The guide-validator false-reject
+  classes (cross-side → cross-type number binding, Black 7/11 carry-span) were the same shape:
+  each "the guide is wrong" turned out to be the *validator* over-rejecting grounded text, fixed
+  by attributing numbers to the correct side/type — never by loosening the honesty gate.
+
+- **When the release-manager stalls on a gate MONITOR, execute the ship inline once gates are
+  green — don't hold a coordinator open across a poll.** The v1.1.7 ship stalled because the
+  release-manager hung waiting on a gate monitor; it only completed when resumed and the ship
+  was run inline after confirming `state:SUCCESS`. This is the same class as the
+  checkpoint-before-await lesson (2026-07-09): a long poll is where coordinators die. Once every
+  required gate is SUCCESS on the head SHA, run the bump→merge→deploy→TestFlight sequence directly
+  (with the absolute-`cd` prelude, un-piped, `set -euo pipefail`); don't dispatch a child to
+  babysit a monitor. Related: [[ship-gate-verification]].
+
+- **Two shipping-hygiene rules that bit this burst are now memory (obey them every ship):**
+  (1) **Bump the root `VERSION` file per release** — TestFlight sorts by version STRING, so the
+  legacy `1.0.<commit-count>` default buried bundle #133 under the v1.1.0 milestone and the owner
+  "didn't see the new version." VERSION is the single source of truth now; confirm the build
+  sorts ABOVE the highest already uploaded. [[testflight-version-sort]]. (2) **Every concurrent
+  lane gets its own worktree** — a main-checkout lane's `git reset --hard` wiped a live builder's
+  uncommitted edit (reflog-recovered). The main checkout is NOT safe just because the *other* lane
+  is isolated. [[parallel-lanes-use-worktrees]].

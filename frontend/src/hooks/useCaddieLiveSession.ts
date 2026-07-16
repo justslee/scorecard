@@ -230,6 +230,13 @@ export function useCaddieLiveSession({
     clearReconnectDeadline();
     reconnectingRef.current = false;
     if (mountedRef.current) setLiveState("fallback");
+    // Detach BEFORE stop() — mirrors startReconnect()'s dead?.setEvents({})
+    // pattern (specs/caddie-realtime-double-emit-plan.md §2 Part B). Without
+    // this, a client that is still mid-mint (e.g. the 3s deadline raced
+    // start()) keeps this activation's `onMessage: upsert` bound; any late
+    // event it delivers after fallBack() would otherwise still land in
+    // `messages` via mountedRef alone.
+    clientRef.current?.setEvents({});
     clientRef.current?.stop();
     clientRef.current = null;
   }, [clearMintDeadline, clearReconnectDeadline]);
@@ -329,6 +336,9 @@ export function useCaddieLiveSession({
       anchoredHoleRef.current = null;
       clearMintDeadline();
       clearReconnectDeadline();
+      // Detach before stop() — same belt as fallBack()/effect cleanup below
+      // (specs/caddie-realtime-double-emit-plan.md §2 Part B).
+      clientRef.current?.setEvents({});
       clientRef.current?.stop();
       clientRef.current = null;
       setLiveState("connecting");
@@ -420,7 +430,15 @@ export function useCaddieLiveSession({
           }
         }
       },
-      onMessage: upsert,
+      // Gate on the same closure flags the other handlers already use
+      // (specs/caddie-realtime-double-emit-plan.md §2 Part B) — `upsert`
+      // alone only checks `mountedRef`, which stays true across sheet
+      // open/close (CaddieSheet stays mounted), so an undetached zombie
+      // client's messages would otherwise still land in `messages`.
+      onMessage: (m) => {
+        if (cancelled || fellBackRef.current) return;
+        upsert(m);
+      },
       onError: () => {
         if (cancelled) return;
         if (!everConnectedRef.current) fallBack();
@@ -576,6 +594,9 @@ export function useCaddieLiveSession({
       cancelled = true;
       clearMintDeadline();
       clearReconnectDeadline();
+      // Detach before stop() — same belt as fallBack()/`!active` above
+      // (specs/caddie-realtime-double-emit-plan.md §2 Part B).
+      clientRef.current?.setEvents({});
       clientRef.current?.stop();
       clientRef.current = null;
       resumeImplRef.current = null;

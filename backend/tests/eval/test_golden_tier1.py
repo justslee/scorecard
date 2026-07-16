@@ -84,7 +84,7 @@ async def _build_prompts(scenario: Scenario, monkeypatch):
         hole_yards=hole_yards,
         yardage_basis="card" if hole_yards is not None else None,
     )
-    system_blocks, _messages, _persona_id = await caddie_routes._build_session_voice_prompt(request, "eval-user")
+    system_blocks, messages, _persona_id = await caddie_routes._build_session_voice_prompt(request, "eval-user")
     text_prompt = system_blocks[0]["text"] + "\n\n" + system_blocks[1]["text"]
     text_situation_block = system_blocks[1]["text"]
 
@@ -92,7 +92,7 @@ async def _build_prompts(scenario: Scenario, monkeypatch):
 
     return checks_mod.build_tier1_context(
         scenario, text_prompt=text_prompt, text_situation_block=text_situation_block,
-        realtime_prompt=realtime_prompt,
+        realtime_prompt=realtime_prompt, text_messages=messages,
     )
 
 

@@ -7,12 +7,19 @@ to the OpenAI GA Realtime API reference (developers.openai.com, 2025).
 
 import os
 
+import pytest
+
 # Silence DATABASE_URL + secrets import checks so the service module can import
 # without a real DB or API key present.
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/x")
 os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 
-from app.services.realtime_relay import build_session_payload  # noqa: E402
+from app.services.realtime_relay import (  # noqa: E402
+    build_session_payload,
+    clamp_realtime_voice,
+    OPENAI_REALTIME_DEFAULT_VOICE,
+)
+from app.caddie.types import VALID_REALTIME_VOICES  # noqa: E402
 
 
 def test_noise_reduction_present():
@@ -97,6 +104,35 @@ def test_voice_override():
     """Explicit voice_id is passed through to audio.output.voice."""
     payload = build_session_payload("sys", "alloy")
     assert payload["session"]["audio"]["output"]["voice"] == "alloy"
+
+
+@pytest.mark.parametrize("bad_voice", ["fable", "onyx", "nova", "not-a-voice"])
+def test_invalid_tts_only_voice_clamped_to_default(bad_voice):
+    """A voice_id the Realtime API rejects (legacy TTS-only voices, or garbage)
+    is clamped to the default rather than reaching OpenAI and hard-erroring the
+    mint. Exact prod-row scenario: a DB persona (professor / course-historian)
+    carrying voice_id='fable' — invalid for Realtime, valid only for the old
+    v1/audio/speech TTS endpoint."""
+    payload = build_session_payload("sys", bad_voice)
+    assert payload["session"]["audio"]["output"]["voice"] == OPENAI_REALTIME_DEFAULT_VOICE
+
+
+def test_valid_voice_passes_through_unchanged():
+    payload = build_session_payload("sys", "marin")
+    assert payload["session"]["audio"]["output"]["voice"] == "marin"
+
+
+def test_default_voice_is_a_valid_realtime_voice():
+    """Guards the env-default config shipped in code — an operator overriding
+    OPENAI_REALTIME_DEFAULT_VOICE to an invalid voice is an ops error, flagged
+    rather than silently engineered around."""
+    assert OPENAI_REALTIME_DEFAULT_VOICE in VALID_REALTIME_VOICES
+
+
+def test_clamp_none_falls_back_to_default():
+    """Pins that the pre-existing `voice_id or DEFAULT` None-path behavior is
+    preserved exactly (silently — no warning) by the new clamp helper."""
+    assert clamp_realtime_voice(None) == OPENAI_REALTIME_DEFAULT_VOICE
 
 
 def test_custom_tools_replace_defaults():

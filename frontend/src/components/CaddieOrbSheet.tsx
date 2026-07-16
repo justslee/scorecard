@@ -16,6 +16,7 @@ import { LooperSheetShell, type LooperTurn, type LooperPhase } from "@/component
 import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import { talkToCaddie, talkToCaddieStream, BeforeFirstByteError } from "@/lib/caddie/api";
+import { useCaddiePersona, captionPersonaName } from "@/lib/caddie/persona";
 import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
 import { onLooperOpen } from "@/lib/looper-bus";
 import { haptic } from "@/lib/haptics";
@@ -30,9 +31,26 @@ import {
 } from "@/lib/caddie-context";
 
 export default function CaddieOrbSheet() {
+  // Source of truth for the golfer's chosen persona (persona.ts §resolution
+  // order); mounting the hook here — the layout-mounted, single omnipresent
+  // host — is what makes every off-round surface speak/reply in the SAME
+  // persona chosen on the round page, instead of silently defaulting to
+  // classic (persona.ts's module-level pub-sub converges this instance with
+  // any other mounted instance, e.g. the round page's own).
+  const { personaId, caddy } = useCaddiePersona();
   const [open, setOpen] = useState(false);
   // The task ctx id the OPEN session is bound to; null = general lane.
   const [boundId, setBoundId] = useState<CaddieTaskId | null>(null);
+  // INVARIANT (verified, specs/caddie-coherence-polish-plan.md §1): turns
+  // persist across a RE-SUMMON while the sheet is already open (see the
+  // "reset-on-open only on closed→open" tests below) — so `emptyHint`
+  // (rendered only when `turns.length === 0`) can never re-greet onto a
+  // preserved mid-session conversation, mirroring CaddieSheet.tsx:845's
+  // round-side no-re-greet contract. NOTE this is narrower than a literal
+  // close()-then-reopen: `resetSession()` (below) intentionally clears
+  // `turns` on the closed→open transition, so a fully closed-then-reopened
+  // sheet deliberately starts a fresh conversation — that reset is a
+  // pre-existing, separately-tested behavior, not a re-greet regression.
   const [turns, setTurns] = useState<LooperTurn[]>([]);
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -199,7 +217,7 @@ export default function CaddieOrbSheet() {
           responseText = await talkToCaddieStream(
             {
               transcript: finalText,
-              personality_id: "classic",
+              personality_id: personaId,
               hole_number: null,
               conversation_history: history,
               stats_context: statsContext,
@@ -212,7 +230,7 @@ export default function CaddieOrbSheet() {
           setStreamingText(null);
           const res = await talkToCaddie({
             transcript: finalText,
-            personality_id: "classic",
+            personality_id: personaId,
             hole_number: null, // off-course — never pretend to be on a hole
             conversation_history: history,
             stats_context: statsContext,
@@ -238,7 +256,7 @@ export default function CaddieOrbSheet() {
         if (!isStale()) setThinking(false);
       }
     },
-    [answerBuffer, appendTurn],
+    [answerBuffer, appendTurn, personaId],
   );
 
   // ── Mic handler — lanes + gates ──
@@ -368,6 +386,18 @@ export default function CaddieOrbSheet() {
   const activeConverse: CaddieConverseContext | null =
     activeCtx?.kind === "converse" ? activeCtx : null;
 
+  // Cross-surface identity label (specs/caddie-cross-surface-identity-label-
+  // plan.md §3): who the reply caption / streaming caption / thinking pulse
+  // attribute the reply to. Task lane is the app doing a job on the golfer's
+  // behalf — honestly "Looper", not the caddie persona conversing. Classic
+  // maps to "Looper" too (the app's own caddie name, matching the empty-hint
+  // treatment). Only converse/general + a non-classic persona shows the
+  // short persona name, truncated for the tiny mono captions.
+  const speakerLabel =
+    activeTask != null || personaId === "classic"
+      ? "Looper"
+      : captionPersonaName(caddy.name);
+
   return (
     <LooperSheetShell
       open={open}
@@ -376,7 +406,9 @@ export default function CaddieOrbSheet() {
       emptyHint={
         activeTask?.copy.hint ??
         activeConverse?.copy.hint ??
-        "Tee times, courses, your game — ask me anything."
+        (personaId === "classic"
+          ? "Tee times, courses, your game — ask me anything."
+          : `${captionPersonaName(caddy.name)} here — tee times, courses, your game. Ask me anything.`)
       }
       turns={turns}
       phase={phase}
@@ -384,6 +416,8 @@ export default function CaddieOrbSheet() {
       error={error ?? dictation.micError}
       onMicTap={() => void handleMicTap()}
       streamingTurn={streamingText}
+      personaId={personaId}
+      speakerLabel={speakerLabel}
     />
   );
 }

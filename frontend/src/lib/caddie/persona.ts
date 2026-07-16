@@ -63,10 +63,34 @@ export const BUILTIN_PERSONAS: CaddiePersonalityInfo[] = [
   },
 ];
 
+/** Strips a leading "The " (case-insensitive) from a persona's display name
+ *  — e.g. "The Hype Man" → "Hype Man". Shared by the Caddy adapter below and
+ *  any surface that needs the short form (e.g. the Looper sheet's speaker
+ *  attribution captions). */
+export function shortPersonaName(name: string): string {
+  return name.replace(/^The\s+/i, '').trim();
+}
+
+/** The short persona name fit for the tiny mono attribution captions in the
+ *  Looper sheet (reply/streaming/thinking). Strips the "The " article, then —
+ *  if still over `max` chars — truncates on a WORD boundary (the last space
+ *  before the cap, as long as it keeps ≥ 8 chars) so a long custom name reads
+ *  "Sunday Money…" rather than a mid-word "Sunday Money Mak…". A single
+ *  overlong word with no usable space falls back to a hard cut. Built-in names
+ *  (≤ 10 chars) pass through untouched. */
+export function captionPersonaName(name: string, max = 16): string {
+  const short = shortPersonaName(name);
+  if (short.length <= max) return short;
+  const cut = short.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  const base = lastSpace >= 8 ? cut.slice(0, lastSpace) : cut;
+  return `${base.trimEnd()}…`;
+}
+
 /** Display adapter: backend persona → the yardage-book Caddy shape the round
  *  screen + sheet already render (medallion initial, name, tag line). */
 export function personaToCaddy(p: CaddiePersonalityInfo): Caddy {
-  const short = p.name.replace(/^The\s+/i, '').trim();
+  const short = shortPersonaName(p.name);
   return {
     id: p.id,
     name: p.name,
@@ -112,11 +136,32 @@ export interface CaddiePersonaState {
   selectPersona: (id: string) => void;
 }
 
+// Cross-instance sync: the picker lives ONLY on the round page's CaddieSheet
+// today (RoundPageClient -> CaddieSheet), while the omnipresent orb host
+// (CaddieOrbSheet, mounted once in layout.tsx) mounts its OWN hook instance.
+// A `storage` event fires only in OTHER tabs, never the tab that wrote it, so
+// it can't converge the same-tab "change persona on the round page, then talk
+// to the orb on Home" path. This tiny module-level pub-sub (same pattern as
+// looper-bus.ts's onLooperOpen / caddie-context.ts's onCaddieContextChange)
+// lets every mounted instance converge on whichever one resolves last.
+const personaListeners = new Set<(id: string) => void>();
+
+function notifyPersonaChange(id: string): void {
+  for (const l of personaListeners) l(id);
+}
+
 export function useCaddiePersona(): CaddiePersonaState {
   const [personaId, setPersonaId] = useState<string>(
     () => readLocalPersonaId() || DEFAULT_PERSONA_ID,
   );
   const [personas, setPersonas] = useState<CaddiePersonalityInfo[]>(BUILTIN_PERSONAS);
+
+  useEffect(() => {
+    personaListeners.add(setPersonaId);
+    return () => {
+      personaListeners.delete(setPersonaId);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +182,7 @@ export function useCaddiePersona(): CaddiePersonaState {
         );
         setPersonaId(resolved);
         writeLocalPersonaId(resolved);
+        notifyPersonaChange(resolved);
       }
     })();
     return () => {
@@ -147,6 +193,7 @@ export function useCaddiePersona(): CaddiePersonaState {
   const selectPersona = useCallback((id: string) => {
     setPersonaId(id);
     writeLocalPersonaId(id);
+    notifyPersonaChange(id);
     updateCaddieProfile(id).catch(() => {
       // Offline / transient — localStorage keeps the choice for this device.
     });

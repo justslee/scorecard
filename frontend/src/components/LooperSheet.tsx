@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { PulseDot } from "@/components/yardage/Voice";
+import { Transcript, ConversationTurn } from "@/components/yardage/Transcript";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { useBodyScrollLock } from "@/lib/sheet";
 import { haptic } from "@/lib/haptics";
@@ -55,6 +56,8 @@ export function LooperSheetShell({
   error,
   onMicTap,
   streamingTurn,
+  personaId = "classic",
+  speakerLabel = "Looper",
 }: {
   open: boolean;
   onClose: () => void;
@@ -73,6 +76,21 @@ export function LooperSheetShell({
    * renders nothing extra, so nothing changes for them.
    */
   streamingTurn?: string | null;
+  /**
+   * The golfer's selected caddie persona id — selects the SPOKEN voice only
+   * (TTS), display-inert (no visible chrome changes here). Optional, default
+   * "classic" so any consumer that omits it is behavior-identical to before
+   * this prop existed.
+   */
+  personaId?: string;
+  /**
+   * Who's talking, for the reply caption / streaming caption / thinking
+   * pulse — speaker attribution, NOT the app wordmark (the kicker stays
+   * literal "Looper" regardless). Optional, default "Looper" so any consumer
+   * that omits it is behavior-identical to before this prop existed.
+   * Presentational only — no persona logic lives in this shell.
+   */
+  speakerLabel?: string;
 }) {
   useBodyScrollLock(open);
 
@@ -106,7 +124,7 @@ export function LooperSheetShell({
     lastSpokenIndexRef.current = lastIdx;
     const last = turns[lastIdx];
     if (last && last.role === "looper" && last.text) {
-      tts.speak(last.text, "classic");
+      tts.speak(last.text, personaId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, turns]);
@@ -277,61 +295,19 @@ export function LooperSheetShell({
                   {emptyHint}
                 </div>
               )}
-              {turns.map((t, i) => (
-                <div key={i} style={{ marginBottom: 10 }}>
-                  <div
-                    style={{
-                      fontFamily: T.mono,
-                      fontSize: 8.5,
-                      letterSpacing: 1.4,
-                      color: T.pencilSoft,
-                      textTransform: "uppercase",
-                      marginBottom: 3,
-                    }}
-                  >
-                    {t.role === "user" ? "You" : "Looper"}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: T.serif,
-                      fontSize: 15.5,
-                      fontStyle: t.role === "looper" ? "italic" : "normal",
-                      color: T.ink,
-                      lineHeight: 1.45,
-                      letterSpacing: -0.1,
-                    }}
-                  >
-                    {t.text}
-                  </div>
-                </div>
-              ))}
+              <Transcript
+                turns={turns.map((t, i) => ({
+                  key: String(i),
+                  speaker: t.role === "user" ? "user" : "caddie",
+                  text: t.text,
+                }))}
+                speakerLabel={speakerLabel}
+              />
               {streamingTurn != null && (
-                <div style={{ marginBottom: 10 }}>
-                  <div
-                    style={{
-                      fontFamily: T.mono,
-                      fontSize: 8.5,
-                      letterSpacing: 1.4,
-                      color: T.pencilSoft,
-                      textTransform: "uppercase",
-                      marginBottom: 3,
-                    }}
-                  >
-                    Looper
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: T.serif,
-                      fontSize: 15.5,
-                      fontStyle: "italic",
-                      color: T.ink,
-                      lineHeight: 1.45,
-                      letterSpacing: -0.1,
-                    }}
-                  >
-                    {streamingTurn}
-                  </div>
-                </div>
+                <ConversationTurn
+                  turn={{ key: "streaming", speaker: "caddie", text: streamingTurn, streaming: true }}
+                  speakerLabel={speakerLabel}
+                />
               )}
               {phase === "listening" && (
                 <div
@@ -359,7 +335,7 @@ export function LooperSheetShell({
                       textTransform: "uppercase",
                     }}
                   >
-                    Looper is thinking…
+                    {`${speakerLabel} is thinking…`}
                   </span>
                 </div>
               )}

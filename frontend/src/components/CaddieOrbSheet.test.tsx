@@ -9,6 +9,30 @@ import * as React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 
+// jsdom in this repo doesn't ship window.localStorage (same gap as
+// CaddieOrb.test.tsx) — stub a minimal in-memory implementation so
+// persona.ts's readLocalPersonaId/writeLocalPersonaId (touched once
+// CaddieOrbSheet consumes useCaddiePersona) has something to read/write.
+function makeLocalStorage() {
+  const store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      Object.keys(store).forEach((k) => delete store[k]);
+    },
+    get length() {
+      return Object.keys(store).length;
+    },
+    key: (n: number) => Object.keys(store)[n] ?? null,
+  };
+}
+
 // framer-motion — strip animation so AnimatePresence mounts/unmounts
 // synchronously (same rationale + pattern as CaddieSheet.session.test.tsx).
 // Component identity is memoized per tag — the Proxy's `get` trap fires on
@@ -62,6 +86,15 @@ vi.mock("@/lib/caddie/api", () => ({
   talkToCaddie: vi.fn(),
   talkToCaddieStream: vi.fn(),
   BeforeFirstByteError: MockBeforeFirstByteError,
+  // persona.ts (pulled in transitively once CaddieOrbSheet consumes
+  // useCaddiePersona) imports these three from this SAME mocked module —
+  // without them the import chain breaks at test-import time. Defaults are
+  // failure-tolerant (empty list / no server preference) so persona
+  // resolution falls through to localStorage / "classic" exactly like a
+  // fresh, logged-out device; individual tests override per-case.
+  fetchPersonalities: vi.fn(async () => []),
+  getCaddieProfile: vi.fn(async () => ({ preferred_personality_id: null })),
+  updateCaddieProfile: vi.fn(async () => ({})),
 }));
 
 // Synchronous stand-in — same rationale as CaddieSheet.session.test.tsx: the
@@ -79,10 +112,13 @@ vi.mock("@/lib/caddie/stream-buffer", () => ({
 const hapticMock = vi.fn();
 vi.mock("@/lib/haptics", () => ({ haptic: (...args: unknown[]) => hapticMock(...args) }));
 
+// Hoisted so tests can assert what the sheet spoke (was an inline throwaway
+// `vi.fn()` — a fresh one per render, un-assertable across the module).
+const { speakMock } = vi.hoisted(() => ({ speakMock: vi.fn() }));
 vi.mock("@/hooks/useSheetTTS", () => ({
   useSheetTTS: () => ({
     unlock: vi.fn(),
-    speak: vi.fn(),
+    speak: speakMock,
     beginStream: vi.fn(),
     enqueue: vi.fn(),
     endStream: vi.fn(),
@@ -125,7 +161,7 @@ vi.mock("@/hooks/useLooperDictation", () => ({
 }));
 
 import CaddieOrbSheet from "./CaddieOrbSheet";
-import { talkToCaddie, talkToCaddieStream } from "@/lib/caddie/api";
+import { talkToCaddie, talkToCaddieStream, getCaddieProfile } from "@/lib/caddie/api";
 import { openLooper, looperContextForPath } from "@/lib/looper-bus";
 import {
   registerCaddieContext,
@@ -140,6 +176,7 @@ import {
 
 const talkToCaddieMock = vi.mocked(talkToCaddie);
 const talkToCaddieStreamMock = vi.mocked(talkToCaddieStream);
+const getCaddieProfileMock = vi.mocked(getCaddieProfile);
 
 /** Fires the mic tap by clicking the shell's mic button, resolving through
  *  the given transcript via the controllable dictation mock. */
@@ -209,11 +246,13 @@ function registerConverse(overrides: Partial<CaddieConverseContext> = {}): Caddi
 beforeEach(() => {
   vi.clearAllMocks();
   H.stopAndResolveFn.mockResolvedValue(null);
+  vi.stubGlobal("localStorage", makeLocalStorage());
 });
 
 afterEach(() => {
   cleanupCtx?.();
   cleanupCtx = null;
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -587,6 +626,267 @@ describe("CaddieOrbSheet — A3: expectReply mic-reopen (fake timers)", () => {
     await flush();
 
     expect(H.startFn.mock.calls.length).toBe(startsBefore);
+  });
+});
+
+describe("CaddieOrbSheet — persona threading", () => {
+  // Owner crux: ONE coherent caddie presence (voice + name + greeting) across
+  // every surface — the orb must never silently discard the golfer's chosen
+  // persona (specs/caddie-orb-persona-consistency-plan.md §1.7).
+
+  it("selected persona reaches the streaming converse call", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Let's go.");
+      return "Let's go.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("what's a good warmup?");
+
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    const [params] = talkToCaddieStreamMock.mock.calls[0];
+    expect(params).toEqual(expect.objectContaining({ personality_id: "hype" }));
+  });
+
+  it("selected persona reaches the JSON fallback", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    talkToCaddieStreamMock.mockImplementationOnce(async () => {
+      throw new MockBeforeFirstByteError();
+    });
+    talkToCaddieMock.mockResolvedValueOnce({ response: "Fallback answer." });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("tell me a fact");
+
+    await waitFor(() => expect(talkToCaddieMock).toHaveBeenCalledTimes(1));
+    const [params] = talkToCaddieMock.mock.calls[0];
+    expect(params).toEqual(expect.objectContaining({ personality_id: "hype" }));
+  });
+
+  it("TTS speaks in the selected persona's voice", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Let's go.");
+      return "Let's go.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("what's a good warmup?");
+
+    await waitFor(() => expect(screen.getByText("Let's go.")).toBeTruthy());
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith("Let's go.", "hype"));
+  });
+
+  it("fallback floor: no localStorage + no server preference sends classic (regression pin)", async () => {
+    getCaddieProfileMock.mockResolvedValueOnce({
+      handicap: null,
+      preferred_personality_id: null,
+      rounds_analyzed: 0,
+    });
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Sure.");
+      return "Sure.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("tell me a golf fact");
+
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    const [params] = talkToCaddieStreamMock.mock.calls[0];
+    expect(params).toEqual(expect.objectContaining({ personality_id: "classic" }));
+  });
+
+  it("server preference wins over localStorage (documented resolution order, end-to-end through the orb)", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    getCaddieProfileMock.mockResolvedValueOnce({
+      handicap: null,
+      preferred_personality_id: "professor",
+      rounds_analyzed: 3,
+    });
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Let's think this through.");
+      return "Let's think this through.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    // Let the profile-resolution microtask (Promise.allSettled) settle before
+    // sending — this is what "server wins" actually depends on.
+    await waitFor(() => expect(getCaddieProfileMock).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await speak("what club should I hit?");
+
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    const [params] = talkToCaddieStreamMock.mock.calls[0];
+    expect(params).toEqual(expect.objectContaining({ personality_id: "professor" }));
+  });
+});
+
+describe("CaddieOrbSheet — speakerLabel (cross-surface identity label)", () => {
+  // Designer's authoritative lane→label semantics
+  // (specs/caddie-cross-surface-identity-label-plan.md §"Designer's lane→label
+  // semantics"): task lane is always "Looper" (the app doing a job); converse/
+  // general lane with a non-classic persona attributes the reply caption to
+  // the short persona name.
+
+  it("general/converse lane + non-classic persona: reply caption shows the short persona name", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Let's go get it.");
+      return "Let's go get it.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("what's a good warmup?");
+
+    expect(await screen.findByText("Let's go get it.")).toBeTruthy();
+    expect(screen.getByText("Hype Man")).toBeTruthy();
+  });
+
+  it("task lane + non-classic persona: reply caption stays 'Looper'", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    const applySpy = vi.fn((): TaskAck => ({ line: "Saturday morning — on it.", dispatched: true }));
+    registerTask({ parse: vi.fn(async () => taskParse({ hasSignal: true, confidence: 0.9 })), apply: applySpy });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "tee-time", listening: false }));
+    await speak("saturday morning");
+
+    expect(await screen.findByText("Saturday morning — on it.")).toBeTruthy();
+    // Both the kicker and this reply caption read "Looper" for the task lane.
+    expect(screen.getAllByText("Looper").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Hype Man")).toBeNull();
+  });
+
+  it("classic persona (explicit): reply caption stays 'Looper'", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "classic");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Sure thing.");
+      return "Sure thing.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("what's my handicap trend");
+
+    expect(await screen.findByText("Sure thing.")).toBeTruthy();
+    expect(screen.getAllByText("Looper").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("unresolved/logged-out (no persona seeded): reply caption stays 'Looper'", async () => {
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Sure.");
+      return "Sure.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("tell me a golf fact");
+
+    expect(await screen.findByText("Sure.")).toBeTruthy();
+    expect(screen.getAllByText("Looper").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("CaddieOrbSheet — converse no-re-greet invariant (specs/caddie-coherence-polish-plan.md §1)", () => {
+  // The converse emptyHint renders only when turns.length === 0. Turns
+  // persist across a RE-SUMMON while the sheet is already open (see the
+  // "reset-on-open only on closed→open" describe above — pre-existing
+  // coverage that pins the SESSION-continuity behavior); this test adds the
+  // piece that block didn't check: the emptyHint specifically must never
+  // reappear once turns.length > 0, mirroring the round page's already-
+  // canonical no-re-greet contract (CaddieSheet.tsx:845).
+  //
+  // NOTE (verified against the actual code, not assumed): a full close() ->
+  // reopen goes through `resetSession()` on the closed→open transition and
+  // deliberately starts a FRESH conversation (turns cleared, hint legitimately
+  // reappears) — that is pre-existing, intentional session-boundary behavior,
+  // not a re-greet regression, and changing it would be a real session-
+  // persistence behavior change out of scope for this copy-only nit.
+  it("turns survive a re-summon while already open; the empty hint never reappears once turns.length > 0", async () => {
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("An answer.");
+      return "An answer.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    // Empty-hint visible pre-conversation.
+    expect(screen.getByText("Tee times, courses, your game — ask me anything.")).toBeTruthy();
+
+    await speak("first question");
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("first question")).toBeTruthy();
+    expect(await screen.findByText("An answer.")).toBeTruthy();
+    // The hint is gone once a turn exists.
+    expect(screen.queryByText("Tee times, courses, your game — ask me anything.")).toBeNull();
+
+    // Re-summon while STILL open (not a close/reopen) — must not reset.
+    act(() => openLooper({ context: "general", listening: false }));
+
+    // The prior conversation survives — no re-greet.
+    expect(screen.getByText("first question")).toBeTruthy();
+    expect(screen.getByText("An answer.")).toBeTruthy();
+    expect(screen.queryByText("Tee times, courses, your game — ask me anything.")).toBeNull();
+  });
+});
+
+describe("CaddieOrbSheet — long custom persona name: hint name matches caption name (specs/caddie-coherence-polish-plan.md §1/§4)", () => {
+  it("emptyHint's persona name is the SAME truncated form as the reply caption's speakerLabel", async () => {
+    // > 16 chars so captionPersonaName's word-boundary truncation kicks in —
+    // exercises the exact overflow case NIT 1 fixes (CaddieOrbSheet.tsx:401
+    // used to interpolate the untruncated caddy.name, disagreeing with the
+    // caption's captionPersonaName(caddy.name) at :389/:753-equivalent).
+    getCaddieProfileMock.mockResolvedValueOnce({
+      handicap: null,
+      preferred_personality_id: null,
+      rounds_analyzed: 0,
+    });
+    vi.mocked((await import("@/lib/caddie/api")).fetchPersonalities).mockResolvedValueOnce([
+      {
+        id: "custom-long",
+        name: "Sunday Money Maker Supreme",
+        description: "Custom",
+        avatar: "🏌️",
+        response_style: "conversational",
+        traits: [],
+      },
+    ]);
+    window.localStorage.setItem("looper.caddiePersonaId", "custom-long");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Let's go get it.");
+      return "Let's go get it.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+
+    // Let persona resolution (fetchPersonalities + profile, Promise.allSettled) settle.
+    await waitFor(() => expect(getCaddieProfileMock).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const hint = await screen.findByText(/here — tee times, courses, your game\. Ask me anything\./);
+    const hintName = hint.textContent?.split(" here —")[0];
+    expect(hintName).toBe("Sunday Money…"); // captionPersonaName truncation, word-boundary + ellipsis
+    expect(hintName!.length).toBeLessThanOrEqual(17);
+
+    await speak("what's a good warmup?");
+    expect(await screen.findByText("Let's go get it.")).toBeTruthy();
+    // Same resolved name attributes the reply caption — never disagree.
+    expect(screen.getByText(hintName!)).toBeTruthy();
   });
 });
 

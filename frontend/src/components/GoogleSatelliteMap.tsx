@@ -29,7 +29,7 @@ import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties }
 // @capacitor/google-maps references HTMLElement at module evaluation time,
 // so it must NOT be imported at the top level (would crash SSR / static build).
 // We dynamic-import it inside the useEffect (client-only) instead.
-import type { GoogleMap, Circle } from "@capacitor/google-maps";
+import type { GoogleMap, Circle, Marker } from "@capacitor/google-maps";
 import {
   Navigation,
   Target,
@@ -65,6 +65,7 @@ import {
   createCameraQueue,
   teeColorFor,
   teeMarkerIconUrl,
+  bunkerMarkerIconUrl,
   type CameraQueue,
   type TapTarget,
 } from "@/lib/map/google-map-helpers";
@@ -273,6 +274,12 @@ export default function GoogleSatelliteMap({
   // addHoleOverlays refresh (mid-hole distance rings) never touches/flickers
   // the plates, and mid-hole hiding of the plates never touches the tee dot.
   const teeShotCircleIdsRef = useRef<string[]>([]);
+  // Bunker glyph markers (distinct PNG icon, not a native circle) — a
+  // SEPARATE id-tracking path from teeShotCircleIdsRef/holeMarkerIdsRef;
+  // same lifecycle as teeShotCircleIdsRef (added/removed together) but
+  // markers and circles are different plugin APIs (addMarkers/removeMarkers
+  // vs addCircles/removeCircles).
+  const teeShotMarkerIdsRef = useRef<string[]>([]);
   // Last-drawn visibility boolean — native circles are only added/removed
   // when this FLIPS (compared on every GPS tick), so GPS jitter inside the
   // tee zone never causes redraw churn.
@@ -433,15 +440,18 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
-   * Remove the tee-shot plate + bunker-dot circles (if any). A SEPARATE id
-   * ref from holeCircleIdsRef (§8.2) — never touched by the per-GPS-tick
-   * clearHoleOverlays/addHoleOverlays refresh.
+   * Remove the tee-shot plate circles + bunker-glyph markers (if any).
+   * SEPARATE id refs from holeCircleIdsRef/holeMarkerIdsRef (§8.2) — never
+   * touched by the per-GPS-tick clearHoleOverlays/addHoleOverlays refresh.
    */
   const clearTeeShotOverlays = useCallback(async () => {
     const m = googleMapRef.current;
-    const ids = teeShotCircleIdsRef.current;
-    if (m && ids.length > 0) await m.removeCircles(ids).catch(() => {});
+    const circleIds = teeShotCircleIdsRef.current;
+    const markerIds = teeShotMarkerIdsRef.current;
+    if (m && circleIds.length > 0) await m.removeCircles(circleIds).catch(() => {});
+    if (m && markerIds.length > 0) await m.removeMarkers(markerIds).catch(() => {});
     teeShotCircleIdsRef.current = [];
+    teeShotMarkerIdsRef.current = [];
   }, []);
 
   /**
@@ -481,11 +491,14 @@ export default function GoogleSatelliteMap({
 
   /**
    * Draw the tee-shot yardage-book overlays (200/150/100 plates + bunker
-   * near-edge dots) for the CURRENT hole — reads `teeShotDataRef` (not a
+   * glyph markers) for the CURRENT hole — reads `teeShotDataRef` (not a
    * parameter) so callers created once (camera queue, GPS-tick handler)
-   * always draw the latest geometry. Native circles only — dynamic carry
-   * TEXT renders as DOM chips (§0 platform constraint: data-URL/canvas
-   * marker icons don't load on iOS).
+   * always draw the latest geometry. Plates are native circles; bunkers are
+   * a bundled PNG glyph (distinct shape from the round plates — a white
+   * circle read as "just another plate", specs/tee-shot-overlays-center-
+   * and-style-plan.md Part B) via the same bundled-icon idiom as the tee
+   * marker (data-URL/canvas icons don't load on iOS). Dynamic carry TEXT
+   * still renders as DOM chips (§0 platform constraint).
    */
   const addTeeShotOverlays = useCallback(async () => {
     const m = googleMapRef.current;
@@ -499,27 +512,33 @@ export default function GoogleSatelliteMap({
         radius: 4,
         fillColor: PLATE_FILL_BY_YARDS[marker.yards],
         fillOpacity: 0.92,
-        strokeColor: "rgba(26,42,26,0.55)",
-        strokeWeight: 1,
-      });
-    }
-    for (const bunker of data.bunkers) {
-      circles.push({
-        center: bunker.nearEdge,
-        radius: 3,
-        fillColor: "#f2efe6",
-        fillOpacity: 0.9,
-        strokeColor: "rgba(26,42,26,0.55)",
-        strokeWeight: 1,
+        strokeColor: "rgba(26,42,26,0.65)",
+        strokeWeight: 1.5,
       });
     }
 
-    if (circles.length === 0) {
+    const markers: Marker[] = data.bunkers.map((bunker) => ({
+      coordinate: bunker.nearEdge,
+      iconUrl: bunkerMarkerIconUrl(),
+      iconSize: { width: 22, height: 22 },
+      iconAnchor: { x: 11, y: 11 },
+      isFlat: true,
+      zIndex: 4, // under the tee marker's zIndex 5
+    }));
+
+    if (circles.length > 0) {
+      const ids = await m.addCircles(circles).catch(() => [] as string[]);
+      teeShotCircleIdsRef.current = ids;
+    } else {
       teeShotCircleIdsRef.current = [];
-      return;
     }
-    const ids = await m.addCircles(circles).catch(() => [] as string[]);
-    teeShotCircleIdsRef.current = ids;
+
+    if (markers.length > 0) {
+      const ids = await m.addMarkers(markers).catch(() => [] as string[]);
+      teeShotMarkerIdsRef.current = ids;
+    } else {
+      teeShotMarkerIdsRef.current = [];
+    }
   }, []);
 
   /**
@@ -1163,13 +1182,21 @@ export default function GoogleSatelliteMap({
                   border: `1px solid ${T.hairline}`,
                   borderRadius: 10,
                   padding: "6px 10px",
-                  boxShadow: "0 4px 14px rgba(0,0,0,0.22)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
                   textAlign: "center",
                   minWidth: 64,
                 }}
               >
-                <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
-                  {b.side === "C" ? "Carry" : `${b.side} Carry`}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                  {/* Sand-bean swatch — binds the chip to the map's bunker glyph,
+                      same asymmetric silhouette as bunker-marker.png. */}
+                  <svg width="12" height="12" viewBox="0 0 96 96" aria-hidden="true" style={{ flexShrink: 0 }}>
+                    <circle cx="38" cy="52" r="20" fill="#d9c492" stroke={T.ink} strokeWidth="8" />
+                    <circle cx="58" cy="46" r="15" fill="#d9c492" stroke={T.ink} strokeWidth="8" />
+                  </svg>
+                  <span style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
+                    {b.side === "C" ? "Carry" : `${b.side} Carry`}
+                  </span>
                 </div>
                 <div style={{ fontFamily: T.serif, fontSize: 18, lineHeight: 1.15, color: T.ink }}>
                   {b.front === b.back ? `${b.front}` : `${b.front} / ${b.back}`}
