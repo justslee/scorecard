@@ -33,11 +33,20 @@ REJECTED (GA Realtime has no temp param; probe hardcodes 0.7 → temp change unf
 falsifiable endorsed_club direction extractor in substance.py; acceptance = 5/5 endorsed_club=driver,
 distinct_endorsements=1 on AFTER keyed run; 3 multi-turn goldens still green (caddie still reconsiders).
 
-## AWAITING builder @1730fd7 on specs/caddie-advice-stability-tee-shot-plan.md.
-Builder implements the plan on integration/next, commits + pushes. On return → reviewer (fresh
-adversarial: does anchor make caddie rigid / regress numbers-coherence/miss-side) + qa (gates
-all SUCCESS on pushed head SHA + npm run test:caddie-experience + the AFTER consistency evidence).
-If ship recut mid-cycle → HOLD push, re-land on fresh branch.
+Builder DONE @e3026b5 (+ progress 67dd7be), pushed. Offline gates all green per builder:
+backend pytest tests/eval + pin tests 155 passed; ruff clean; npm run test:caddie-experience
+223 passed; full non-DB backend suite 1843 passed; frontend lint+tsc clean. Builder flagged +
+ignored injection attempts in tool output. SCRUTINY ITEM for reviewer: builder tightened two
+guards in tests/test_realtime_grounding.py (bare "Last recommendation" → the "Last recommendation:"
+LINE) because DECISION_GROUNDING_RULE's own quoted 'Last recommendation' label now always appears
+— reviewer must confirm this is a precision fix, NOT a weakened/gamed assertion.
+
+## AWAITING reviewer + qa @67dd7be (caddie-advice-stability-tee-shot).
+Reviewer: fresh adversarial diff — does the anchor make the caddie rigid (refuse "what about X?"
+/ challenge-and-admit)? regress numbers-coherence/miss-side/positioning? try to construct a
+post-fix flip. Scrutinize the test_realtime_grounding.py guard change (test-edit red flag).
+QA: run all offline gates, confirm state on pushed head 67dd7be. Then eng-lead runs keyed AFTER
+run_consistency.py on-box. If BLOCKING → re-dispatch builder. If ship recut → HOLD push.
 
 ## CYCLE 130 — builder DONE @e3026b5 (integration/next, pushed). Implemented the plan exactly:
 - voice_prompts.py: new DECISION_GROUNDING_RULE constant (verbatim plan §3.2 wording, all 4 pin
