@@ -17936,3 +17936,15 @@ run before writing). Ensure clearTapMarker (same id space) is safe under it. Fol
 draggingRef=false in clearTapMarker (else mid-drag marker removal permanently disables live-follow).
 Add a REAL concurrency test (not grep) proving serialization / no id orphaning.
 Re-dispatching builder on 8685ed7 (60765e4 code + copy). Then re-review (reviewer re-checks the mutex).
+
+## AWAITING UPDATE — builder fix @5ac93b6; re-review + build gate — 2026-07-16
+Builder fixed the BLOCKING race @5ac93b6: added createSerialRunner() (FIFO async mutex, distinct
+from the coalescing camera queue) in google-map-helpers.ts; placeTarget body + clearTapMarker both
+route through ONE tapWriterRunnerRef; nested clear uses skipQueue:true to avoid self-deadlock;
+draggingRef reset in clearTapMarker; real behavioral concurrency test (deferred-based). Gates green
+per builder: tsc/lint clean, vitest 773/773, voice 278/278 (next build NOT re-run by builder).
+AWAITING: reviewer (fresh) re-verify the mutex actually serializes + skipQueue deadlock-avoidance +
+no new race/deadlock + test genuinely exercises concurrency. eng-lead runs `next build` in parallel.
+  reviewer SHIP + build OK -> LAND: fetch origin/integration/next, ff my branch commits onto it,
+  push (never force), update PR #143 checklist NOTICEABLE, close backlog #8. Head to land: 5ac93b6.
+  qa/designer NOT re-run (no visible/UI change since; build verified separately). NOT shipping/pinging.
