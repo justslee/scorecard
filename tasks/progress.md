@@ -17671,3 +17671,16 @@ sanity guard; caddie guard PAR_SANITY_MIN_YARDS_FOR_PAR3=280 verify fires].
 Plugin API confirmed: Marker.isFlat(default false=billboard), draggable, setOnMarkerDrag(End)Listener.
 NEXT: Plan(fable) → specs plan; then builder; reviewer; qa; designer(BLOCKING). Rebase onto
 origin/integration/next before push (slice-2 lane concurrent). Do NOT ship/ping.
+
+## AWAITING UPDATE (map-fieldtest-v119) — 2026-07-16
+Plan DONE (Fable) → specs/map-fieldtest-v119-plan.md (committed 4083b0a). Builder DISPATCHED
+(agent a39d352338f788935) against the plan, on branch fix/map-fieldtest-v119 in THIS worktree.
+Root-cause verdicts locked: #1 isFlat:true→false billboard; #2 two-part (MultiPolygon latent +
+lateral-45/cap-4 binding; live Overpass probe required for relation/natural=sand gap); #3
+two-writer race on holeMarkerIdsRef (GPS tick bypasses camera queue)→single-writer; #4 native
+draggable + shared placeTarget seam; #5 Red-11 par 4 in OSM but stale in DB → displayPar guard
+(threshold 280) NOW + sanctioned staging RE-INGEST as ops follow-up.
+NEXT after builder: reviewer(adversarial + /code-review on #2/#4) + qa(gates) in parallel →
+designer(BLOCKING: #1 upright on south hole, #4 affordance) → rebase onto origin/integration/next
+→ add to bundle PR (NOTICEABLE). Do NOT ship/ping. On resume: reconcile from branch
+origin/fix/map-fieldtest-v119, check builder's commits, do NOT re-run finished children.
