@@ -16936,7 +16936,7 @@ as round caddie) and thread personaId into both API calls + the TTS speak; coher
 sane fallback when none chosen. Watch one-mic/orb + dedup/attribution invariants; NO VAD/mic changes.
 
 ## AWAITING — cycle 128
-Awaiting Fable plan (specs/caddie-orb-persona-consistency-plan.md) covering P1 persona wiring +
+Fable plan landed 1f803be. Awaiting BUILDER on integration/next (both P1s). On builder return → reviewer + qa + designer (BLOCKING) → land + PR #141 + backlog both done.
 P2 realtime voice-validity clamp. On plan return → dispatch builder on integration/next → reviewer
 + qa + designer (designer BLOCKING, persona coherence is user-facing) → land + PR #141 checklist +
 backlog both P1s done. HOLD pushes if the branch is recut / #141 merges mid-cycle (land on fresh
