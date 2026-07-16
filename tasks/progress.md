@@ -52,6 +52,58 @@ origin/integration/next, rebase this branch onto the new tip, re-verify behavior
 (stray-marker race during GPS ticks) against the harness, finalize the report, THEN push/land.
 Until both lanes land: HOLD all pushes. Do NOT ship/ping.
 
+## 2026-07-16 DONE (builder) — oncourse-gps-readiness harness built, ONCOURSE_READINESS.md written, HOLD for push
+specs/oncourse-gps-readiness-plan.md implemented in the isolated worktree
+(worktree-agent-a15e1652010f37dc7). NOT pushed — lane lead owns landing per the plan's HOLD.
+
+Built (all NEW files, per the hard constraint):
+- `ops/harness/oncourse-sim/extract_red_trace.py` + `build_bethpage_red_course.py` (stdlib
+  Python, offline) — regenerate + verified: 18/18 Red holes, every hole has >=1 green, 167
+  features total (18 hole/45 tee/18 green/19 fairway/67 bunker), yardages 155-555/hole
+  (straight-line centerline proxy — Red holes carry no `dist` OSM tag; documented in README).
+  142 walking waypoints across all 18 holes.
+- `ops/harness/oncourse-sim/drive_trace.sh` (bash, set -euo pipefail) — simctl location
+  set/start(walk)/clear + screenshot per station, `--loss` mode for the from-tee fallback.
+- `ops/harness/oncourse-sim/README.md` — full re-run recipe, auth-blocker note, diagnostic
+  patch instructions + revert.
+- `ops/harness/oncourse-sim/diagnostic/oncourse-diag.patch` — the (reverted, never-live)
+  shim: `mapped-course-api.ts` fetchMappedCourse short-circuit to the fixture,
+  `RoundPageClient.tsx` diagnostic `<pre>` overlay, `page.tsx` self-seed+redirect (gated on
+  `NEXT_PUBLIC_ONCOURSE_DIAG=1`, build-time-only — this is the one file beyond the plan's two
+  named files; documented + justified in the harness README since simctl has no tap/type
+  primitive to reach a specific round any other way).
+- `ONCOURSE_READINESS.md` (repo root) — the full checklist.
+
+On-device attempt (Step 2/3): Debug build via xcodebuild SUCCEEDED (`/tmp/simspm`,
+UDID D4DB2397-...), install/grant-location/launch all succeeded, home screen rendered
+correctly (evidence/00-launch.png). The diagnostic self-seed-and-redirect flow then
+oscillated home<->blank-white and never settled on the round map within the timebox — a
+`log stream` capture showed rapid `didStartProvisionalLoadForMainFrame` events (loop-shaped)
+but no readable JS exception (iOS log stream doesn't surface Capacitor console.log/exceptions;
+no headless Safari Web Inspector available in this environment to pull the real stack).
+Per the plan's explicit timebox clause, reported honestly as NOT-VERIFIABLE on-device this
+pass (rows 1 and 3) rather than faked — evidence/01-round-nav-incomplete-blank.png. All
+diagnostic edits reverted; confirmed via `git status` (zero diagnostic edits to app source).
+
+Behaviors 2 (yardage card tracks GPS) and 5 (caddie GPS grounding) — the owner's core
+concerns — are **PASS**, authoritatively via the named pure-logic vitest gates (258/258
+across course-coordinates/fcb-tiles/hole-yardage/bethpage-hole3/tee-shot-overlays/
+google-map-helpers/satellite-helpers) + a direct code audit tracing the one shared
+`resolveHoleYardage`/`fcbLive` path from GPSWatcher through to both the yardage tiles and
+CaddieSheet — exactly as the plan pre-authorizes even without a completed on-device drive.
+
+Filed 2 backlog items (targeted Edits, no json.load/dump — duplicate-key-safe):
+`gps-auto-advance-decision` (owner decision, behavior 4) and `tap-target-gps-origin`
+(P2 map-lane follow-up, behavior 8). Neither built — both live in GoogleSatelliteMap.tsx.
+
+Gates: frontend lint clean, tsc clean, voice-tests smoke 278/278, `next build` clean
+(19/19 static pages); backend `ruff check .` clean. backlog.json validated as parseable
+JSON post-edit with no duplicate ids (89 total items, was 87).
+
+Next: eng-lead/reviewer picks this up per the existing AWAITING note above — reviewer pass
+on the diagnostic patch (never-live, but review the shim logic) + qa gates on the pushed
+head; still HOLD pushing until fix/map-fieldtest-v119 lands (per the AWAITING note).
+
 ## 2026-07-16 DONE — multiuser-p0-client-identity landed on integration/next (SILENT)
 Builder implemented specs/multi-user-epic-plan.md §3.5 (client identity, storage
 namespacing, offline-leak fix) per the multiuser-p0-client-identity backlog item.

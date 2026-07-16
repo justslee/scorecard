@@ -1032,6 +1032,26 @@
       "status": "ready",
       "depends_on": [],
       "why": "specs/tournament-per-round-format-course-plan.md §8 (per-round COURSE plan, cycle 120): standings/settlement are deliberately course-blind — computeStandings applies one manually-set handicap per player to every round regardless of which course it was played on. A true course-handicap adjustment (course rating/slope → different course handicap at Bethpage Black vs Bethpage Red) needs rating/slope data the app doesn't store today. Honest follow-up, NOT built as part of the course-plan feature — do not silently \"adjust\" net scores without real rating data."
+    },
+    {
+      "id": "gps-auto-advance-decision",
+      "title": "DECISION: enable GPS nearest-green auto-advance on the round page, or keep swipe/tap-only",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "specs/oncourse-gps-readiness-plan.md (owner's Bethpage Red readiness pass, 2026-07-16), behavior #4 of the GPS-consumer audit: auto-advance-to-next-hole-on-walk logic already exists in GoogleSatelliteMap.tsx handlePositionUpdate (948-958) but is disabled by design — autoDetectHole={false} at both InlineHoleDiagram.tsx:306 and RoundPageClient.tsx:2658 — so today holes change only by swipe/tap. NEEDS AN OWNER DECISION before building: enabling nearest-green auto-detect risks mis-jumping between adjacent greens on a tight routing (e.g. holes whose greens sit close together, common at classic A.W. Tillinghast-era designs like Bethpage). Not changed this pass — the map-lane file (GoogleSatelliteMap.tsx) is out of scope for the readiness harness."
+    },
+    {
+      "id": "tap-target-gps-origin",
+      "title": "Tap-target \"from tee\" measuring line should origin at the player's GPS position when on-hole, not the tee",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "specs/oncourse-gps-readiness-plan.md (owner's Bethpage Red readiness pass, 2026-07-16), behavior #8 of the GPS-consumer audit: GoogleSatelliteMap.tsx's tap-to-measure handler (tap 782-824) hardcodes the origin at the tee (fromGps=false) even when the golfer's live GPS position is known and on-hole — the FROM number and the drawn line should originate at the player, not the tee, in that case. The distance-from-point helper already supports an arbitrary origin; this is a bounded follow-up (P2) confined to GoogleSatelliteMap.tsx, a map-lane hot file (fix/map-fieldtest-v119) — deliberately NOT touched by this harness pass to avoid conflict."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
