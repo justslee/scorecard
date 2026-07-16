@@ -16828,3 +16828,53 @@ Turned it into an 8-dimension MEASURABLE bar + landed the first improvements.
   a user-facing change lands (the fable→cedar repoint counts). Then file backlog items (B/C/D) via
   targeted edits + diff-check, rebase onto origin/integration/next, push to add to PR #141.
 - DO NOT touch realtime.ts / realtime-ordering.ts (dedup lane owns them). Reconcile from branch log.
+
+## CYCLE 127 DONE (builder) — caddie-experience-harness LAND-NOW scope implemented on the worktree
+Implemented the full LAND-NOW scope (plan §8) on branch `worktree-agent-a86844bf0a0da63e0`, 3
+commits (ddd046a, a16134c, 110eb10 — not yet rebased onto `integration/next`, per instructions the
+builder never rebases; eng-lead does that).
+
+- **The ONE correctness fix, confirmed RED→GREEN:** `personalities.py:123` The Professor's
+  `voice_id="fable"` (a legacy OpenAI TTS-only voice, INVALID for Realtime — enum error, no silent
+  fallback) → `voice_id="cedar"`. New `backend/tests/eval/test_realtime_session_config.py` pins the
+  closed valid-Realtime-voice set for every PERSONALITIES entry + speed==1.15 + a fail-closed
+  voice-key guard. Manually reverted to `fable`, ran the test, confirmed RED
+  (`invalid = {'professor': 'fable'}`), reverted back to `cedar`, confirmed GREEN. Also tightened
+  the stale `types.py` voice_id comment that still listed fable/onyx/nova as if valid.
+- **Multi-turn context-retention (dims 2/3):** `Situation.history` seeded into the synthetic
+  RoundSession so the REAL `_build_session_voice_prompt` renders it; new `history_renders_in_order`
+  tier1 check + 3 golden scenarios + 4 teeth mutants (drop/swap/reorder/pass).
+- **Consistency (dim 5):** `substance.py` pure extractor (reuses `checks._parse_mentioned_club`) +
+  `substance_variance` diff + `test_substance_teeth.py` (7 tests incl. 3 RED-proofs) +
+  `consistency_probes.jsonl` (3 probes) + gated `run_consistency.py` (refuses without keys, exit 2
+  confirmed via CLI).
+- **Latency (dim 7):** gated `run_latency.py` (redacts client_secret, refuses without keys, exit 2
+  confirmed via CLI) + `test_gated_tools.py` (filename-glob pins + 6 refusal tests for both gated
+  runners).
+- **Named suite (dims 1/8):** `caddie-experience-suite.ts` manifest (16 frontend + 3 backend entries,
+  repo-root-relative) + manifest guard test (existence + dimension-coverage + package.json-wiring) +
+  `vitest.caddie-experience.config.ts` (had to force-set `test.include` AFTER mergeConfig — vitest's
+  mergeConfig CONCATENATES arrays rather than replacing, verified empirically; without the fix the
+  named gate silently ran the whole 125-file suite instead of the focused 16) + `npm run
+  test:caddie-experience` script. RED-proof performed on the manifest guard (bad path) and reverted.
+- **Reliability glitch tests (dim 6):** `CaddieSheet.realtime-glitch.test.tsx`, 4 tests for
+  reconnect/hole-change WHILE an answer is mid-stream (existing coverage only fired these BETWEEN
+  turns). Manual mutation drill performed (unconditional-append mutant in useCaddieLiveSession.ts's
+  upsert) — confirmed RED on test 3 only (duplicate finalized bubble), reverted clean.
+  **Two plan-wording deviations found by running against real behavior** (documented in the file
+  header + CADDIE_EXPERIENCE.md, NOT fixed — out of scope for this SILENT item): (1) fallback
+  honestly drops an interrupted/never-finished partial rather than preserving it (existing
+  `!m.partial` filter, a no-fake-data convention already in the code); (2) a hole change landing
+  inside the reconnect window can legitimately double-send `sendContext` (both calls correct, never
+  stale) — flagged as a minor `useCaddieLiveSession.ts` follow-up, not fixed here.
+- Root `CADDIE_EXPERIENCE.md` + `backend/tests/eval/README.md` updates document all of the above,
+  the gate commands, the gated-tool commands, and the honest (TBD, no keys in this env) baseline
+  latency table.
+- **Gates, all green:** frontend lint clean, `tsc --noEmit` clean, `npm run test:caddie-experience`
+  217/217, `npm run test` 2438/2438, `voice-tests/runner.ts --smoke` 278/278; backend `ruff check .`
+  clean, `uv run pytest tests/eval` 105/105, `uv run pytest --ignore=tests/integration` 2500/2500
+  (broader offline suite). No DB container started; `tests/integration/` untouched, left for CI.
+- On return: reviewer (RED→GREEN evidence honest / dedup-lane files untouched / the 2 documented
+  plan deviations are sound, not corner-cutting) + qa (gates SUCCESS on pushed head) + designer
+  (SILENT — no user-facing surface; the fable→cedar swap is audible but not UI, flag if designer
+  wants a look anyway) + rebase onto `integration/next`, push.
