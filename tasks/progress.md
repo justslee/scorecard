@@ -21,12 +21,13 @@ check + all boot guards + courses_mapped §3.3.0 carve-out, so those are DONE, n
      table is the guarded follow-up that MUST land before APP_ACCESS_MODE=open.
   4. NEXT_PUBLIC_AUTH_BYPASS prod-build CI assertion (§3.4 fail-open flags) — assert unset.
 
-AWAITING builder on integration/next. On builder return: run reviewer (adversarial: forge/replay
-webhook, revocation bypass, boot-guard fail-open) + /security-review (webhook sig/replay/least-priv)
-+ qa (gates SUCCESS on pushed head + test:caddie-experience). BLOCKING → re-dispatch builder;
-green → open fresh bundle PR (SILENT/dark), update progress+backlog (slice 3 done, note slice 4
-multiuser-p0-keychain-token readiness). Do NOT ship/ping (dark slice). Reconcile from branch state
-(git log origin/integration/next) if resumed.
+Builder LANDED slice 3 @ f4eda94 (webhooks.py + revocation.py + require_member wiring + AUTH_BYPASS
+prebuild guard; migrations DESIGNED not written; 2593 backend non-DB tests + frontend gates green).
+NOW AWAITING reviewer (a4f4cf72, adversarial + /security-review + /code-review) + qa (acf73d78,
+gates + AUTH_BYPASS negative + caddie-experience) on f4eda94, in parallel. On return: BLOCKING →
+re-dispatch builder then re-review; both green → open fresh bundle PR (SILENT/dark), update
+progress+backlog (slice 3 done, note slice 4 multiuser-p0-keychain-token readiness). Do NOT
+ship/ping (dark slice). Reconcile from branch (git log origin/integration/next) if resumed.
 
 ## 2026-07-16 DONE — GPS/on-course readiness verification (isolated worktree) [audit record below; RESOLVED block follows]
 Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
