@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-16 AWAITING — multiuser-p0-migrations-revocation (slice 3), SILENT/dark, on integration/next @ bb2b9ec base
+Owner feedback checked FIRST: no cards in Needs Review; Bundle #143 (v1.1.10 weekend Red build)
+Shipped today, only our own ship-comment on it — owner plays Bethpage Red this weekend so NO field
+feedback exists yet to preempt. Board clean. No open bundle PR (opening fresh when slice 3 lands).
+
+Slice 3 scope (grounded — slice 1 in #142 already landed require_member + azp/authorized-parties
+check + all boot guards + courses_mapped §3.3.0 carve-out, so those are DONE, not this slice):
+  1. Migration DESIGN ONLY (backfill A, tighten B, revoked_users CREATE) — NO Alembic file written
+     (guarded; owner-approval-gated). DETERMINATION: all three deferrable to the open-mode flip
+     (owner mode is dark/single-user, revocation inert), so NO owner STOP needed now — designs
+     presented for approval at flip time.
+  2. Clerk webhook receiver POST /api/webhooks/clerk — Svix-signature-verified + replay protection,
+     NOT member-gated, handles user.deleted/user.banned/session revocation → revocation store.
+  3. Revocation mechanism — in-process store (the 60s-cache layer) + require_member check reachable
+     ONLY in open mode (owner mode short-circuits = byte-identical/dark); durable revoked_users DB
+     table is the guarded follow-up that MUST land before APP_ACCESS_MODE=open.
+  4. NEXT_PUBLIC_AUTH_BYPASS prod-build CI assertion (§3.4 fail-open flags) — assert unset.
+
+AWAITING builder on integration/next. On builder return: run reviewer (adversarial: forge/replay
+webhook, revocation bypass, boot-guard fail-open) + /security-review (webhook sig/replay/least-priv)
++ qa (gates SUCCESS on pushed head + test:caddie-experience). BLOCKING → re-dispatch builder;
+green → open fresh bundle PR (SILENT/dark), update progress+backlog (slice 3 done, note slice 4
+multiuser-p0-keychain-token readiness). Do NOT ship/ping (dark slice). Reconcile from branch state
+(git log origin/integration/next) if resumed.
+
 ## 2026-07-16 DONE — GPS/on-course readiness verification (isolated worktree) [audit record below; RESOLVED block follows]
 Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
 Bethpage Red this weekend; test + make production-ready. Lane: audit + reusable sim harness
