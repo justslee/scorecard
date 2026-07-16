@@ -65,10 +65,10 @@ import {
   createCameraQueue,
   teeColorFor,
   teeMarkerIconUrl,
-  bunkerMarkerIconUrl,
   type CameraQueue,
   type TapTarget,
 } from "@/lib/map/google-map-helpers";
+import { buildBunkerMarkers } from "@/lib/map/marker-options";
 import { fetchWeather } from "@/lib/caddie/api";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { T } from "@/components/yardage/tokens";
@@ -477,7 +477,11 @@ export default function GoogleSatelliteMap({
           iconUrl: teeMarkerIconUrl(slug),
           iconSize: { width: 30, height: 30 },
           iconAnchor: { x: 15, y: 15 }, // centered — a dot, not a pin
-          isFlat: true,
+          // Billboard, not flat-to-ground — one honest convention with the
+          // bunker badges (buildBunkerMarkers): only native circles lie flat.
+          // Cosmetically a no-op (symmetric disc) but keeps the marker
+          // orientation model uniform (v1.1.9 field-test fix, Item 1).
+          isFlat: false,
           zIndex: 5,
         })
         .catch(() => null);
@@ -520,14 +524,10 @@ export default function GoogleSatelliteMap({
       });
     }
 
-    const markers: Marker[] = data.bunkers.map((bunker) => ({
-      coordinate: bunker.nearEdge,
-      iconUrl: bunkerMarkerIconUrl(bunker.letter),
-      iconSize: { width: 26, height: 26 }, // 22 -> 26: room for the coin badge
-      iconAnchor: { x: 13, y: 13 },
-      isFlat: true,
-      zIndex: 4, // under the tee marker's zIndex 5
-    }));
+    // Pure seam (buildBunkerMarkers, marker-options.ts) so the marker option
+    // shape — including isFlat: false (billboard, see its docstring) — is
+    // unit-assertable without a native map.
+    const markers: Marker[] = buildBunkerMarkers(data.bunkers);
 
     if (circles.length > 0) {
       const ids = await m.addCircles(circles).catch(() => [] as string[]);
