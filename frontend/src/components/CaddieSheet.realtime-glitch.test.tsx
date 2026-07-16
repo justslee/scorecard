@@ -208,11 +208,63 @@ vi.mock("@/lib/voice/warm-session", () => ({
 }));
 
 import CaddieSheet from "./CaddieSheet";
+import { useDetachedCaddieLive } from "@/hooks/useDetachedCaddieLive";
 import type { CaddiePersonalityInfo } from "@/lib/caddie/types";
 
 const PERSONAS: CaddiePersonalityInfo[] = [
   { id: "strategist", name: "The Strategist", description: "Numbers", avatar: "📊", response_style: "brief", traits: [] },
 ];
+
+/**
+ * Host — the real owner of the live session post-detach
+ * (specs/caddie-detach-and-language-pin-plan.md, Item B §B6 T2). Mirrors
+ * RoundPageClient's wiring — see CaddieSheet.realtime.test.tsx's identically
+ * named/documented Host for the full rationale (synchronous render-phase
+ * `start()`, moved-up fallback seeding effect). Copied verbatim per this
+ * file's existing "scaffolding copied from CaddieSheet.realtime.test.tsx"
+ * convention (top-of-file note).
+ */
+function Host(props: React.ComponentProps<typeof CaddieSheet>) {
+  const detached = useDetachedCaddieLive({
+    roundId: props.roundId,
+    personaId: props.personaId,
+    holeNumber: props.holeNumber,
+    holePar: props.holePar,
+    holeYards: props.holeYards,
+    yardageBasis: props.yardageBasis,
+    teeName: props.teeName,
+    resolveOpeningShot: props.resolveOpeningShot,
+    sheetOpen: props.open,
+    eligible: props.sessionActive,
+  });
+  if (props.open) detached.start();
+
+  const seededFallbackRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!(detached.liveOn && detached.session.fellBack)) return;
+    if (seededFallbackRef.current) return;
+    if (detached.session.messages.length === 0) return;
+    if (props.convHistory.length > 0) return;
+    seededFallbackRef.current = true;
+    const seeded = detached.session.messages
+      .filter((m) => !m.partial && m.text.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.text }));
+    props.onUpdateConvHistory(seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detached.liveOn, detached.session.fellBack, detached.session.messages, props.convHistory.length]);
+  React.useEffect(() => {
+    if (!detached.liveOn) seededFallbackRef.current = false;
+  }, [detached.liveOn]);
+
+  return (
+    <CaddieSheet
+      {...props}
+      live={detached.session}
+      liveOn={detached.liveOn}
+      onEndLive={detached.end}
+    />
+  );
+}
 
 function buildProps(
   overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {},
@@ -232,13 +284,25 @@ function buildProps(
     personaId: "strategist",
     personas: PERSONAS,
     onSelectPersona: vi.fn(),
+    live: {
+      liveState: "connecting",
+      fellBack: false,
+      messages: [],
+      status: "idle",
+      muted: false,
+      toggleMute: vi.fn(),
+      resume: vi.fn(),
+      stop: vi.fn(),
+    },
+    liveOn: false,
+    onEndLive: vi.fn(),
     ...overrides,
   };
 }
 
 function renderSheet(overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {}) {
   const props = buildProps(overrides);
-  const utils = render(<CaddieSheet {...props} />);
+  const utils = render(<Host {...props} />);
   return { ...utils, props };
 }
 
@@ -252,10 +316,10 @@ function renderControlledSheet(overrides: Partial<React.ComponentProps<typeof Ca
   let rerenderFn: (ui: React.ReactElement) => void = () => {};
   const onUpdateConvHistory = vi.fn((history: React.ComponentProps<typeof CaddieSheet>["convHistory"]) => {
     props.convHistory = history;
-    rerenderFn(<CaddieSheet {...props} />);
+    rerenderFn(<Host {...props} />);
   });
   props.onUpdateConvHistory = onUpdateConvHistory;
-  const utils = render(<CaddieSheet {...props} />);
+  const utils = render(<Host {...props} />);
   rerenderFn = utils.rerender;
   return { ...utils, props };
 }
@@ -417,7 +481,7 @@ describe("CaddieSheet live mode — glitch during a streaming answer", () => {
     expect(screen.getByText("Smooth 7")).toBeTruthy();
 
     // ...the player walks to the next hole WHILE it's still streaming.
-    rerender(<CaddieSheet {...props} holeNumber={4} holePar={4} holeYards={380} />);
+    rerender(<Host {...props} holeNumber={4} holePar={4} holeYards={380} />);
     await flush();
 
     // Exactly ONE new sendContext for the new hole — no double-send.
@@ -474,7 +538,7 @@ describe("CaddieSheet live mode — glitch during a streaming answer", () => {
 
     // Hole change WHILE the reconnect is still in flight (before its
     // 'connected' status ever arrives).
-    rerender(<CaddieSheet {...props} holeNumber={5} holePar={3} holeYards={178} />);
+    rerender(<Host {...props} holeNumber={5} holePar={3} holeYards={178} />);
     await flush();
 
     // The reconnect client finally connects.

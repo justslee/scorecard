@@ -211,6 +211,7 @@ vi.mock("@/lib/voice/warm-session", () => ({
 }));
 
 import CaddieSheet from "./CaddieSheet";
+import { useDetachedCaddieLive } from "@/hooks/useDetachedCaddieLive";
 import type { CaddiePersonalityInfo, VoiceCaddieMessage } from "@/lib/caddie/types";
 import { REALTIME_IDLE_DISCONNECT_MS } from "@/lib/voice/idle-timer";
 
@@ -219,6 +220,70 @@ type FakeClient = InstanceType<typeof realtimeMock.FakeRealtimeCaddieClient>;
 const PERSONAS: CaddiePersonalityInfo[] = [
   { id: "strategist", name: "The Strategist", description: "Numbers", avatar: "📊", response_style: "brief", traits: [] },
 ];
+
+/**
+ * Host — the real owner of the live session post-detach
+ * (specs/caddie-detach-and-language-pin-plan.md, Item B §B6 T2). Mirrors
+ * RoundPageClient's wiring: calls the REAL `useDetachedCaddieLive` (which
+ * composes the REAL `useCaddieLiveSession` against this file's faked
+ * RealtimeCaddieClient/warmSession) and passes `live`/`liveOn`/`onEndLive`
+ * down to CaddieSheet as props — CaddieSheet itself never mints anything.
+ * `detached.start()` is invoked SYNCHRONOUSLY during render whenever `open`
+ * is true — this mirrors RoundPageClient's real `openCaddieSheet()`, which
+ * calls `detached.start()` and `setCaddieOpen(true)` in the SAME synchronous
+ * event handler (one batched render), NOT via a `useEffect` reacting to
+ * `open` a render later (that would race CaddieSheet's own classic
+ * auto-open effect, which runs on the FIRST commit before any later effect
+ * could flip `liveOn`). `start()` is idempotent (a no-op once `liveOn` is
+ * already true), so calling it unconditionally on every render while `open`
+ * is true is safe — React's documented "adjust state during render" pattern.
+ */
+function Host(props: React.ComponentProps<typeof CaddieSheet>) {
+  const detached = useDetachedCaddieLive({
+    roundId: props.roundId,
+    personaId: props.personaId,
+    holeNumber: props.holeNumber,
+    holePar: props.holePar,
+    holeYards: props.holeYards,
+    yardageBasis: props.yardageBasis,
+    teeName: props.teeName,
+    resolveOpeningShot: props.resolveOpeningShot,
+    sheetOpen: props.open,
+    eligible: props.sessionActive,
+  });
+  if (props.open) detached.start();
+
+  // Fallback-continuity SEEDING effect (specs/caddie-detach-and-language-pin
+  // -plan.md §B2) — moved OUT of CaddieSheet and up to the owner
+  // (RoundPageClient in production; this Host in tests) so it runs even
+  // while the sheet is closed, before `liveOn`'s auto-release wipes
+  // `session.messages`.
+  const seededFallbackRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!(detached.liveOn && detached.session.fellBack)) return;
+    if (seededFallbackRef.current) return;
+    if (detached.session.messages.length === 0) return;
+    if (props.convHistory.length > 0) return;
+    seededFallbackRef.current = true;
+    const seeded = detached.session.messages
+      .filter((m) => !m.partial && m.text.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.text }));
+    props.onUpdateConvHistory(seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detached.liveOn, detached.session.fellBack, detached.session.messages, props.convHistory.length]);
+  React.useEffect(() => {
+    if (!detached.liveOn) seededFallbackRef.current = false;
+  }, [detached.liveOn]);
+
+  return (
+    <CaddieSheet
+      {...props}
+      live={detached.session}
+      liveOn={detached.liveOn}
+      onEndLive={detached.end}
+    />
+  );
+}
 
 function buildProps(
   overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {},
@@ -238,13 +303,25 @@ function buildProps(
     personaId: "strategist",
     personas: PERSONAS,
     onSelectPersona: vi.fn(),
+    live: {
+      liveState: "connecting",
+      fellBack: false,
+      messages: [],
+      status: "idle",
+      muted: false,
+      toggleMute: vi.fn(),
+      resume: vi.fn(),
+      stop: vi.fn(),
+    },
+    liveOn: false,
+    onEndLive: vi.fn(),
     ...overrides,
   };
 }
 
 function renderSheet(overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {}) {
   const props = buildProps(overrides);
-  const utils = render(<CaddieSheet {...props} />);
+  const utils = render(<Host {...props} />);
   return { ...utils, props };
 }
 
@@ -261,10 +338,10 @@ function renderControlledSheet(overrides: Partial<React.ComponentProps<typeof Ca
   let rerenderFn: (ui: React.ReactElement) => void = () => {};
   const onUpdateConvHistory = vi.fn((history: VoiceCaddieMessage[]) => {
     props.convHistory = history;
-    rerenderFn(<CaddieSheet {...props} />);
+    rerenderFn(<Host {...props} />);
   });
   props.onUpdateConvHistory = onUpdateConvHistory;
-  const utils = render(<CaddieSheet {...props} />);
+  const utils = render(<Host {...props} />);
   rerenderFn = utils.rerender;
   return { ...utils, props };
 }
@@ -391,18 +468,18 @@ describe("CaddieSheet live mode — opening turn", () => {
     expect(client.sendContext).toHaveBeenCalledTimes(1); // connect anchor (hole 3)
 
     // Hole change 3 -> 4: exactly one more sendContext, for hole 4.
-    rerender(<CaddieSheet {...props} holeNumber={4} holePar={4} holeYards={380} />);
+    rerender(<Host {...props} holeNumber={4} holePar={4} holeYards={380} />);
     await flush();
     expect(client.sendContext).toHaveBeenCalledTimes(2);
     expect(client.sendContext.mock.calls[1][0] as string).toContain("hole 4");
 
     // Same hole re-rendered again: no additional sendContext.
-    rerender(<CaddieSheet {...props} holeNumber={4} holePar={4} holeYards={380} />);
+    rerender(<Host {...props} holeNumber={4} holePar={4} holeYards={380} />);
     await flush();
     expect(client.sendContext).toHaveBeenCalledTimes(2);
 
     // Hole change 4 -> 5: exactly one more.
-    rerender(<CaddieSheet {...props} holeNumber={5} holePar={3} holeYards={178} />);
+    rerender(<Host {...props} holeNumber={5} holePar={3} holeYards={178} />);
     await flush();
     expect(client.sendContext).toHaveBeenCalledTimes(3);
     expect(client.sendContext.mock.calls[2][0] as string).toContain("hole 5");
@@ -733,39 +810,40 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     expect(screen.queryByText("Zombie turn")).toBeNull();
   });
 
-  it("close-during-connect detach: setEvents({}) fires before stop() on close; reopening starts a fresh client and only its messages render", async () => {
-    // specs/caddie-realtime-double-emit-plan.md §2 Part B / §5.3 — closing
-    // the sheet while a client is still mid-"Connecting…" (never reached
-    // `connected`) must detach its handlers before stopping it, same as
-    // fallBack()/the effect cleanup.
+  it("close+reopen preserves the SAME live session — single client construction, no stop() on close, transcript intact (specs/caddie-detach-and-language-pin-plan.md Item B)", async () => {
+    // The core behavioral change: closing the sheet DETACHES only — the live
+    // session (owned by the Host, mirroring RoundPageClient) keeps running.
+    // Reopening re-attaches to the SAME client; nothing is re-minted.
     const { rerender, props } = renderSheet();
     await flush();
 
     const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
-    expect(first.start).toHaveBeenCalledTimes(1);
-    expect(first.stop).not.toHaveBeenCalled(); // still connecting
-
-    rerender(<CaddieSheet {...props} open={false} />);
+    act(() => first.emitStatus("connected"));
     await flush();
-
-    expect(first.setEvents).toHaveBeenCalledWith({});
-    expect(first.stop).toHaveBeenCalled();
-
-    rerender(<CaddieSheet {...props} open={true} />);
-    await flush();
-
-    const instances = realtimeMock.FakeRealtimeCaddieClient.instances;
-    expect(instances).toHaveLength(2); // a fresh client, not a reuse of `first`
-    const second = instances[1];
-
     act(() => {
-      first.emitMessage({ id: "old-1", role: "user", text: "From the dead client", partial: false, order: 1 });
-      second.emitMessage({ id: "new-1", role: "user", text: "From the fresh client", partial: false, order: 1 });
+      first.emitMessage({ id: "m1", role: "user", text: "What club from 150?", partial: false, order: 1 });
     });
     await flush();
 
-    expect(screen.queryByText("From the dead client")).toBeNull();
-    expect(screen.getByText("From the fresh client")).toBeTruthy();
+    rerender(<Host {...props} open={false} />);
+    await flush();
+
+    expect(first.stop).not.toHaveBeenCalled(); // detach only — no stop()
+
+    rerender(<Host {...props} open={true} />);
+    await flush();
+
+    const instances = realtimeMock.FakeRealtimeCaddieClient.instances;
+    expect(instances).toHaveLength(1); // no second mint — the SAME client
+
+    act(() => {
+      first.emitMessage({ id: "m2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+    });
+    await flush();
+
+    // Both the pre-close and post-reopen turns render from the ONE client.
+    expect(screen.getByText("What club from 150?")).toBeTruthy();
+    expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
   });
 
   it("clean idle close does NOT reconnect or fall back", async () => {

@@ -205,6 +205,25 @@ import CaddieSheet from "./CaddieSheet";
 import { sessionVoiceStream } from "@/lib/caddie/api";
 import { transcribeBlob } from "@/lib/voice/deepgram";
 import type { CaddiePersonalityInfo } from "@/lib/caddie/types";
+import type { UseCaddieLiveSessionResult } from "@/hooks/useCaddieLiveSession";
+
+// This suite exercises the CLASSIC hands-free loop exclusively — the live
+// Realtime session is now owned by RoundPageClient
+// (specs/caddie-detach-and-language-pin-plan.md, Item B) and passed into
+// CaddieSheet as props. `liveOn: false` keeps `liveActive` false on every
+// render, deterministically rendering the classic body.
+function makeLiveStub(): UseCaddieLiveSessionResult {
+  return {
+    liveState: "connecting",
+    fellBack: false,
+    messages: [],
+    status: "idle",
+    muted: false,
+    toggleMute: vi.fn(),
+    resume: vi.fn(),
+    stop: vi.fn(),
+  };
+}
 
 const sessionVoiceStreamMock = vi.mocked(sessionVoiceStream);
 const transcribeMock = vi.mocked(transcribeBlob);
@@ -242,6 +261,9 @@ function buildProps(
     // file (it composes with the loop via the SAME onPlaybackEnd wiring
     // covered generically here; caddie-auto-shot-reco-plan.md's own tests
     // cover its firing rules).
+    live: makeLiveStub(),
+    liveOn: false,
+    onEndLive: vi.fn(),
     ...overrides,
   };
 }
