@@ -17242,3 +17242,32 @@ CaddieNotesCard/useRealtimeCaddie dead-code status. NEXT on its return: Fable pl
 (specs/caddie-transcript-render-unify-plan.md) → designer concept (pick reference + spec) → builder →
 reviewer → qa → designer BLOCKING on screenshots. Land on integration/next (HOLD push if recut),
 add to PR #141 (NOTICEABLE). Do NOT ship/ping.
+
+## Cycle 132 update — recon complete, 4 LIVE renderers confirmed (audit correct)
+Recon (a12168a08bb6b6823) + my VoiceSheet-mount check found FOUR live transcript renderers (not 3):
+  1. VoiceSheet `Turn` (yardage/Voice.tsx:122) — LIVE, mounted RoundPageClient.tsx:2261 (round map orb).
+     VoiceTurn{role:user|caddy,text}, key={i}, MEDALLION avatar + Waveform-on-last-turn. Yardage-book.
+  2. LooperSheetShell (LooperSheet.tsx:297) — LIVE, CaddieOrbSheet global (layout.tsx:68). LooperTurn
+     {role,text}, key={i}, separate streamingTurn + listening/thinking, speakerLabel threaded. Flat
+     serif stack — the CLEANEST idiom. Uses captionPersonaName.
+  3. CaddieSheet `VoiceBody` (CaddieSheet.tsx:2045) — LIVE classic in-round. VoiceCaddieMessage
+     {role,content}, key={i} over convHistory.slice(0,-2) + newest turn from SEPARATE transcript/
+     voiceAnswer state (ordering split — preserve). Carded paperDeep/paperEdge rounded containers.
+     Raw caddy.name (no persona helper).
+  4. CaddieSheet `LiveVoiceBody` (CaddieSheet.tsx:1814) — LIVE round Realtime. RealtimeMessage
+     {id,role,text,partial,order}, key={m.id}, order-sorted, partial→opacity. CHAT BUBBLES = the
+     SaaS-y violator (primary target). DEDUP/ORDERING semantics live here — preserve id-keying exactly.
+DEAD (grep-proven unreferenced): CaddiePanel (only via CaddieModal, which is referenced nowhere) +
+CaddieModal + CaddieNotesCard + useRealtimeCaddie — ~1300 lines dark zinc/emerald SaaS chat. Rider
+candidate (SILENT) if trivially deletable — must confirm CaddieNotesCard 'notes on you' memory UI is
+intentionally gone (unreachable today) before delete.
+Consolidation seam: ONE shared turn primitive (speaker caption + serif body) + transcript container in
+the calm stacked idiom; per-surface medallion/waveform/streaming/listening/thinking/carded-current-turn
+= COMPOSITION. Each consumer supplies its own per-turn KEY (LiveVoiceBody→m.id preserved) and the
+component NEVER re-sorts/re-dedups (upstream in useCaddieLiveSession/realtime-ordering).
+
+## AWAITING (updated)
+Fable plan (Plan agent, fable model → specs/caddie-transcript-render-unify-plan.md) + designer concept
+(reference pick + unified visual spec) running CONCURRENTLY. On return: reconcile → builder → reviewer
+→ qa → designer BLOCKING (screenshots all 4 surfaces). SHIP verdict → PR #141 checklist (NOTICEABLE).
+BLOCKING → re-dispatch builder. Do NOT ship/ping.
