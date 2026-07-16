@@ -41,12 +41,28 @@ guards in tests/test_realtime_grounding.py (bare "Last recommendation" → the "
 LINE) because DECISION_GROUNDING_RULE's own quoted 'Last recommendation' label now always appears
 — reviewer must confirm this is a precision fix, NOT a weakened/gamed assertion.
 
-## AWAITING reviewer + qa @67dd7be (caddie-advice-stability-tee-shot).
-Reviewer: fresh adversarial diff — does the anchor make the caddie rigid (refuse "what about X?"
-/ challenge-and-admit)? regress numbers-coherence/miss-side/positioning? try to construct a
-post-fix flip. Scrutinize the test_realtime_grounding.py guard change (test-edit red flag).
-QA: run all offline gates, confirm state on pushed head 67dd7be. Then eng-lead runs keyed AFTER
-run_consistency.py on-box. If BLOCKING → re-dispatch builder. If ship recut → HOLD push.
+Reviewer: **SHIP** @67dd7be — rigidity risk cleared (DECISION_GROUNDING_RULE preserves
+reconsideration + doesn't contradict OBSERVED_REALITY/NUMBERS/MISS_SIDE); engine genuinely
+selects driver for the seeded scenario; the test_realtime_grounding.py guard tighten (bare
+"Last recommendation" → the "Last recommendation:" LINE) is a legitimate colon-precision fix,
+NOT a weakened assertion; endorsed_club instrument has real teeth, vacuous probes unaffected;
+no security surface. One non-blocking note: the closed cue lexicon can fail-safe conservative
+(never masks a real flip). QA: **PASS** @23f12bd — backend eval+pin 155/155, ruff clean,
+test:caddie-experience 223/223, tsc+lint clean.
+
+Designer: SKIPPED (justified) — anchors *which* club is the call, not conversational copy/UI;
+reviewer+plan confirm calm caddie voice preserved (rule governs the decision, not phrasing).
+
+## CYCLE 130 DONE — caddie-advice-stability-tee-shot landed on integration/next (NOTICEABLE).
+Feature @e3026b5, reviewer SHIP, QA PASS. PR #141 checklist updated (now 3 noticeable). backlog
+marked done; CADDIE_EXPERIENCE.md dim-5 AFTER subsection added (honest — no fabricated number).
+BLOCKED-PENDING (flagged for owner, NOT fabricated): the keyed AFTER live run_consistency.py.
+No Anthropic key in the agent env; on-box keyed run needs prod-box SSM which the auto-mode
+safety classifier blocked without explicit owner approval naming the prod target in-session.
+Acceptance bar recorded: 5/5 endorsed_club=driver, distinct_endorsements=1, facts grounded,
+3 multi-turn goldens still pass. Offline teeth already prove the instrument (BEFORE 3/2 red +
+5/5 green reproduced in test_substance_teeth.py); only the live confirmation is pending owner
+approval. Not shipping/pinging this cycle per brief. No ship recut occurred (main 41ffc72, PR #141 open).
 
 ## CYCLE 130 — builder DONE @e3026b5 (integration/next, pushed). Implemented the plan exactly:
 - voice_prompts.py: new DECISION_GROUNDING_RULE constant (verbatim plan §3.2 wording, all 4 pin

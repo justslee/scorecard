@@ -166,6 +166,48 @@ harness-refinements also filed: (1) `_parse_mentioned_club` should match the spe
 "three-wood"/"three wood" form; (2) the two vacuous-consistent probes need answers that actually
 state a club so their verdict isn't empty — `caddie-consistency-probe-substance-coverage`.
 
+### AFTER — fix landed 2026-07-16 (`caddie-advice-stability-tee-shot`); keyed re-run pending
+
+The fix went through the eval loop (fable plan → builder → reviewer SHIP → QA PASS), NOT a
+hot-patch. **Mechanism = payload-anchor, not temperature.** Temperature was rejected: the GA
+Realtime session payload carries no temperature param (the realtime mouth can't be tuned), and
+`run_consistency.py` hard-codes its own `temperature=0.7`, so a production temp change is
+invisible to the probe — unfalsifiable. Instead:
+
+- **`DECISION_GROUNDING_RULE`** (`backend/app/caddie/voice_prompts.py`) extends the
+  numbers-coherence doctrine from NUMBERS to the CALL, shared by BOTH mouths (realtime
+  instructions + both `routes/caddie.py` stable_text blocks): the engine's recommended club
+  IS the call — the caddie explains it and offers grounded comparisons of a floated club, but
+  does not freely re-decide; it flips only when the numbers genuinely favor the alternative or
+  the player gives NEW information the engine lacked (a lie, a gust, something visible). It
+  governs *which* club, never the numbers/observed-reality paths (those rules unchanged), and
+  preserves the calm caddie voice (governs the decision, not the phrasing).
+- **Eval fidelity:** the probe now seeds a REAL `generate_recommendation` into the session
+  (`build_round_session`, new `Situation.seed_recommendation`), so the payload carries the
+  authoritative `Last recommendation: driver` line the way a production follow-up turn does —
+  the anchor now has something to bite on (before, the eval seeded no recommendation, so the
+  model free-decided the call at temp 0.7 — the true root cause of the flip).
+- **Falsifiable acceptance instrument:** new `AnswerSubstance.endorsed_club` +
+  `distinct_endorsements` (`substance.py`) capture the *recommendation direction* the old
+  extractor missed. Offline teeth (`test_substance_teeth.py`) reproduce the BEFORE 3-lay-up /
+  2-driver split as `distinct_endorsements=2, consistent=False` (RED) and a 5/5-driver read as
+  green; all-None endorsements stay consistent so the two vacuous probes are unaffected.
+
+**Keyed AFTER re-run — PENDING (owner/on-box).** The live number is not yet captured: no
+Anthropic key exists in the agent env, and the on-box keyed run requires prod-box SSM which the
+auto-mode safety classifier blocks without explicit owner approval naming the target in-session.
+No AFTER number is fabricated. To capture it (same procedure as the baseline):
+
+```bash
+cd backend && CADDIE_EVAL_LIVE=1 uv run python -m tests.eval.run_consistency --budget-usd 0.50
+```
+
+**Acceptance bar (falsifiable):** `followup-3wood-after-driver` reports `consistent=True` with
+`distinct_endorsements == 1` and `endorsed_club == "driver"` on 5/5 samples (the engine's seeded
+call), facts still grounded (hazard set stable, 3-wood carry within tolerance); and the three
+multi-turn goldens (`followup-3wood-after-driver`, `context-retention-prior-club-result`,
+`challenge-and-admit-yardage`) still pass so the caddie still reconsiders legitimately.
+
 ## Non-robotic voice (dim 4)
 
 `backend/tests/eval/test_realtime_session_config.py` pins the deterministic parts:
