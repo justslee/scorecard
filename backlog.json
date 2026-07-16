@@ -125,8 +125,9 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "needs-owner-decision",
+      "status": "partially-resolved",
       "why": "CADDIE-EXPERIENCE dims 3/8. CaddieSheet proactively greets with distance-to-pin ('About 152 to the pin... Want a read?', opening-turn.ts:18) in both classic and live modes, but the map orb (useVoiceCaddie) sends NO opener and the orb general/converse lanes show only a static hint and never speak first. One caddie entry point volunteers a read; the other two sit silent on the same hole. Whether the orb SHOULD greet is a product call, but today the difference is accidental (a byproduct of which hook/shell each surface happens to use). ACTION: owner decides the intended greeting behavior per surface, then normalize.",
+      "resolution": "PARTIALLY RESOLVED 2026-07-16 (cycle 133, bundle #141, feature 05c8173). The COPY-COHERENCE half landed this cycle (designer-led, specs/caddie-coherence-polish-plan.md §1): the converse orb emptyHint now interpolates captionPersonaName(caddy.name) (truncated persona short-name) instead of the raw untruncated full name, matching the reply caption's speakerLabel two lines below (no more 'greets as Strategist / captions with full name' mismatch; long custom names truncate on a word boundary with ellipsis, overflow risk strictly reduced). The no-re-greet-on-reopen invariant was codified with a comment + test (emptyHint renders only when turns.length===0; never re-greets onto a preserved conversation while the sheet stays open). Round opener (opening-turn.ts) and its no-re-greet guard (CaddieSheet.tsx:845) confirmed already-correct, cited as canonical, untouched. Reviewer SHIP + qa PASS + designer PASS(ships). The REMAINING scope — the original owner-decision question of whether the silent map-orb / converse lanes should proactively SPEAK an opener like the round pill (a real feature needing a live Realtime session + fire-once state machine on those surfaces; designer TRAP-flagged as out-of-scope for a copy nit) — is re-filed as caddie-orb-spoken-opener-parity (needs-owner-decision).",
       "depends_on": []
     },
     {
@@ -135,8 +136,29 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
       "why": "CADDIE-EXPERIENCE dim 7 (minimal loading, consistency). For the same 'waiting on the caddie' moment the user sees different words: LIVE_STATUS_LABEL 'Connecting.../Ready -- go ahead/Caddie speaking...' (live-copy.ts:19) vs LooperSheetShell 'Looper is thinking...' / 'One sec...' (LooperSheet.tsx:362,430) vs offline 'Off the grid - from your book'. The live-copy comment (live-copy.ts:17) even notes it only mirrors VoiceRoundSetupRealtime's STATUS_LABEL -- the orb text lane was never brought into that mirror. Low-impact, roughly one-liner to align the vocabulary into a single source.",
+      "resolution": "DONE 2026-07-16 (cycle 133, bundle #141, feature 05c8173, SILENT copy-alignment). Unified the loading/status vocabulary into one source of truth per the designer's table (specs/caddie-coherence-polish-plan.md §2): live-copy.ts LIVE_STATUS_LABEL narrowed to name-free statuses (Record<NameFreeStatus>), new liveStatusLabel(status,name) resolves speaking -> '{name} is speaking...' (was generic 'Caddie speaking...', which clashed with the shipped persona captions two lines below). CaddieSheet LiveFooter gained a personaName prop = captionPersonaName(caddy.name); both liveEmptyStateHint call sites now pass captionPersonaName(caddy.name) instead of raw caddy.name so the loading label and the transcript caption never disagree on the persona display-name. VoiceRoundSetupRealtime STATUS_LABEL deduped to { ...LIVE_STATUS_LABEL, idle: 'Tap to start', speaking: 'Looper speaking...' } (task-like surface -> 'Looper', not a persona) so it can never silently fork again. Calm idiom preserved (spaced em-dash, ellipsis on in-progress states, sentence case, no exclamation). Reviewer SHIP (no undefined-label gap: only reader of the map is inside liveStatusLabel's non-speaking fall-through), qa PASS (lint/tsc clean, vitest 2502, test:caddie-experience 241, voice 278/0, build OK, zero backend diff), designer PASS(ships) — no two-names-for-one-caddie anywhere. Pinned tests live-copy.test.ts + CaddieSheet.realtime.test.tsx flipped 'Caddie speaking...' -> persona-named (intentional mirror, not weakening); new never-disagree tests. CI Frontend+Backend gates SUCCESS on 49021dc.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-orb-spoken-opener-parity",
+      "title": "Should the map orb / converse lanes proactively SPEAK an opener like the round pill? (owner call)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "medium",
+      "status": "needs-owner-decision",
+      "why": "Re-filed from caddie-opening-greeting-normalize (cycle 133) — the remaining, feature-sized half after the copy-coherence portion landed. Today only the in-round CaddieSheet volunteers a spoken opener (distance-to-pin read); the map orb (useVoiceCaddie) and the omnipresent orb's general/converse lanes stay silent, showing only a static placeholder emptyHint and never speaking first. Giving those surfaces a real spoken opener is NOT a copy nit: it needs a live Realtime session wired into CaddieOrbSheet plus the round's fire-once state machine (openingFiredRef/openingGenRef, CaddieSheet.tsx:826-871) rebuilt for a second surface, and a product call on WHETHER an off-course / general-converse caddie should greet unprompted at all (it may be noise off the course). ACTION: owner decides the intended per-surface greeting behavior; if yes, spec + build as its own item. Designer TRAP-flagged this as out-of-scope for the copy pass.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-orb-session-persistence-on-reopen",
+      "title": "Should a literal close->reopen of the converse orb sheet preserve conversation continuity?",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "needs-owner-decision",
+      "why": "Surfaced by the cycle-133 builder while writing the no-re-greet test: the designer concept assumed 'turns persist across close->reopen (safe today)' but that is FALSE — CaddieOrbSheet's setOpen((wasOpen)=>{ if(!wasOpen) resetSession(); return true; }) intentionally clears turns on every closed->open transition (pre-existing, unrelated to this cycle). So the converse orb starts a FRESH conversation on every reopen, whereas the round-side sheet preserves its thread. The builder correctly did NOT change this reset behavior (a real session-persistence change, out of scope for a copy-only nit) and re-scoped the test to the true invariant (continuity across a re-summon while the sheet STAYS open; the emptyHint never re-greets once turns.length>0). Reviewer + designer both flagged the underlying UX question as a fair product call for later. ACTION: owner decides whether converse close->reopen should preserve conversation continuity (matching round) or intentionally start fresh; if preserve, it's a small state-lifetime change to resetSession's trigger.",
       "depends_on": []
     },
     {

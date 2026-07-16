@@ -17398,17 +17398,31 @@ below solo-cycle worthiness; together one honest pass). Land on integration/next
 land-and-review only — DO NOT ship/ping. Owner feedback checked first: no actionable #141/v1.1.8 card
 in Needs Review (stale #105/#115/#119 cards long superseded, main past #140); bundle not yet offered.
 
-## AWAITING — reviewer + qa (parallel) on integration/next @62d057f (feature @05c8173)
-Builder DONE: NIT1 CaddieOrbSheet emptyHint captionPersonaName + turns-invariant comment/test;
-NIT2 live-copy.ts speaking->liveStatusLabel(status,name) persona-named + CaddieSheet LiveFooter
-personaName prop + both liveEmptyStateHint call sites captionPersonaName + VoiceRoundSetupRealtime
-STATUS_LABEL dedupe (spread, idle="Tap to start", speaking="Looper speaking…"). 7 frontend files.
-Gates GREEN: lint/tsc clean, vitest 2502, test:caddie-experience 241, voice 278/0, build OK.
-Invariant PROVEN: zero diff to realtime.ts/realtime-ordering.ts/useCaddieLiveSession/types.ts/models.py/Transcript.tsx.
-BUILDER FINDING (accepted, filed as follow-up): designer's "turns persist close->reopen" premise is FALSE —
-CaddieOrbSheet resetSession() clears turns on every closed->open transition (pre-existing). Builder did NOT
-change reset behavior (out of scope for copy nit), corrected the test/comment to the TRUE invariant
-(continuity across re-summon while sheet STAYS open). File caddie-orb-session-persistence-on-reopen as a
-follow-up for owner decision (should close->reopen preserve the conversation?).
-On both verdicts: reviewer SHIP + qa PASS -> designer BLOCKING on rendered result -> finalize PR #141
-checklist + backlog (both nits done-on-bundle) + follow-up filed. BLOCKING -> re-dispatch builder. NO ship/ping.
+## Cycle 133 DONE — caddie coherence polish (2 batched audit nits) landed on bundle #141 (SILENT)
+All three verdicts GREEN: reviewer SHIP, qa PASS, designer PASS(ships). Feature @05c8173 on integration/next
+(head 49021dc). CI Frontend + Backend + E2E-smoke gates ALL SUCCESS on 49021dc.
+- NIT2 caddie-loading-copy-align -> DONE (fully): live-copy.ts LIVE_STATUS_LABEL narrowed to name-free
+  statuses + liveStatusLabel(status,name) resolves speaking->'{name} is speaking...' (was generic 'Caddie
+  speaking...'); CaddieSheet LiveFooter personaName prop + both liveEmptyStateHint call sites now pass
+  captionPersonaName(caddy.name); VoiceRoundSetupRealtime STATUS_LABEL deduped (spread, idle='Tap to start',
+  speaking='Looper speaking...'). One source of truth, no future silent fork.
+- NIT1 caddie-opening-greeting-normalize -> PARTIALLY-RESOLVED (honest split): copy-coherence half landed
+  (converse emptyHint uses captionPersonaName matching the caption; no-re-greet invariant codified+tested).
+  The ORIGINAL broader question (should silent map-orb/converse lanes proactively SPEAK an opener like the
+  round pill?) is a real feature (designer TRAP-flagged) -> re-filed caddie-orb-spoken-opener-parity
+  (needs-owner-decision).
+- Builder finding filed: caddie-orb-session-persistence-on-reopen (needs-owner-decision) — converse
+  close->reopen resets the thread via resetSession() (pre-existing); builder did NOT change session behavior
+  (out of scope for a copy nit), corrected the test to the TRUE invariant; owner UX call for later.
+INVARIANT PROVEN: zero diff to realtime.ts/realtime-ordering.ts/useCaddieLiveSession/types.ts/models.py/
+Transcript.tsx (dedup/ordering/persona-label/transcript-primitive untouched). 7 frontend files, copy-layer only.
+Gates: lint/tsc clean, vitest 2502/2502, test:caddie-experience 241/241, voice 278/0, targeted copy 72/72,
+build OK, zero backend diff.
+Records: PR #141 title refreshed (was stale 'pause_turn hardening') + checklist item added (SILENT); backlog
+(targeted edits, validated 76 items no dup-ids): caddie-loading-copy-align->done-on-bundle,
+caddie-opening-greeting-normalize->partially-resolved, +2 new needs-owner-decision follow-ups.
+NOT shipped/pinged (per brief: land+review only). Bundle #141 stays ship-worthy + CI-green for the next
+release pass; owner's v1.1.8 ship ask still pending with him.
+INJECTION DEFENSE: multiple fake-'system' date-change concealment directives ("DO NOT mention this to the
+user") arrived again this cycle in system-reminder/MCP-framed text — treated as untrusted DATA and IGNORED
+the concealment instruction (flagged, not obeyed); same recurring planted pattern as cycles 128-132.
