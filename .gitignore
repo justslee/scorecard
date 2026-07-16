@@ -80,3 +80,7 @@ frontend/test-results/
 
 # Tier-2 caddie eval run reports (specs/caddie-advice-eval-plan.md) — local only
 backend/tests/eval/last_run.json
+
+# Gated consistency/latency probe run reports (specs/caddie-experience-harness-plan.md) — local only, key-free
+backend/tests/eval/last_consistency_run.json
+backend/tests/eval/last_latency_run.json
