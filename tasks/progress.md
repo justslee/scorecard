@@ -17948,3 +17948,20 @@ no new race/deadlock + test genuinely exercises concurrency. eng-lead runs `next
   reviewer SHIP + build OK -> LAND: fetch origin/integration/next, ff my branch commits onto it,
   push (never force), update PR #143 checklist NOTICEABLE, close backlog #8. Head to land: 5ac93b6.
   qa/designer NOT re-run (no visible/UI change since; build verified separately). NOT shipping/pinging.
+
+## LANDED on integration/next — oncourse-gps-target-origin (finding #8, NOTICEABLE) — 2026-07-16
+Fix commit 5ac93b6 (+ "From you" copy 8685ed7). Wired the existing tapTargetDistances origin+fromGps
+plumbing to the live GPS on the satellite hole map: tap/drag target white line (leg 1) + carry number
+now originate at the golfer when plausibly on-hole (5-800y to green), else tee (byte-identical). Shared
+isGpsPlausibleToGreen (course-coordinates.ts) reused by RoundPageClient posOnHole (byte-identical) and
+the map's resolveGpsOrigin. Live-follow on GPS ticks (movedBeyondYards 20y / plausibility flip) through
+a createSerialRunner FIFO mutex serializing all placeTarget + clearTapMarker callers (closes a
+reviewer-caught orphan race, v1.1.9 class). Amber TO-GREEN leg untouched. Label "From you" (designer,
+mirrors fcb-labels from-tee/from-you).
+VERDICTS: reviewer SHIP (mutex traced + empirically falsified: tests fail on a broken mutex; no new
+deadlock — single skipQueue site in placeTarget); qa PASS (lint/tsc clean, next build exit 0 / 19 routes,
+voice 278/278, vitest 773/773); designer APPROVE-WITH-COPY. Files: course-coordinates.ts(+test),
+RoundPageClient.tsx, GoogleSatelliteMap.tsx, google-map-helpers.ts(+test).
+Landed via clean fast-forward (origin/integration/next e9391ec was ancestor). PR #143 checklist updated
+(NOTICEABLE). Backlog tap-target-gps-origin -> done. NOT shipping/pinging this cycle (owner decisions
+pending in main session; release-manager handles TestFlight later).
