@@ -38,6 +38,15 @@ def test_par3_under_280_yards_no_flag():
     assert note == ""
 
 
+def test_par3_462_yards_fires_red11_case():
+    # Owner field-test (v1.1.9): Bethpage Red-11 showed "PAR 3 · 462Y" — same
+    # class of stale-par bug as the Red-3 incident above, confirming the
+    # guard fires for this hole too (specs/map-fieldtest-v119-plan.md Item 5).
+    note = format_par_sanity_note(par=3, yards=462)
+    assert "two-shot hole" in note
+    assert "suspect" in note
+
+
 def test_par4_no_flag_regardless_of_yardage():
     note = format_par_sanity_note(par=4, yards=466)
     assert note == ""
