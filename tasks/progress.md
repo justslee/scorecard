@@ -17737,3 +17737,24 @@ webhook receiver + revoked_users + azp/issuer boot guards) and multiuser-p0-keyc
 iOS Keychain). Plus 2 new small followups: multiuser-p0-self-savedplayer, multiuser-p0-signout-namespace-clear.
 
 BUNDLE PR: #143 https://github.com/justslee/scorecard/pull/143 (SILENT, integration/next -> main; accumulating, not shipping this cycle). CI will run on the PR head 6085fc3; no merge/ship/ping this cycle per brief.
+
+## LANDED on integration/next — map-fieldtest-v119 (bundle #143, NOTICEABLE) — 2026-07-16
+Owner v1.1.9 field-test: 5 map fixes cherry-picked clean onto integration/next atop slice-2
+(5befb67). Commits: 7ef6f2b(item1 billboard letters) 26d76b9(item3 GPS-tick->camera queue)
+d89d647(item4 draggable reticle) ea522f4(item5 par-sanity displayPar guard) 47f6595(item2
+bunker relations/natural=sand ingest + cap 4->6 + fairway-adjacency) fcef3e1(review fix:
+priority-aware camera queue) + spec 855b876.
+ROOT CAUSES: #1 isFlat:true rotated baked letter with down-the-line bearing -> isFlat:false
+billboard. #2 LIVE Overpass probe: BOTH bind — a real relation[golf=bunker] multipolygon (id
+19545022) the way-only query never fetched + lateral-45/cap-4 windows. #3 two-writer race on
+holeMarkerIdsRef (GPS tick bypassed the queue) -> single-writer + priority-aware coalescing
+(gps never evicts pending hole). #4 native draggable + one placeTarget seam. #5 Red-11 par 4
+in OSM but stale par 3 in DB -> displayPar(280) guard NOW; staging re-ingest = follow-up.
+VERDICTS: reviewer 4/5 correct + 1 blocking (queue eviction) FIXED & re-verified; qa ALL GREEN;
+designer APPROVE (no blockers). GATES on the INTEGRATED tree: tsc clean, eslint clean, next
+build OK, voice-smoke 278/278, vitest map+hole 300/300, backend ruff clean.
+FOLLOW-UPS filed: map-fieldtest-red11-reingest (staging data), map-reticle-grab-affordance
+(designer polish). PR #143 checklist updated (bundle now has its FIRST NOTICEABLE items).
+NOT shipping/pinging this cycle per brief — release-manager handles TestFlight later; GPS-readiness
+lane will exercise these 5 in its simulated-round pass. #2's MultiPolygon relation/natural=sand
+ingest changes need a Red re-ingest to actually surface the giant complex in prod data.
