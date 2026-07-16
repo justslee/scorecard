@@ -704,6 +704,11 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     });
     expect(screen.getByLabelText("Start recording")).toBeTruthy();
     expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
+    // Detach BEFORE stop() — the fallBack() belt
+    // (specs/caddie-realtime-double-emit-plan.md §2 Part B): a zombie client
+    // whose start() is still resolving must not keep this activation's
+    // onMessage bound.
+    expect(first.setEvents).toHaveBeenCalledWith({});
 
     // The long-pending start() now resolves — Gap 2 guard must stop the
     // continuation from resurrecting the dead client.
@@ -717,6 +722,50 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     expect(first.attachMic).not.toHaveBeenCalled(); // no resurrection
     expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1); // no second mint
     expect(screen.getByLabelText("Start recording")).toBeTruthy(); // still classic mic
+
+    // A post-fallback message from the dead client must not surface — the
+    // onMessage gate (cancelled || fellBackRef.current) makes the detach
+    // belt-and-braces even if setEvents({}) were somehow bypassed.
+    act(() => {
+      first.emitMessage({ id: "zombie-1", role: "user", text: "Zombie turn", partial: false, order: 1 });
+    });
+    await flush();
+    expect(screen.queryByText("Zombie turn")).toBeNull();
+  });
+
+  it("close-during-connect detach: setEvents({}) fires before stop() on close; reopening starts a fresh client and only its messages render", async () => {
+    // specs/caddie-realtime-double-emit-plan.md §2 Part B / §5.3 — closing
+    // the sheet while a client is still mid-"Connecting…" (never reached
+    // `connected`) must detach its handlers before stopping it, same as
+    // fallBack()/the effect cleanup.
+    const { rerender, props } = renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    expect(first.start).toHaveBeenCalledTimes(1);
+    expect(first.stop).not.toHaveBeenCalled(); // still connecting
+
+    rerender(<CaddieSheet {...props} open={false} />);
+    await flush();
+
+    expect(first.setEvents).toHaveBeenCalledWith({});
+    expect(first.stop).toHaveBeenCalled();
+
+    rerender(<CaddieSheet {...props} open={true} />);
+    await flush();
+
+    const instances = realtimeMock.FakeRealtimeCaddieClient.instances;
+    expect(instances).toHaveLength(2); // a fresh client, not a reuse of `first`
+    const second = instances[1];
+
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "From the dead client", partial: false, order: 1 });
+      second.emitMessage({ id: "new-1", role: "user", text: "From the fresh client", partial: false, order: 1 });
+    });
+    await flush();
+
+    expect(screen.queryByText("From the dead client")).toBeNull();
+    expect(screen.getByText("From the fresh client")).toBeTruthy();
   });
 
   it("clean idle close does NOT reconnect or fall back", async () => {

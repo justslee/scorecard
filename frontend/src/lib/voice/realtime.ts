@@ -272,6 +272,30 @@ export class RealtimeCaddieClient {
   // → "won't listen": the v1.0.710 regression).
   private startPromise: Promise<void> | null = null;
 
+  // True once stop() has run — TERMINAL: a stopped client never (re)starts.
+  // Root-cause fix for the zombie-session double-emit
+  // (specs/caddie-realtime-double-emit-plan.md §2 Part A): without this,
+  // stop() during the mint await left startInner() with nothing to check on
+  // resume, so it built a full second live connection nobody referenced.
+  private aborted = false;
+
+  // ── Part C: id-keyed single-emit guard (specs/caddie-realtime-double-emit
+  // -plan.md §2 Part C) — additive, sits ABOVE the shipped priming-echo /
+  // no-input-clarifier / attribution guards and only rejects exact-id repeats. ──
+  // Every input item_id is processed (rendered, dropped, or classified) AT
+  // MOST ONCE, so a duplicate/re-delivered transcription.completed for the
+  // SAME item can never commit a second user turn.
+  private processedUserItems = new Set<string>();
+  // Every response id finalizes (final emit, or suppression) AT MOST ONCE —
+  // blocks a late delta or a second `done` from re-creating/re-finalizing an
+  // already-resolved response.
+  private finalizedResponses = new Set<string>();
+  private static readonly MAX_DEDUP_ENTRIES = 64;
+  // response_id -> in-flight tool-call batch, so a multi-tool turn (>=2
+  // response.function_call_arguments.done sharing one response) fires
+  // exactly ONE response.create, after every output has posted.
+  private toolBatch = new Map<string, { pending: number; created: boolean }>();
+
   constructor(opts: RealtimeCaddieOptions, events: RealtimeCaddieEvents = {}) {
     this.opts = opts;
     this.events = events;
@@ -279,6 +303,9 @@ export class RealtimeCaddieClient {
   }
 
   async start(): Promise<void> {
+    // A stopped client is terminal — a stale reference can never restart it
+    // (specs/caddie-realtime-double-emit-plan.md §2 Part A).
+    if (this.aborted) return;
     if (this.pc) return;
     if (!this.startPromise) {
       this.startPromise = this.startInner().finally(() => {
@@ -308,6 +335,21 @@ export class RealtimeCaddieClient {
               personality_id: this.opts.personalityId,
               current_hole: this.opts.currentHole,
             });
+      // The load-bearing abort re-check (specs/caddie-realtime-double-emit
+      // -plan.md §2 Part A): stop() during the mint await above leaves NO pc
+      // to close — without this check startInner() would sail on and build a
+      // fully live, billed, mic-open session nobody references (the zombie
+      // that produced the owner's doubled turns). `activeRealtimeClient !==
+      // this` is belt: any successor client that re-took the singleton cap
+      // already implies this client was stopped, but checking both is cheap
+      // and unconditional. Silent — stop() already emitted 'closed'; emitting
+      // 'error' here would falsely re-trigger degradeToText/fallBack on a
+      // surface that already moved on.
+      if (this.aborted || activeRealtimeClient !== this) {
+        voiceEvent('caddie', 'realtime_start_aborted');
+        this.cleanup();
+        return;
+      }
       this.events.onMinted?.();
 
       this.pc = new RTCPeerConnection();
@@ -375,6 +417,13 @@ export class RealtimeCaddieClient {
             autoGainControl: true,
           },
         });
+        // Abort re-check — a stop() mid-getUserMedia must not wire the
+        // just-acquired mic track into a connection nobody references;
+        // cleanup() stops the acquired track(s).
+        if (this.aborted) {
+          this.cleanup();
+          return;
+        }
         const senders = this.localStream
           .getTracks()
           .map((t) => this.pc!.addTrack(t, this.localStream!));
@@ -401,6 +450,12 @@ export class RealtimeCaddieClient {
       });
       if (!sdpResp.ok) throw new Error(`Realtime SDP exchange failed: ${sdpResp.status} ${await sdpResp.text()}`);
       const answer = { type: 'answer' as RTCSdpType, sdp: await sdpResp.text() };
+      // Abort re-check — a stop() mid-SDP-exchange must not complete the
+      // handshake into a live connection nobody references.
+      if (this.aborted) {
+        this.cleanup();
+        return;
+      }
       await this.pc.setRemoteDescription(answer);
     } catch (err) {
       this.setStatus('error');
@@ -425,9 +480,7 @@ export class RealtimeCaddieClient {
       }));
       // A client-triggered response must never be blamed on a stale speech
       // item (specs/caddie-noise-clarification-reply-plan.md §2.3).
-      this.selfTriggeredResponses += 1;
-      this.pendingSpeechItems = [];
-      this.dc!.send(JSON.stringify({ type: 'response.create' }));
+      this.sendResponseCreate();
     }
     // Surface the typed line in the transcript regardless of channel state (so
     // the user always sees what they typed), ordered before the reply it
@@ -476,10 +529,24 @@ export class RealtimeCaddieClient {
       }));
       // Same unconditional treatment as sendText — an opener is never a
       // no-input clarifier candidate.
-      this.selfTriggeredResponses += 1;
-      this.pendingSpeechItems = [];
-      this.dc.send(JSON.stringify({ type: 'response.create' }));
+      this.sendResponseCreate();
     }
+  }
+
+  /** Fire exactly one `response.create`, tracking it as self-triggered so a
+   *  stale speech item can never be blamed for it
+   *  (specs/caddie-noise-clarification-reply-plan.md §2.3). Extracted from
+   *  the identical triple that used to be duplicated in sendText/sendOpener/
+   *  runTool (specs/caddie-realtime-double-emit-plan.md §2 Part C) — the
+   *  single choke point every response.create now flows through. Re-checks
+   *  readyState itself since a caller (runTool's tool-batch coalescing) may
+   *  invoke this from an async continuation after the outer guard was
+   *  checked. */
+  private sendResponseCreate(): void {
+    if (this.dc?.readyState !== 'open') return;
+    this.selfTriggeredResponses += 1;
+    this.pendingSpeechItems = [];
+    this.dc.send(JSON.stringify({ type: 'response.create' }));
   }
 
   /** Toggle mic mute (audio still flows from server, but server VAD won't pick up the user). */
@@ -519,6 +586,10 @@ export class RealtimeCaddieClient {
       // the UI reads connected (the v1.0.710 "won't listen" regression).
       const inFlight = this.startPromise;
       if (inFlight) await inFlight;
+      // The in-flight start() may have been aborted (stop() raced the mint) —
+      // adopting a torn-down client must fail loudly into the caller's
+      // existing error handling, never silently "succeed" deaf.
+      if (this.aborted) throw new Error('attachMic: client stopped');
 
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -579,6 +650,10 @@ export class RealtimeCaddieClient {
   }
 
   stop(): void {
+    // TERMINAL — set before cleanup() so startInner()'s abort re-checks (and
+    // a subsequent start()/attachMic()) see it immediately, even though
+    // cleanup() itself may have nothing yet to close (mid-mint).
+    this.aborted = true;
     this.cleanup();
     this.setStatus('closed');
   }
@@ -613,6 +688,12 @@ export class RealtimeCaddieClient {
     this.inputClassByItem.clear();
     this.triggerItemsByResponse.clear();
     this.selfTriggeredResponses = 0;
+    // Part C dedup state — instance-scoped, same lifecycle as everything
+    // else above (a reconnect/resume always constructs a NEW client, so a
+    // fresh session's ids can never collide with a dead session's keys).
+    this.processedUserItems.clear();
+    this.finalizedResponses.clear();
+    this.toolBatch.clear();
   }
 
   private setStatus(status: RealtimeStatus) {
@@ -664,6 +745,9 @@ export class RealtimeCaddieClient {
         // any pre-open greeting delta rather than surface it once opened.
         if (!this.opened) break;
         const id = String(evt.response_id || evt.item_id || 'assistant-current');
+        // Part C: an already-finalized response must never resurrect a new
+        // partial from a late/duplicate delta.
+        if (this.finalizedResponses.has(id)) break;
         const delta = String(evt.delta || '');
         const existing =
           this.partials.get(id) ??
@@ -702,6 +786,14 @@ export class RealtimeCaddieClient {
             (evt.response as { id?: string } | undefined)?.id ||
             'assistant-current',
         );
+        // Part C: an already-finalized response's second `done` (e.g.
+        // output_audio_transcript.done then response.done, or a genuine
+        // duplicate event) is fully inert — closes the hole where a late
+        // delta could otherwise resurrect a partial after finalization.
+        if (this.finalizedResponses.has(id)) {
+          this.setStatus('connected');
+          break;
+        }
         const existing = this.partials.get(id);
         if (existing) {
           const held = this.heldResponses.get(id);
@@ -721,12 +813,14 @@ export class RealtimeCaddieClient {
               const final: RealtimeMessage = { ...existing, partial: false };
               this.partials.delete(id);
               this.events.onMessage?.(final);
+              this.markResponseFinalized(id);
             }
           } else if (!held) {
             const final: RealtimeMessage = { ...existing, partial: false };
             this.partials.delete(id);
             this.events.onMessage?.(final);
             this.finishResponse(id); // never held — no releaseHeld/suppressHeld to prune via
+            this.markResponseFinalized(id);
           }
           // else: `held.finalized` already true — a second `done` for the
           // same id (e.g. output_audio_transcript.done then response.done).
@@ -743,6 +837,13 @@ export class RealtimeCaddieClient {
         // rather than trust that alone (belt-and-braces, see the plan).
         if (!this.opened) break;
         const itemId = evt.item_id ? String(evt.item_id) : undefined;
+        // Part C: a re-delivered event for an already-processed item is
+        // fully inert — no re-classification, no second telemetry
+        // breadcrumb, no second bubble. NOT keyed by text: a rapid legit
+        // follow-up (even the identical sentence re-asked) is a NEW
+        // committed item with a new item_id and is kept.
+        if (itemId && this.processedUserItems.has(itemId)) break;
+        if (itemId) this.markUserItemProcessed(itemId);
         const id = itemId ?? `user-${Date.now()}`;
         const text = String(evt.transcript || '');
         // Classify ONCE, before the existing render logic below — feeds the
@@ -807,7 +908,19 @@ export class RealtimeCaddieClient {
         // session must never dispatch tools (defense in depth — no audio can
         // reach the model pre-open, so nothing should arrive here anyway).
         if (!this.opened) break;
-        void this.runTool(evt);
+        // Part C tool-batch coalescing: register this call against its
+        // response BEFORE dispatch so ≥2 tool calls in one response (e.g.
+        // "what should I hit" -> get_conditions + get_shot_distance) fire
+        // exactly ONE response.create, after every output has posted —
+        // instead of one per call (each independently queued + spoken by
+        // the GA API, doubling the ANSWER on multi-tool turns).
+        const responseId = evt.response_id != null ? String(evt.response_id) : undefined;
+        if (responseId) {
+          const batch = this.toolBatch.get(responseId) ?? { pending: 0, created: false };
+          batch.pending += 1;
+          this.toolBatch.set(responseId, batch);
+        }
+        void this.runTool(evt, responseId);
         break;
       }
       case 'error': {
@@ -906,6 +1019,36 @@ export class RealtimeCaddieClient {
     }
   }
 
+  // ── Part C: id-keyed single-emit guard helpers
+  // (specs/caddie-realtime-double-emit-plan.md §2) ─────────────────────────
+
+  /** Record that `itemId` has been fully processed by the
+   *  transcription.completed handler, then enforce MAX_DEDUP_ENTRIES
+   *  (evict-oldest via Set insertion order — same posture as
+   *  setInputClass()'s cap). Unconditional eviction is safe here (unlike
+   *  inputClassByItem): once an item is processed, nothing else ever needs
+   *  to read this entry again — it exists only to reject an exact repeat. */
+  private markUserItemProcessed(itemId: string): void {
+    this.processedUserItems.add(itemId);
+    while (this.processedUserItems.size > RealtimeCaddieClient.MAX_DEDUP_ENTRIES) {
+      const oldest = this.processedUserItems.values().next().value;
+      if (oldest === undefined) break;
+      this.processedUserItems.delete(oldest);
+    }
+  }
+
+  /** Record that response `id` has fully resolved (finalized, or
+   *  suppressed) — a later delta/`done` for the same id becomes inert.
+   *  Same cap/eviction posture as markUserItemProcessed(). */
+  private markResponseFinalized(id: string): void {
+    this.finalizedResponses.add(id);
+    while (this.finalizedResponses.size > RealtimeCaddieClient.MAX_DEDUP_ENTRIES) {
+      const oldest = this.finalizedResponses.values().next().value;
+      if (oldest === undefined) break;
+      this.finalizedResponses.delete(oldest);
+    }
+  }
+
   /** Clear the hold's timer + bookkeeping for `id`, then emit its accumulated
    *  partial (and a non-partial final if `emitFinal`). Used when a hold
    *  resolves to real input, diverges from clarifier-shape mid-stream, or the
@@ -922,6 +1065,7 @@ export class RealtimeCaddieClient {
       const final: RealtimeMessage = { ...msg, partial: false };
       this.partials.delete(id);
       this.events.onMessage?.(final);
+      this.markResponseFinalized(id);
     }
   }
 
@@ -937,6 +1081,9 @@ export class RealtimeCaddieClient {
     const msg = this.partials.get(id);
     this.partials.delete(id);
     voiceEvent('caddie', 'realtime_noinput_clarifier_suppressed', { detail: `len=${msg?.text.length ?? 0}` });
+    // A suppressed clarifier is resolved for good — mark finalized so a late
+    // duplicate `done` can never resurrect it.
+    this.markResponseFinalized(id);
   }
 
   /** Called when a speech turn's input classifies (transcription.completed or
@@ -962,7 +1109,12 @@ export class RealtimeCaddieClient {
     }
   }
 
-  private async runTool(evt: Record<string, unknown>): Promise<void> {
+  /** `responseId` (GA carries it on `response.function_call_arguments.done`
+   *  as `evt.response_id`) coalesces multi-tool turns to exactly one
+   *  `response.create` — see the tool-batch bookkeeping at the event case
+   *  above and the completion logic below
+   *  (specs/caddie-realtime-double-emit-plan.md §2 Part C). */
+  private async runTool(evt: Record<string, unknown>, responseId?: string): Promise<void> {
     const name = String(evt.name || '');
     const callId = String(evt.call_id || '');
     let args: Record<string, unknown> = {};
@@ -994,10 +1146,31 @@ export class RealtimeCaddieClient {
           output: JSON.stringify(output),
         },
       }));
-      // A tool follow-up is never a no-input clarifier candidate either.
-      this.selfTriggeredResponses += 1;
-      this.pendingSpeechItems = [];
-      this.dc.send(JSON.stringify({ type: 'response.create' }));
+    }
+
+    if (!responseId) {
+      // Defensive fallback (no response_id on this event) — never worse than
+      // today: fire immediately per call, exactly like the old unconditional
+      // triple.
+      this.sendResponseCreate();
+      return;
+    }
+
+    const batch = this.toolBatch.get(responseId);
+    if (!batch) {
+      // No batch entry to coalesce against (e.g. never registered) — fail
+      // open to the old per-call behavior rather than silently dropping the
+      // follow-up.
+      this.sendResponseCreate();
+      return;
+    }
+    batch.pending -= 1;
+    // Single-tool turns are byte-identical to today: pending goes 1 -> 0
+    // here and this fires immediately, same as the old unconditional triple.
+    if (batch.pending <= 0 && !batch.created) {
+      batch.created = true;
+      this.toolBatch.delete(responseId);
+      this.sendResponseCreate();
     }
   }
 }

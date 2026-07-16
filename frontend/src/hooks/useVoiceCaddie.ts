@@ -107,6 +107,10 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
 
   const teardownClient = useCallback(() => {
     clearMintDeadline();
+    // Detach before stop() — orb-path belt mirroring
+    // useCaddieLiveSession.ts's startReconnect() pattern
+    // (specs/caddie-realtime-double-emit-plan.md §2 Part B).
+    clientRef.current?.setEvents({});
     clientRef.current?.stop();
     clientRef.current = null;
     everConnectedRef.current = false;

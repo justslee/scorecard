@@ -16688,3 +16688,51 @@ reconnect-safe). No VAD/threshold changes. Secondary Hole-3 = pre-ingest-round c
 - On return: reviewer (adversarial: does dedup ever DROP a legit rapid follow-up? re-break
   priming/no-input/attribution? id-keying across reconnect?) + qa (gates SUCCESS on pushed head) +
   designer BLOCKING (caddie chat surface). Reconcile from origin/integration/next log on resume.
+
+## Cycle 126b (2026-07-15) — builder DONE: caddie double-emit fix implemented, committed to
+## integration/next @ base 51133b1
+**Implemented exactly per specs/caddie-realtime-double-emit-plan.md §2/§5 — no deviations.**
+- **Part A (root cause)** `frontend/src/lib/voice/realtime.ts`: `private aborted = false`, set at
+  the top of `stop()` (TERMINAL — a stopped client never restarts); abort re-check inserted after
+  the mint await (load-bearing: `if (this.aborted || activeRealtimeClient !== this) { cleanup();
+  return; }` + silent `voiceEvent('caddie','realtime_start_aborted')` breadcrumb), after
+  `getUserMedia`, and after the SDP fetch — all silent (no `'error'`), cleanup-and-return only.
+  `start()` early-returns if aborted; `attachMic()` throws post-in-flight-await if aborted.
+- **Part B (consumer belts)** `useCaddieLiveSession.ts` + `useVoiceCaddie.ts`: added
+  `clientRef.current?.setEvents({})` before every `stop()` in `fallBack()`, the `!active` reset,
+  the effect cleanup, and `teardownClient` — copies `startReconnect()`'s existing pattern. Gated
+  the activation `onMessage` on `cancelled || fellBackRef.current` (was the bare `upsert`, the
+  actual hole `mountedRef` alone couldn't close).
+- **Part C (id-keyed single-emit guard)** `realtime.ts`: `processedUserItems`/`finalizedResponses`
+  (Sets, cap 64, evict-oldest, cleared in `cleanup()`) reject exact-id repeats above the shipped
+  priming-echo/no-input/attribution guards without touching their logic; extracted
+  `sendResponseCreate()` (single choke point for every `response.create`) + `toolBatch` (Map
+  keyed by `response_id`, `{pending, created}`) coalesces multi-tool turns to exactly ONE
+  `response.create` after all outputs post — single-tool turns byte-identical to today, defensive
+  per-call fallback if `response_id` is absent.
+- **Tests** (RED→GREEN verified — stashed the realtime.ts fix, ran the new suite, confirmed
+  failures, restored):
+  - `realtime-test-fakes.ts`: added `getAllPcs()` (tracks every constructed FakePeerConnection,
+    additive to `getLastPc()`) + `deferred<T>()`.
+  - NEW `realtime-dedup.test.ts` (14 tests, R1–R10 + R7 single-tool/defensive-fallback controls).
+    Pre-fix: **R1, R2, R3, R7, R9, R8a all FAILED** (6/14 red) — confirms the zombie-resurrection
+    root cause AND the multi-tool double-`response.create` secondary were both real and exactly
+    where the plan traced them. Post-fix: 14/14 green.
+  - `CaddieSheet.realtime.test.tsx`: strengthened Gap-2 with `setEvents({})`-before-`stop()` +
+    post-fallback no-surface assertions; added a new close-during-connect detach test (open→false
+    mid-"Connecting…"→true: old client's messages never render, only the fresh client's do).
+- **Gates (all green):** lint clean; `tsc --noEmit` clean; `next build` clean; voice-tests smoke
+  278/278; the full guard-suite run (realtime-dedup + lifecycle + attribution + noinput + ordering
+  + warm + dispatch + priming-echo + warm-session + CaddieSheet.realtime) 144/144 — all EXISTING
+  guard suites pass UNMODIFIED (only realtime-test-fakes.ts extended additively + new dedup file +
+  CaddieSheet.realtime.test.tsx strengthened). Broader sweep (`src/hooks src/lib/voice
+  src/lib/caddie src/components`) 702+207 all green too.
+- **No deviation from the plan.** Pushed to `integration/next` as commit
+  `caddie-double-emit-fix` (see git log) — NOTICEABLE (caddie correctness, fixes the owner-reported
+  duplication bug + the hidden zombie-session billing cost).
+- **Next:** reviewer (adversarial — the exact checks the plan flagged: legit rapid follow-up never
+  dropped [R4 pins it], priming/no-input/attribution guards untouched [R8 pins it], id-keying
+  survives reconnect [instance-scoped, cleared in cleanup]) + qa (gates on pushed head) + designer
+  (caddie chat surface, though this PR is logic-only — no UI changes). Secondary finding from the
+  plan (hole-3 header/caddie course-data mismatch) intentionally NOT folded in — flagged as its own
+  future item per the plan §8.
