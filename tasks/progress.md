@@ -18108,3 +18108,61 @@ false "PAR 3 462Y"). SILENT: multi-user client identity + per-user storage (dark
 harness + ONCOURSE_READINESS.md · relation-multipolygon assembly fix · guide-validator/eval records.
 Data (already live): Red+Black re-ingested guide-safe; par 11=4; the hole-11 waste-complex relation
 assembled.
+
+## LANDED on integration/next — multiuser-p0-migrations-revocation (slice 3) — SILENT/dark — 2026-07-16
+Builder implemented the code half of specs/multi-user-epic-plan.md §3.2/§3.4/§3.8 (backlog
+multiuser-p0-migrations-revocation), NOT writing any Alembic migration (guarded, owner-approval-gated —
+migration designs are TEXT ONLY, see below). Head 56db1c6 on integration/next (2 commits: 78afac0 backend,
+56db1c6 frontend), depends_on multiuser-p0-authz-flip (slice 1, already landed on bundle #142).
+
+BUILT:
+1. Clerk webhook receiver POST /api/webhooks/clerk (backend/app/routes/webhooks.py) — Svix-signature-
+   verified (HMAC-SHA256 over exact raw bytes f"{svix_id}.{svix_timestamp}.{body}", base64-decoded
+   whsec_ secret, constant-time hmac.compare_digest per v1,<sig> candidate), +-5min replay tolerance +
+   bounded in-process exact-redelivery guard, fail-closed 401 when CLERK_WEBHOOK_SECRET unset. Handles
+   user.deleted/user.banned/session.revoked -> revokes the Clerk user id; unhandled types 200-ack (Clerk
+   retries on non-2xx). NOT member-gated — mounted in main.py alongside /health and / (Clerk calls it
+   server-to-server, no user session).
+2. In-process revocation store (backend/app/services/revocation.py) — interim, dark. is_revoked()/revoke()
+   interface designed for a localized swap once the durable revoked_users table lands (module docstring
+   has the full swap plan + why in-process is safe today: owner mode never consults it).
+3. clerk_auth.require_member now checks revocation.is_revoked() in OPEN MODE ONLY; owner mode
+   short-circuits BEFORE the check (byte-identical) — proven directly by TestRevocation in
+   test_clerk_auth.py (a revoked-marked owner id still passes in owner mode; a non-revoked open-mode
+   user passes; a revoked open-mode user 403s).
+4. test_authz_isolation.py: added /api/webhooks/clerk to the router-wiring suite's open-paths allowlist
+   (intentionally unguarded by require_member — has its own Svix-verified auth). Existing DB-backed
+   isolation suite otherwise unchanged in shape.
+5. Frontend: NEXT_PUBLIC_AUTH_BYPASS prod-build CI assertion (frontend/scripts/assert-no-auth-bypass.mjs,
+   wired as npm's `prebuild` lifecycle hook so it runs automatically before every `npm run build` — gates
+   both CI's build step and the real prod build via ops/ios/ship.sh). Verified live: normal build succeeds;
+   NEXT_PUBLIC_AUTH_BYPASS=1 exits 1 at prebuild before `next build` ever runs.
+
+MIGRATION DESIGNS (TEXT ONLY — no Alembic file written, forbidden this slice; owner determined all three
+are deferrable to the open-mode flip PR since owner mode is dark/single-user):
+  (A) Backfill: `UPDATE <t> SET owner_id = :owner WHERE owner_id IN (NULL, 'anonymous')` across rounds,
+      tournaments, players, scoring_courses, caddie_sessions, shots (user_id column for the latter two).
+      Pre-run assertion (read-only): assert no owner_id/user_id value outside {NULL, 'anonymous', OWNER}
+      via `SELECT count(*) FILTER (...), array_agg(DISTINCT owner_id) FROM <t>` per table (verify-first,
+      §3.2 Step 0). :owner bound from OWNER_CLERK_USER_ID at migration run time; abort if unset. Idempotent.
+  (B) Tighten (>=1wk soak after the flip): `ALTER COLUMN owner_id SET NOT NULL` on the six tables +
+      composite indexes where lists filter by owner (rounds(owner_id, updated_at), players(owner_id), etc).
+  (C) `revoked_users` table CREATE: columns user_id (PK/unique), reason, revoked_at, source (which event
+      triggered it) — the durable backing for app/services/revocation.py, REQUIRED before
+      APP_ACCESS_MODE=open ships (a restart must not silently un-revoke a banned member).
+All three go through the guarded-migrations process as their own reviewed PR when the owner approves the
+open-mode flip window; NOT run/written this slice.
+
+Gates (local, no DB): backend ruff clean; scoping_lint clean (100 files); 2593 non-DB pytest pass (incl.
+33 new webhook + revocation tests, RED->GREEN sanity via signature-tamper/wrong-secret/missing-header/
+stale-timestamp/replay/unset-secret negative tests all correctly 401/400). Frontend: lint clean, tsc
+clean, 2615 vitest pass, voice-tests --smoke 278/278, prod build green (NEXT_PUBLIC_API_URL + Clerk
+pk_live baked, matches CI) both with and without the bypass flag (flag=1 correctly blocks at prebuild,
+exit 1, before next build runs). DB-backed tests (backend/tests/integration/) skip locally (no Postgres,
+per the "never spin up a container" rule) — CI's postgis job runs them; the ONLY integration-suite change
+is the open-paths allowlist addition (structural, no new DB assertions needed).
+
+NOT shipping/pinging — SILENT (dark, APP_ACCESS_MODE stays owner-default, zero behavior change for the
+owner; webhook is fully inert since CLERK_WEBHOOK_SECRET is unset in prod). Next slice per the epic:
+multiuser-p0-client-identity already landed (bundle #143); multiuser-p0-keychain-token depends on this
+slice + multiuser-p0-authz-flip, both now satisfied — ready to pick up next cycle.
