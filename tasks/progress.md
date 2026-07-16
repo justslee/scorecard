@@ -16818,16 +16818,38 @@ Turned it into an 8-dimension MEASURABLE bar + landed the first improvements.
   persona on every non-round surface. Plus dead CaddiePanel/CaddieModal/CaddieNotesCard (1300 lines).
 - Harness = SILENT; fable→cedar fix = small NOTICEABLE reliability fix. Do NOT ship/ping this cycle.
 
-## AWAITING — builder implementing specs/caddie-experience-harness-plan.md on the worktree branch
-- Land-now scope (§8): named caddie-experience suite + manifest guard + CADDIE_EXPERIENCE.md;
-  backend eval multi-turn context-retention checks + 3 golden scenarios + teeth; voice-config pins
-  + fable→cedar repoint; substance extractor + teeth + probes jsonl; CaddieSheet.realtime-glitch.tsx
-  (4 tests); gated run_consistency.py + run_latency.py (inert without keys) + gate-refusal tests.
-- On return: reviewer (measurements honest / deterministic-where-claimed / no regression from
-  fable→cedar / spend bounded) + qa (all gates SUCCESS on pushed head) + designer BLOCKING only if
-  a user-facing change lands (the fable→cedar repoint counts). Then file backlog items (B/C/D) via
-  targeted edits + diff-check, rebase onto origin/integration/next, push to add to PR #141.
-- DO NOT touch realtime.ts / realtime-ordering.ts (dedup lane owns them). Reconcile from branch log.
+## Cycle 127 DONE (2026-07-15) — landed on the worktree branch, rebased onto integration/next
+**Landed (SILENT harness + one NOTICEABLE reliability fix):** the caddie-experience measurement
+harness (LAND-NOW scope of specs/caddie-experience-harness-plan.md) + the fable→cedar voice fix.
+Builder commits ddd046a, a16134c, 110eb10, f32e574 (+ plan f065b3d, backlog df55993).
+- **A/D — named suite + reliability:** `npm run test:caddie-experience` (manifest-guarded,
+  vitest.caddie-experience.config.ts force-sets include; 217/217 across 16 files) + root
+  CADDIE_EXPERIENCE.md (8-dimension map, gate commands, latency methodology, honest TBD baseline).
+  New CaddieSheet.realtime-glitch.test.tsx (4 tests: reconnect-mid-answer ×2, hole-change-mid-answer,
+  hole-change-in-reconnect-window) — mocks realtime.ts entirely, unique ids, zero dedup-lane coupling.
+- **C — conversation quality (dims 2/3):** backend/tests/eval history_renders_in_order tier1 check +
+  3 golden multi-turn scenarios (3-wood follow-up, prior-club retention, challenge-and-admit) + 4
+  teeth mutants; USES_CONVERSATION_CONTEXT judge property (gated).
+- **B — consistency (dim 5):** pure substance.py extractor (club/yardage/hazard) + variance report +
+  teeth; golden/consistency_probes.jsonl; gated run_consistency.py.
+- **Dim 4 voice:** test_realtime_session_config.py pins every persona voice_id ∈ valid Realtime set;
+  FIX personalities.py The Professor fable→cedar (fable is an invalid Realtime voice → session enum
+  error, not a silent fallback = a latent broken persona). RED→GREEN confirmed (reviewer re-proved).
+- **Dim 7 latency:** gated run_latency.py (ephemeral-mint p50/p95, client_secret redacted). No baseline
+  captured — NO keys in the agent env; table ships TBD (never fabricated).
+- **Verdicts:** reviewer SHIP (no BLOCKING; RED-proofed the voice teeth by mutate→fail→revert; no
+  secret leak; no realtime.ts collision). qa PASS (9/9 gates on the branch: test:caddie-experience
+  217, full vitest 2438, voice 278, tests/eval 105, broader offline 2500, gated runners refuse w/o
+  keys). designer APPROVE (cedar persona-coherent).
+- **Filed (backlog df55993, 11 items):** caddie-orb-persona-consistency (P1, orb discards chosen
+  persona — headline), caddie-persona-db-voice-audit (P1, complete the fable fix in the prod DB row),
+  caddie-voice-cedar-default-ab (P2, owner-gated audible sage→cedar + speed A/B), dead-code-removal,
+  cross-surface-identity-label, setup-persona-blind, transcript-render-unify, opening-greeting-
+  normalize, loading-copy-align, experience-live-baseline (run gated tools w/ keys), reconnect-
+  holechange-doublesend.
+- **NOT shipped/pinged this cycle** (per brief). Harness=SILENT; fable→cedar=small NOTICEABLE reliability
+  fix; both ride PR #141. Owner-gated follow-ups: the audible voice A/B + the prod persona-voice DB row.
+- Untouched: realtime.ts / realtime-ordering.ts (dedup lane owns them).
 
 ## CYCLE 127 DONE (builder) — caddie-experience-harness LAND-NOW scope implemented on the worktree
 Implemented the full LAND-NOW scope (plan §8) on branch `worktree-agent-a86844bf0a0da63e0`, 3
