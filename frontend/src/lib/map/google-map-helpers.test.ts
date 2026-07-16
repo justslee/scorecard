@@ -783,6 +783,75 @@ describe('Item 3 regression — handlePositionUpdate no longer calls clearHoleOv
   });
 });
 
+// ── Item 4 (draggable aim reticle) — one shared seam, no math fork ────────────
+//
+// `placeTarget` is component-bound (touches refs/state/plugin), so it can't
+// be unit-tested directly here. Instead these are structural/grep-level
+// assertions on the source that prove the shared-seam CONTRACT the plan
+// requires: the tap-click handler and drag-END handler both call the same
+// `placeTarget` function (not a duplicated/forked math path), and the only
+// place `tapTargetDistances` is invoked with the {pos, green, tee, false,
+// distanceFn} arg pattern is the single `tapTargetForPos` helper that both
+// `placeTarget` (tap + drag-end) and the live-drag tick funnel through — so
+// a mid-drag readout is guaranteed to agree with what a tap/drag-end at the
+// same point computes (specs/map-fieldtest-v119-plan.md Item 4 gate).
+
+describe('Item 4 — draggable aim reticle shares ONE seam (placeTarget) between tap and drag-end', () => {
+  const src = readFileSync(
+    join(__dirname, '..', '..', 'components', 'GoogleSatelliteMap.tsx'),
+    'utf-8'
+  );
+
+  it('the map click handler calls placeTarget(...) — no separate inline math', () => {
+    const start = src.indexOf('setOnMapClickListener');
+    const end = src.indexOf('setOnMarkerDragStartListener');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('await placeTarget({ lat: ev.latitude, lng: ev.longitude });');
+  });
+
+  it('the drag-end handler calls the SAME placeTarget(...) — drag-end math === tap math for the same point', () => {
+    const start = src.indexOf('setOnMarkerDragEndListener');
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, start + 400);
+    expect(body).toContain('await placeTarget({ lat: data.latitude, lng: data.longitude });');
+  });
+
+  it('the live-drag tick does NOT redraw polylines (no addPolylines call between DragListener and DragEndListener)', () => {
+    const start = src.indexOf('setOnMarkerDragListener');
+    const end = src.indexOf('setOnMarkerDragEndListener');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).not.toContain('addPolylines');
+  });
+
+  it('tapTargetDistances is invoked from exactly ONE arg-building call site (tapTargetForPos) — the shared seam both placeTarget and the live-drag tick funnel through', () => {
+    const occurrences = src.split('tapTargetDistances(').length - 1;
+    // The import statement lists the bare identifier (no trailing "("), so
+    // this counts only actual call sites — must be exactly 1.
+    expect(occurrences).toBe(1);
+    expect(src).toContain('function tapTargetForPos(');
+  });
+
+  it('every tapTargetForPos( call site is the pure arg-building helper, used by both placeTarget and the live-drag listener', () => {
+    const callSites = src.split('tapTargetForPos(').length - 1;
+    // 1 function definition + 2 call sites (inside placeTarget, inside the
+    // live-drag listener).
+    expect(callSites).toBe(3);
+  });
+
+  it('drag callbacks are guarded to the tap marker id — a drag of any other marker is ignored', () => {
+    const start = src.indexOf('setOnMarkerDragStartListener');
+    const end = src.indexOf('setIsLoading(false);', start);
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, end);
+    const guardCount = (body.match(/data\.markerId !== tapMarkerIdRef\.current/g) ?? []).length;
+    expect(guardCount).toBe(3); // dragStart, drag (live), dragEnd
+  });
+});
+
 // ── teeColorFor / teeMarkerIconUrl (colored tee marker) ───────────────────────
 
 describe('teeColorFor — tee-name → canonical marker colour', () => {

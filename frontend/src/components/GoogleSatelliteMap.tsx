@@ -70,6 +70,7 @@ import {
 } from "@/lib/map/google-map-helpers";
 import { buildBunkerMarkers } from "@/lib/map/marker-options";
 import { fetchWeather } from "@/lib/caddie/api";
+import { haptic } from "@/lib/haptics";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { T } from "@/components/yardage/tokens";
 import {
@@ -110,6 +111,26 @@ interface CameraQueueTarget {
   hd: CourseCoordinates;
   reason: 'hole' | 'gps';
   pos: Position | null;
+}
+
+// ── Tap-target arg-building (single seam) ──────────────────────────────────
+
+/**
+ * Build the TapTarget distances (carry from tee, remaining to green) for
+ * `pos` given the current hole — the ONE arg-building call site shared by
+ * `placeTarget` (tap-to-place + drag-END) AND the reticle's live-drag tick
+ * (cheap numbers-only readout). v1.1.9 field-test fix, Item 4: a mid-drag
+ * readout must always agree with what a tap/drag-end at the same point
+ * would compute — no separate math path to drift out of sync.
+ */
+function tapTargetForPos(pos: { lat: number; lng: number }, hd: CourseCoordinates): TapTarget {
+  return tapTargetDistances(
+    pos,
+    hd.green,
+    hd.tee ?? null,
+    false,
+    (a, b) => calculateDistance(a, b).yards,
+  );
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -442,6 +463,62 @@ export default function GoogleSatelliteMap({
       tapLineIdsRef.current = [];
     }
   }, []);
+
+  /**
+   * Place (or move) the aim reticle at `pos`: recompute the carry/to-green
+   * readout, redraw the tee→point (white) and point→green (amber)
+   * polylines, and place/replace the draggable reticle marker.
+   *
+   * THE shared seam for both the tap-to-place click handler AND the
+   * reticle's drag-END — no separate math fork, so releasing a drag at a
+   * point always settles to the exact same lines/numbers a tap at that
+   * point would (v1.1.9 field-test fix, Item 4).
+   */
+  const placeTarget = useCallback(async (pos: { lat: number; lng: number }) => {
+    const hd = currentHoleRef.current;
+    if (!hd) return; // center-only mode — no reference point
+
+    setTapTarget(tapTargetForPos(pos, hd));
+
+    // Clear the previous target + its lines, then draw the new ones.
+    await clearTapMarker();
+    const m = googleMapRef.current;
+    if (!m) return;
+    const lineIds: string[] = [];
+
+    // Leg 1 — tee → target (the carry): white.
+    const tee = hd.tee ?? null;
+    if (tee) {
+      const ids = await m.addPolylines([{
+        path: [{ lat: tee.lat, lng: tee.lng }, pos],
+        strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
+        geodesic: true, clickable: false,
+      }]).catch(() => [] as string[]);
+      lineIds.push(...ids);
+    }
+    // Leg 2 — target → green centre (what's left): amber, distinct from white.
+    {
+      const ids = await m.addPolylines([{
+        path: [pos, { lat: hd.green.lat, lng: hd.green.lng }],
+        strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
+        geodesic: true, clickable: false,
+      }]).catch(() => [] as string[]);
+      lineIds.push(...ids);
+    }
+    tapLineIdsRef.current = lineIds;
+
+    // White target reticle at the point (yardage-book vibe, not a red pin).
+    // draggable: true — see setOnMarkerDrag{,Start,End}Listener below, all
+    // guarded to this marker's id.
+    const tapId = await m.addMarker({
+      coordinate: pos,
+      iconUrl: "assets/tap-target.png",
+      iconSize:   { width: 38, height: 38 },
+      iconAnchor: { x: 19, y: 19 },
+      draggable: true,
+    }).catch(() => null);
+    if (tapId) tapMarkerIdRef.current = tapId;
+  }, [clearTapMarker]);
 
   /**
    * Remove the GPS "you" dot (if any).
@@ -820,58 +897,37 @@ export default function GoogleSatelliteMap({
         }
 
         // ── Click/tap-to-measure handler ─────────────────────────────────
+        // Same seam as drag-end below (`placeTarget`) — no separate math
+        // path (v1.1.9 Item 4).
         await gMap.setOnMapClickListener(async (ev) => {
           if (!googleMapRef.current || !mapReadyRef.current) return;
+          await placeTarget({ lat: ev.latitude, lng: ev.longitude });
+        });
+
+        // ── Drag listeners for the aim reticle (v1.1.9 Item 4) ────────────
+        // All guarded to `markerId === tapMarkerIdRef.current` so a drag of
+        // any other marker (none exist today, but future-proof) is ignored.
+        await gMap.setOnMarkerDragStartListener((data) => {
+          if (data.markerId !== tapMarkerIdRef.current) return;
+          haptic('light'); // cheap, once per drag — not per tick
+        });
+
+        // Live tick: cheap path ONLY — recompute the carry/to-green numbers
+        // via the SAME arg-building seam as `placeTarget` (`tapTargetForPos`).
+        // Do NOT redraw polylines here (remove+add per tick is too heavy);
+        // they settle to the final position on drag-end.
+        await gMap.setOnMarkerDragListener((data) => {
+          if (data.markerId !== tapMarkerIdRef.current) return;
           const hd = currentHoleRef.current;
-          const tapPos = { lat: ev.latitude, lng: ev.longitude };
+          if (!hd) return;
+          setTapTarget(tapTargetForPos({ lat: data.latitude, lng: data.longitude }, hd));
+        });
 
-          if (!hd) return; // center-only mode — no reference point
-
-          // Two measured legs from the tapped target: tee → point ("From tee")
-          // and point → green center ("To green"). Same turf fn as the panel.
-          const tee    = hd.tee ?? null;
-          const target = tapTargetDistances(
-            tapPos,
-            hd.green,
-            tee,
-            false,
-            (a, b) => calculateDistance(a, b).yards,
-          );
-          setTapTarget(target);
-
-          // Clear the previous target + its lines, then draw the new ones.
-          await clearTapMarker();
-          const m = googleMapRef.current!;
-          const lineIds: string[] = [];
-
-          // Leg 1 — tee → target (the carry): white.
-          if (tee) {
-            const ids = await m.addPolylines([{
-              path: [{ lat: tee.lat, lng: tee.lng }, tapPos],
-              strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
-              geodesic: true, clickable: false,
-            }]).catch(() => [] as string[]);
-            lineIds.push(...ids);
-          }
-          // Leg 2 — target → green centre (what's left): amber, distinct from white.
-          {
-            const ids = await m.addPolylines([{
-              path: [tapPos, { lat: hd.green.lat, lng: hd.green.lng }],
-              strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
-              geodesic: true, clickable: false,
-            }]).catch(() => [] as string[]);
-            lineIds.push(...ids);
-          }
-          tapLineIdsRef.current = lineIds;
-
-          // White target reticle at the tapped point (yardage-book vibe, not a red pin).
-          const tapId = await m.addMarker({
-            coordinate: tapPos,
-            iconUrl: "assets/tap-target.png",
-            iconSize:   { width: 38, height: 38 },
-            iconAnchor: { x: 19, y: 19 },
-          }).catch(() => null);
-          if (tapId) tapMarkerIdRef.current = tapId;
+        // Drag-end: the SAME seam as a tap — `placeTarget` redraws the
+        // polylines/reticle at the final released point.
+        await gMap.setOnMarkerDragEndListener(async (data) => {
+          if (data.markerId !== tapMarkerIdRef.current) return;
+          await placeTarget({ lat: data.latitude, lng: data.longitude });
         });
 
         setIsLoading(false);
