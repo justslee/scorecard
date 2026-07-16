@@ -17409,3 +17409,36 @@ INVARIANT: zero diff to realtime.ts/realtime-ordering.ts/useCaddieLiveSession/ty
 On builder push -> reviewer (fresh: no dedup/ordering/persona-label regression; greeting can't double-fire
 on reconnect; mind no-input-clarifier interactions) + qa (gates SUCCESS on pushed head) in parallel ->
 designer BLOCKING on rendered result. Then PR #141 checklist + backlog (both items done) + progress. NO ship/ping.
+
+## Cycle 133 DONE — builder shipped caddie coherence polish to integration/next @05c8173
+Both nits landed per specs/caddie-coherence-polish-plan.md, frontend-only, SILENT-ish.
+NIT1: CaddieOrbSheet.tsx:401 emptyHint now interpolates captionPersonaName(caddy.name)
+(matches the :389 speakerLabel); turns-persist invariant codified with a comment (:44) +
+test (re-summon while open never re-greets). NIT2: live-copy.ts LIVE_STATUS_LABEL narrowed
+to name-free statuses + new liveStatusLabel(status,name) resolves speaking -> "{name} is
+speaking…"; CaddieSheet.tsx LiveFooter takes a personaName prop, both liveEmptyStateHint
+call sites (:1799/:1813, now ~1800/1814) pass captionPersonaName(caddy.name);
+VoiceRoundSetupRealtime STATUS_LABEL deduped (spreads LIVE_STATUS_LABEL, idle="Tap to
+start", speaking="Looper speaking…" — task-like surface, no persona chat). Tests: flipped
+the 2 pinned assertions (RED verified against old source via git stash, then GREEN
+restored); added long-custom-persona-name never-disagree coverage (live-copy.test.ts,
+CaddieOrbSheet.test.tsx) + converse continuity test.
+PLAN-ACCURACY FINDING (flagged, not silently fixed): the plan's row-2 claim "turns persist
+across close/reopen (safe today)" does NOT hold for a literal close()-then-reopen —
+CaddieOrbSheet's `setOpen((wasOpen) => { if (!wasOpen) resetSession(); return true; })`
+intentionally clears turns on the closed→open transition (a deliberate fresh conversation
+per summon-from-closed), verified by writing the test the plan asked for and watching it
+fail against a literal close→reopen. This is pre-existing, separately-tested behavior
+(not introduced this cycle) — NOT a re-greet regression, but the plan's premise about it
+was wrong. Adjusted the invariant to what's actually true (continuity across a re-summon
+while the sheet stays open) rather than changing resetSession behavior (a real session-
+persistence change, out of scope for a copy-only nit) or writing a false-positive test.
+Eng-lead/owner may want to decide separately whether close→reopen SHOULD preserve the
+conversation — filed as a question, not fixed here.
+Gates: lint clean, tsc clean, full vitest 128 files/2502 tests GREEN, caddie-experience
+gate 17 files/241 tests GREEN, voice-tests smoke 278/278 GREEN, next build GREEN.
+Invariant proven (git diff --stat): zero diff to realtime.ts/realtime-ordering.ts/
+useCaddieLiveSession.ts/types.ts/models.py/Transcript.tsx; zero backend diff.
+NOT shipped/pinged (per brief, land-and-review only). Next: reviewer (fresh) + qa in
+parallel, designer BLOCKING on rendered result — including a judgment call on the
+plan-accuracy finding above.
