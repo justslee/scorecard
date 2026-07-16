@@ -3,11 +3,11 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## 2026-07-16 IN-PROGRESS — GPS/on-course readiness verification (isolated worktree, HOLD pushes)
+## 2026-07-16 DONE — GPS/on-course readiness verification (isolated worktree) [audit record below; RESOLVED block follows]
 Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
 Bethpage Red this weekend; test + make production-ready. Lane: audit + reusable sim harness
-+ honest readiness report. HOLDING all pushes until both active lanes land (map field-test
-v119 not yet landed as of this note; multi-user slice 2 landed @d9b7bbe). Do NOT ship/ping.
++ honest readiness report. (HOLD-until-lanes-land now lifted — see RESOLVED block below.)
+Multi-user slice 2 landed @d9b7bbe; map field-test v119 landed @ffc6cb8.
 
 GPS-CONSUMER INVENTORY (audited, file:line) — 8 behaviors:
 1. You-dot + camera follow: GoogleSatelliteMap.tsx handlePositionUpdate 883-962 (>20yd re-frame).
@@ -42,15 +42,25 @@ caddie/hole-yardage) + code audit are the AUTHORITATIVE backing. Simulated GPS i
 perfect-accuracy → real jitter/accuracy/tree-canopy loss are NOT-VERIFIABLE (only Saturday);
 only the `simctl location clear` loss→from-tee-fallback path is sim-checkable.
 
-## AWAITING — builder (a5d093cd2511f5093) implementing specs/oncourse-gps-readiness-plan.md
-Plan done (Fable, saved @spec commit). Builder building the harness (ops/harness/oncourse-sim/),
-offline Bethpage Red fixture, diagnostic patch (reverted), best-effort on-device sim drive,
-ONCOURSE_READINESS.md, + filing 2 backlog gaps. NEW files only.
-On builder completion: reviewer (fresh) on any behavior-affecting code + qa gates on the pushed
-head; then poll origin/fix/map-fieldtest-v119 — once it + multi-user both land on
-origin/integration/next, rebase this branch onto the new tip, re-verify behavior #3
-(stray-marker race during GPS ticks) against the harness, finalize the report, THEN push/land.
-Until both lanes land: HOLD all pushes. Do NOT ship/ping.
+## 2026-07-16 RESOLVED — both blocking lanes landed; harness bundle merged + re-verified + landing
+The HOLD is lifted: map field-test v119 landed on integration/next @ffc6cb8 (5 NOTICEABLE map
+fixes incl. #3 "route GPS-tick overlay refresh through the camera queue" = the single-writer fix
+my audit predicted for the stray-marker race), and multi-user slice 2 was already down. Merged
+origin/integration/next into this worktree branch (merge 124789a) — NO conflicts; backlog.json
+auto-merged clean (92 items, no dup ids, my 2 gaps + the map lane's 2 follow-ups all present).
+Re-verified on the MERGED head: backing vitest suites 288/288 green (course-coordinates 19 +
+fcb-tiles 10 + hole-yardage 13 + bethpage-hole3 4 = 46 for the owner's two PASS rows, UNCHANGED;
+map lane grew google-map-helpers 95→109 incl. the createCameraQueue #3-fix priority tests +
+tee-shot-overlays 36→41, added par-sanity 7 + marker-options 4). ONCOURSE_READINESS.md updated:
+refreshed counts + a "Map field-test fixes" section documenting all 5 landed map fixes'
+verification status (map lane's own gates+reviewer+designer are authoritative; on-device
+re-observation still blocked by the sim navigation issue — honest, not faked).
+Classification: SILENT (verification tooling + docs + 2 filed backlog gaps; zero app-code change
+from THIS lane — the map lane's app changes rode in via the merge and were green before). Landing
+on integration/next (bundle #143). NO owner ping (no new noticeable change from this lane).
+Behavior #3's on-device re-verify remains a follow-up for when the sim navigation blocker is
+cleared (Safari Web Inspector / a visible error boundary in the diag patch) — filed intent in
+the readiness report; the pure-logic regression is green now.
 
 ## 2026-07-16 DONE (builder) — oncourse-gps-readiness harness built, ONCOURSE_READINESS.md written, HOLD for push
 specs/oncourse-gps-readiness-plan.md implemented in the isolated worktree

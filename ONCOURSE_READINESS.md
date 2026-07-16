@@ -8,7 +8,7 @@ re-run recipe.
 
 **Bottom line:** the two behaviors the owner specifically flagged — the
 yardage card tracking GPS, and the caddie's GPS grounding — are **PASS**,
-verified via 258 passing pure-logic vitest tests (the exact code paths the
+verified via passing pure-logic vitest tests (the exact code paths the
 round page and caddie use) plus a direct code audit. The reusable offline
 harness (Bethpage Red fixture + walking trace + diagnostic patch) is built
 and committed for future on-device runs. The live on-device simulator drive
@@ -16,18 +16,49 @@ did **not** complete in this pass — see row 1-3/8 and the honest note below;
 it is not required for the two PASS rows above, which don't depend on the
 simulator at all.
 
+The two owner-flagged rows are backed by **46 tests** (course-coordinates 19 +
+fcb-tiles 10 + hole-yardage 13 + bethpage-hole3 4), all green on the current
+bundle head. Since this verification began, the **map field-test v1.1.9 lane
+landed on the same bundle** (5 NOTICEABLE fixes — see "Map field-test fixes"
+below); its changes to the map suites were re-run here and remain green
+(the combined backing set is now **288 tests**, up from 258, because the map
+lane grew google-map-helpers 95→109 and tee-shot-overlays 36→41 and added
+par-sanity 7 + marker-options 4).
+
 ## Checklist
 
 | # | Behavior | Status | Evidence | Note |
 |---|----------|--------|----------|------|
-| 1 | You-dot + camera follow (>20yd re-frame) | **NOT-VERIFIABLE this pass** | `ops/harness/oncourse-sim/evidence/00-launch.png` (healthy build/install/launch); no on-hole screenshot | Debug build succeeded and installed/launched cleanly (confirmed by a correctly-rendered home screen), but the diagnostic round-navigation never settled on the round map within the timebox (see "On-device attempt" below) — no camera-follow screenshot exists to grade. `google-map-helpers.test.ts` (95 passed) covers `cameraForHole`/movedBeyondYards purely; `satellite-helpers.test.ts` (81 passed) covers `isGpsOnHole` purely — both PASS, but neither exercises the live camera re-frame animation itself. |
+| 1 | You-dot + camera follow (>20yd re-frame) | **NOT-VERIFIABLE this pass** | `ops/harness/oncourse-sim/evidence/00-launch.png` (healthy build/install/launch); no on-hole screenshot | Debug build succeeded and installed/launched cleanly (confirmed by a correctly-rendered home screen), but the diagnostic round-navigation never settled on the round map within the timebox (see "On-device attempt" below) — no camera-follow screenshot exists to grade. `google-map-helpers.test.ts` (109 passed, incl. the map lane's new createCameraQueue priority tests) covers `cameraForHole`/movedBeyondYards purely; `satellite-helpers.test.ts` (81 passed) covers `isGpsOnHole` purely — both PASS, but neither exercises the live camera re-frame animation itself. |
 | 2 | **Yardage card tracks GPS (OWNER'S EXAMPLE)** | **PASS** | vitest below + code audit | See "Behavior 2" section. |
-| 3 | Tee-shot overlay 40yd tee zone | **PASS (pure-logic); on-device NOT-VERIFIABLE** | `tee-shot-overlays.test.ts` (36 passed) | `teeShotOverlaysVisible`'s 40yd threshold + fade behavior is directly tested and green. The live on-screen fade/redraw was not observed on-device this pass (same navigation blocker as row 1). |
+| 3 | Tee-shot overlay 40yd tee zone | **PASS (pure-logic); on-device NOT-VERIFIABLE** | `tee-shot-overlays.test.ts` (41 passed) | `teeShotOverlaysVisible`'s 40yd threshold + fade behavior is directly tested and green. The live on-screen fade/redraw was not observed on-device this pass (same navigation blocker as row 1). |
 | 4 | Auto-advance walking to next tee | **FILED** (product decision) | `backlog.json` id `gps-auto-advance-decision` | OFF by design (`autoDetectHole={false}` at `InlineHoleDiagram.tsx:306` and `RoundPageClient.tsx:2658`); the nearest-green auto-detect logic already exists in `GoogleSatelliteMap.tsx handlePositionUpdate` (948-958) but is disabled. Risk: mis-jumping between adjacent greens on a tight routing. NOT changed this pass (owner decision needed; also touches the map-lane hot file). |
 | 5 | Caddie GPS grounding | **PASS** | vitest below + code audit | See "Behavior 5" section. |
 | 6 | Untethered live session grounding | **PASS-via-audit** | code audit (`useDetachedCaddieLive.ts`, `useCaddieLiveSession.ts:305`) + `npx tsx voice-tests/runner.ts --smoke` = 278/278 | The detached session re-anchors using the SAME `resolvedYardage` value the yardage card and caddie use (Item B, `specs/caddie-detach-and-language-pin-plan.md`) — no separate/stale number path. Voice-tests smoke is fully offline and green; no GPS-specific voice fixture exists to add live-GPS coverage beyond the resolver tests already counted under behavior 2. |
 | 7 | Wind/elev/plays-like updates | **PASS-via-audit** | code audit (`RoundPageClient.tsx` 1274-1301, `usePhysicsPlaysLike`) | Per-hole `holeBearing` is derived from `holeCoordsForTiles.tee`/`.green` (the SAME GPS-derived coords behavior-2 verifies), so wind/elev tiles inherit that grounding. `playsBasis`/`playsTileDisplay` recompute from `fcbLive` — covered indirectly by `hole-yardage.test.ts` / `fcb-tiles.test.ts`. No dedicated wind/elev vitest suite exists; not built this pass (out of scope — audit only, per the plan). |
 | 8 | Tap-target "from tee" line uses GPS origin | **FILED** (bounded gap, map lane) | `backlog.json` id `tap-target-gps-origin` | `GoogleSatelliteMap.tsx` tap handler (782-824) hardcodes the tee as the measuring-line origin (`fromGps=false`) even when the golfer's GPS is on-hole. P2 follow-up, confined to the map-lane hot file (`fix/map-fieldtest-v119`) — deliberately NOT touched here. |
+
+## Map field-test v1.1.9 fixes (landed on the same bundle — in this pass's scope)
+
+The `fix/map-fieldtest-v119` lane landed 5 NOTICEABLE map fixes on `integration/next`
+while this verification ran; they are part of what the owner will see Saturday, so
+they are in scope here. Each was built to its own Fable plan and cleared that lane's
+own gates + adversarial reviewer + designer before landing (bundle #143). Their status
+in THIS on-course readiness view:
+
+| Map fix | What it fixes on-course | Verification |
+|---------|------------------------|--------------|
+| #1 Billboard bunker letters (`marker-options.ts`, `isFlat:false`) | Bunker-carry letters no longer render upside-down on south-playing holes | `marker-options.test.ts` (4 passed) asserts every badge is `isFlat:false`; map lane designer-approved |
+| #2 Missing big bunkers (relations + `natural=sand` ingest, cap 4→6, fairway-adjacency admit) | Large waste/fairway bunkers on heavily-bunkered holes now render | `tee-shot-overlays.test.ts` (41 passed) + backend hazards tests (CI); the ingest re-run against live OSM is the lane's evidence |
+| **#3 Stray other-hole tee markers (GPS-tick race)** | **GPS-relevant:** the two-writer race on `holeMarkerIdsRef` between the GPS tick and the camera queue is eliminated — GPS-tick overlay refresh now routes through the single serialized camera queue, so no orphan tee marker persists on the wrong hole while walking | `google-map-helpers.test.ts` (109 passed) incl. new createCameraQueue priority/most-recent-wins tests (`gps never evicts a pending hole-change`); reviewer flagged 1 blocking issue on the first cut, the lane fixed it (priority-aware queue) before landing |
+| #4 Draggable aim reticle (shared `placeTarget` seam) | Tap-or-drag the target; FROM TEE/TO GREEN update live on drag | Shared seam so tap-math == drag-end-math; on-device drag itself is device-only (like all native-plugin interactions) |
+| #5 Red-11 "PAR 3 · 462Y" (`par-sanity.ts` display guard + re-ingest) | The wrong par/yardage header on Red-11 is corrected | `par-sanity.test.ts` (7 passed) |
+
+On-device NOTE: the same simulator navigation blocker that stopped rows 1/3 also means
+these map fixes were **not** re-observed on the sim in this pass — their authoritative
+backing is the map lane's own gates + review (above), not a fresh on-device drive here.
+Fix #3 is the one that most directly touches the walking-round GPS experience; its
+pure-logic regression test is green on the current bundle head.
 
 ## Behavior 2 — Yardage card tracks GPS (owner's example) — PASS
 
