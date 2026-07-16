@@ -17466,6 +17466,6 @@ NOTICEABLE (visible map polish). Designer LEADS. Do NOT ship/ping.
 Constraints found: plugin Marker = iconUrl/iconSize/iconAnchor/zIndex/title only (title=stock info-window);
 NO persistent native label, NO lat/lng->pixel projection (DOM-chip sync not feasible). Existing styled bottom
 tap-card already carries the name. Realistic label = bake into highlight marker image and/or drop `title`.
-Stage: awaiting designer concept (agent a645413c...). NEXT: designer concept -> Plan(fable) -> builder
+Stage: designer concept DONE (ink pin + paper flag cutout, drop title, keep tap-card). AWAITING Plan(fable) aea3e0e... on specs/map-marker-craft-plan.md (anchor geometry focus).
 (regen asset via render-course-flag.mjs pattern + wire) -> reviewer -> qa -> designer BLOCKING screenshots.
 Land on integration/next (HOLD push if #141 recuts; add to bundle PR or fresh one if #141 shipped).
