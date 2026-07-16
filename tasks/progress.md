@@ -17902,3 +17902,14 @@ Plan committed @6142f41 (specs/oncourse-gps-target-origin-plan.md). Builder now 
 implementing it on this worktree branch (commits locally, does NOT push / open PR).
 On resume: check `git log` on this worktree branch for the builder's commit(s); if present,
 do NOT re-dispatch — go straight to reviewer+qa+designer. If absent, re-dispatch builder.
+
+## AWAITING UPDATE — review triad on oncourse-gps-target-origin @60765e4 — 2026-07-16
+Builder DONE @60765e4 (all gates green locally: lint/tsc clean, voice 278/278, vitest 766/766
+map+course, full 2603/2603). Files: course-coordinates.ts (isGpsPlausibleToGreen), RoundPageClient
+(posOnHole refactor byte-identical), GoogleSatelliteMap.tsx (resolveGpsOrigin + threading + live
+re-place + single-writer guards), 2 test files.
+AWAITING (parallel): reviewer (attack the v1.1.9 single-writer race-class guard), qa (lint+tsc+
+build+voice+vitest in worktree), designer (BLOCKING: on-GPS label copy "Carry" vs "From you").
+  All SHIP/PASS + designer copy chosen -> land: push worktree branch -> integration/next (fetch+ff,
+  never force), update PR #143 checklist (NOTICEABLE), close backlog finding #8.
+  BLOCKING issue -> re-dispatch builder, re-review. NOT shipping/pinging (owner decisions pending, main session).
