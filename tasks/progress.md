@@ -16900,3 +16900,44 @@ builder never rebases; eng-lead does that).
   plan deviations are sound, not corner-cutting) + qa (gates SUCCESS on pushed head) + designer
   (SILENT — no user-facing surface; the fable→cedar swap is audible but not UI, flag if designer
   wants a look anyway) + rebase onto `integration/next`, push.
+
+## Cycle 128 (2026-07-15) — caddie persona coherence P1s (eng-lead)
+Two ranked caddie-experience P1s in ONE pass (owner crux: caddie experience = #1). Bundle #141
+(integration/next → main), synced to head 09c4a89 (main merged, up to date).
+
+**P2 DB AUDIT — DONE (this session, before build).** The prod `caddie_personas` table carries the
+legacy invalid Realtime voice. Static-source proof + strong inference (live read BLOCKED — see below):
+`backend/supabase/migrations/003_caddie_personas.sql` seeds 8 built-in personas; exactly TWO carry
+`voice_id='fable'` (invalid for the Realtime API): `professor` (🎓, L70) and `course-historian`
+(📜, L97). `load_personality` is **DB-first** (app/caddie/personalities.py:178) → a prod row's
+'fable' OVERRIDES the cycle-127 code fix (personalities.py professor→'cedar'), so **The Professor's
+LIVE realtime session still errors in prod despite the shipped fix**, and course-historian (DB-only,
+not a code built-in) is unreachable-safe only via DB.
+- LIVE prod read attempts (both blocked, documented): (1) direct RDS via SSM key-free probe on
+  i-0826ae70df62d9fe8 → `no pg_hba.conf entry for host 10.0.1.30 user looper` = the STALE
+  `looper/prod` DATABASE_URL secret (separately tracked: prod-database-url-secret-refresh); (2)
+  `GET https://api.looperapp.org/api/caddie/personalities` → 401 (Clerk-auth-gated, no token).
+- REPAIR DECISION: a prod-row mutation is **beyond a trivial normal-write-path repair** (no API
+  endpoint updates a built-in persona's voice; the seed lives in a GUARDED migrations dir; DB write
+  access is blocked by the stale secret; a raw prod UPDATE has no reversible-migration wrapper) →
+  per the brief, do NOT mutate prod. Instead ship the SAFE in-bundle fix (below) + report the
+  data-repair recommendation for owner (owner-gated, needs the secret refresh first).
+- SAFE IN-BUNDLE FIX (P2): a voice-validity **clamp** at the single Realtime mint choke point
+  `app/services/realtime_relay.py:144` (`"voice": voice_id if valid else DEFAULT`) so ANY invalid
+  stored voice (stale DB row, user-authored custom, code) can never error a Realtime session. Bounded,
+  reversible, testable (RED: fable→clamped), no prod mutation. Closes professor/course-historian in
+  prod in-app.
+
+**P1 (NOTICEABLE) caddie-orb-persona-consistency:** CaddieOrbSheet hardcodes personality_id:'classic'
+(runConverse :202 stream + :215 fallback) and LooperSheetShell hardcodes tts.speak(text,'classic')
+(LooperSheet.tsx:109) → the ever-present orb silently discards the user's chosen persona (name/voice)
+on Home/Partners/My Card. Fix: resolve the selected persona (useCaddiePersona source of truth, same
+as round caddie) and thread personaId into both API calls + the TTS speak; coherent name/greeting;
+sane fallback when none chosen. Watch one-mic/orb + dedup/attribution invariants; NO VAD/mic changes.
+
+## AWAITING — cycle 128
+Awaiting Fable plan (specs/caddie-orb-persona-consistency-plan.md) covering P1 persona wiring +
+P2 realtime voice-validity clamp. On plan return → dispatch builder on integration/next → reviewer
++ qa + designer (designer BLOCKING, persona coherence is user-facing) → land + PR #141 checklist +
+backlog both P1s done. HOLD pushes if the branch is recut / #141 merges mid-cycle (land on fresh
+branch after). Do NOT ship/ping.
