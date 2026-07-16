@@ -17489,3 +17489,8 @@ cutout + pennant color diff (pencil vs flag-red) + baked shadow, transparent bg,
 NEXT: reviewer(fable, geometry) -> qa(gates on pushed head) -> designer BLOCKING sim screenshots
 (native anchor/tap/no-info-window verification per plan §4(e) — NOT done, web build can't exercise it).
 Land on integration/next by ff (HOLD push if origin/integration/next recut by #141 ship). Do NOT ship/ping.
+
+## AWAITING reviewer(fable)+qa on 27a1c81 (map-marker lane, worktree)
+Builder DONE @27a1c81: 2-tier ink pin + paper-flag cutout, dropped title both tiers, 6 gates green locally.
+NEXT: reviewer(fable geometry) SHIP -> designer BLOCKING sim screenshots -> land on integration/next (ff, HOLD if recut).
+BLOCKING/issues -> re-dispatch builder. Native sim render verify still owed to designer. Do NOT ship/ping.
