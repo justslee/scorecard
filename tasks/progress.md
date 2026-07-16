@@ -17739,3 +17739,16 @@ qa(af3acefa7c23e13d0, gates), designer(af28b7fa32e719406, BLOCKING #1/#4).
 NEXT: collect 3 verdicts → BLOCKING→re-dispatch builder+re-review; all green→rebase onto
 origin/integration/next → add to bundle PR (NOTICEABLE, open if none) → progress/backlog →
 STOP (do NOT ship/ping; release-manager handles TestFlight later). #5 re-ingest = ops follow-up.
+
+## AWAITING UPDATE (map-fieldtest-v119) — review verdicts in, 1 blocking fix in flight
+QA=ALL GREEN (gates 1-7; E2E N/A until bundle PR preview). Designer=APPROVE (no blockers; optional
+reticle scale-bump on drag-start recorded as FOLLOW-UP, not this round). Reviewer=4/5 verified
+correct (incl. #2 geometry/filter: bounded output, consumers in sync, one honest chip per complex;
+#1 billboard; #4 shared seam no fork; #5 guard threshold lockstep) + ONE BLOCKING on #3: shared
+camera-queue last-write-wins lets a 'gps' request evict a pending 'hole' request → dropped camera
+reframe + stale tee-shot overlays. Fix dispatched to builder (resumed a39d352338f788935): make
+createCameraQueue coalescing PRIORITY-AWARE (shouldReplace predicate; gps never evicts pending hole)
++ test. On builder return: re-verify the queue change (focused), confirm gates green on new head,
+then rebase onto origin/integration/next → add to bundle PR #143 → progress/backlog → STOP.
+FOLLOW-UPS (not blockers): (a) Red-11 staging RE-INGEST (owner standing approval) writes par=4;
+(b) reticle drag-start scale-bump discoverability polish.
