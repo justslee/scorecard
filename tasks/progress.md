@@ -16661,3 +16661,19 @@ CV (spike PR #123) vs accept OSM density. (4) Venmo/payments for settlement. (5)
 pickers (tournament). (6) Multi-user epic greenlight. (7) Rotate the stale looper/prod
 Secrets Manager DATABASE_URL. Loop is genuinely idle — backlog at its floor, every remaining
 item owner-gated / blocked-on-infra / speculative.
+
+---
+## Cycle 126 (2026-07-15) — P0 owner-reported caddie DUPLICATION bug (preempts idle hold)
+**Bug:** LIVE realtime "on the bag" caddie double-emits BOTH the user turn AND the caddie
+response per single utterance (screenshots A hole-3 verbatim-dup, B hole-2 transcription-VARIANT
+dup → two independent engine solves). #139 numbers-coherence is intact; defect is double-emit.
+Doubles API cost + feels broken. NOTICEABLE — caddie correctness. Adds as PR #141's first
+noticeable item. Do NOT ship/ping this cycle.
+**Surface:** frontend/src/lib/voice/realtime.ts (1003L), realtime-ordering.ts, priming-echo.ts,
+attribution (triggerItemsByResponse), heldResponses/no-input clarifier; transcript render in
+CaddieSheet.tsx / CaddieOrbSheet.tsx / useRealtimeCaddie.ts.
+
+## AWAITING — fable Plan agent on the traced double-emit root cause @ base 875999a
+- Plan output → specs/caddie-realtime-double-emit-plan.md (traced mechanism + id-keyed dedup + test harness).
+- On return: dispatch builder to implement plan on integration/next; then reviewer+qa+designer(BLOCKING).
+- Do NOT re-run a finished child on resume; reconcile from origin/integration/next log.
