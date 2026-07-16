@@ -17653,3 +17653,21 @@ AWAITING builder on integration/next. On builder return: reviewer (fresh, advers
 /security-review (mandatory — identity/data-handling) + qa (gates SUCCESS on pushed head + npm run
 test:caddie-experience green). BLOCKING → re-dispatch builder; all green → open fresh bundle PR (SILENT),
 update progress + backlog (slice 2 done; note slices 3/4 readiness). Do NOT ship/ping this cycle.
+
+## AWAITING (lane: map-fieldtest-v119, branch fix/map-fieldtest-v119 off origin/integration/next @ bc2505c)
+Field-test v1.1.9 map fixes — 5 items (all NOTICEABLE): (1) upside-down bunker letters
+[root cause CONFIRMED: isFlat:true on lettered badge markers, GoogleSatelliteMap.tsx:528 →
+flat-to-ground rotates baked letter with camera bearing; fix isFlat:false to billboard];
+(2) missing big bunkers hole 9 [filter tee-shot-overlays.ts fairwayBunkerCarries: suspects =
+MultiPolygon silently skipped (geom.type!=='Polygon' L572), featureType!=='bunker' (waste/sand
+tagging), lateral/carry windows, BUNKER_CAP=4; needs real ingested Red-9 GeoJSON check];
+(3) other holes' tee markers + stray hole-line fragments [our code draws only current-hole tee
+marker & no hole lines; mapType=Satellite (no Google labels) → hypothesis: GPS-tick clear/add
+race outside camera queue orphaning markers, OR another path — Plan to pin];
+(4) draggable aim reticle [tap marker GoogleSatelliteMap.tsx:827 → add draggable:true + wire
+setOnMarkerDragListener/DragEndListener to shared recompute seam; plugin supports both];
+(5) Red-11 par "PAR 3 · 462Y" wrong [OSM par tag or our parse; check DB holes.par + header
+sanity guard; caddie guard PAR_SANITY_MIN_YARDS_FOR_PAR3=280 verify fires].
+Plugin API confirmed: Marker.isFlat(default false=billboard), draggable, setOnMarkerDrag(End)Listener.
+NEXT: Plan(fable) → specs plan; then builder; reviewer; qa; designer(BLOCKING). Rebase onto
+origin/integration/next before push (slice-2 lane concurrent). Do NOT ship/ping.
