@@ -18025,3 +18025,12 @@ Backlog red9-relation-bunker-assembly -> done-on-bundle; red9-relation-bunker-re
 standing Red re-ingest auth, can co-run with map-fieldtest-red11-reingest). NOT shipping/pinging this cycle
 (SILENT; owner decisions pending in main session; release-manager verifies CI-green + ships the bundle later).
 CI: pull_request run 29537908292 in_progress on head 5c3e6bc (backend postgis gate runs the DB ingest tests).
+
+## 2026-07-16 — Red re-run executed (guide-safe, fixed assembler) + follow-up
+Relation/19545022 now ASSEMBLED (+1 bunker, Red total 66->67) — assigned to HOLE 11, not hole 9
+as the synthetic trace predicted (complex sits between adjacent corridors). Guides intact 18/19,
+par11=4, all other holes byte-identical, box clean. FOLLOW-UP (not yet a backlog card — add via
+the next cycle's targeted tooling): verify the complex's true hole (9 vs 11) + consider
+dual-assignment for corridor-spanning hazards. NOTE: a prior commit (eff931a) briefly pushed a
+BROKEN backlog.json (string-surgery bug) — fixed in this commit; lesson reinforced: validate
+BEFORE commit, never chain git after an unvalidated write.
