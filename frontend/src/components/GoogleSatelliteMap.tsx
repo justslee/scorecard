@@ -96,6 +96,22 @@ declare module "react" {
   }
 }
 
+// ── Camera queue payload ────────────────────────────────────────────────────
+
+/**
+ * Discriminated request shape for `cameraQueueRef` (see its docstring below)
+ * — 'hole' = hole-change/resume (full clear→frame→add + tee-shot overlays),
+ * 'gps' = a GPS-tick overlay refresh (clear→add of the hole overlays only,
+ * no camera move). Making BOTH request types flow through the same
+ * serialized queue is the v1.1.9 Item 3 fix for the stray other-hole tee
+ * marker (single writer of `holeMarkerIdsRef`).
+ */
+interface CameraQueueTarget {
+  hd: CourseCoordinates;
+  reason: 'hole' | 'gps';
+  pos: Position | null;
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface GoogleSatelliteMapProps {
@@ -595,8 +611,21 @@ export default function GoogleSatelliteMap({
   // Created once (useRef initial-value idiom, matches mapIdRef above) — `run`
   // only closes over refs, so re-evaluating the initializer on later renders
   // and discarding it is harmless.
-  const cameraQueueRef = useRef<CameraQueue<CourseCoordinates>>(
-    createCameraQueue<CourseCoordinates>(async (hd) => {
+  //
+  // Discriminated payload (v1.1.9 field-test fix — Item 3, stray other-hole
+  // tee markers on holes 8/11): `reason` distinguishes a hole-change/resume
+  // request ('hole' — full clear→frame→add, including tee-shot overlays)
+  // from a GPS-tick overlay refresh ('gps' — clear→add ONLY, no camera move,
+  // no tee-shot churn). Previously the GPS tick ran its own un-serialized
+  // clearHoleOverlays→addHoleOverlays chain in `handlePositionUpdate`,
+  // racing the queue's own clear→add on `holeMarkerIdsRef`: interleaved
+  // awaits could let a queue-chain marker resolve AFTER the GPS chain
+  // overwrote the ref, orphaning it on-map with no future clear tracking it
+  // — the stray tee marker seen on holes 8/11. Routing BOTH paths through
+  // this single serialized queue makes `holeMarkerIdsRef` single-writer, so
+  // no two chains can ever interleave a write.
+  const cameraQueueRef = useRef<CameraQueue<CameraQueueTarget>>(
+    createCameraQueue<CameraQueueTarget>(async ({ hd, reason, pos }) => {
       // Belt+braces readiness gate: the queue itself is DOM/plugin-agnostic and
       // doesn't know about map readiness. A request that lands before
       // onMapReady (or after the map is torn down) no-ops here rather than
@@ -604,15 +633,27 @@ export default function GoogleSatelliteMap({
       // appStateChange listener below re-requests the current hole once the
       // app resumes to the foreground and the map IS ready.
       if (!googleMapRef.current || !mapReadyRef.current) return;
-      const gpsOnHole = positionRef.current ? isGpsOnHole(positionRef.current, hd) : false;
+      const gpsOnHole = pos ? isGpsOnHole(pos, hd) : false;
+
+      if (reason === 'gps') {
+        // GPS-tick refresh: single-writer clear+add of the hole overlays
+        // ONLY — no camera move (the GPS follow camera is a separate,
+        // already-serial `setCamera` call in `handlePositionUpdate`; it
+        // doesn't touch `holeMarkerIdsRef`) and no tee-shot polyline churn
+        // (that's a separate visibility-flip branch, also unaffected by
+        // this race — different id refs).
+        await overlayFnsRef.current.clearHoleOverlays();
+        await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, pos);
+        return;
+      }
+
       await overlayFnsRef.current.clearHoleOverlays();
       await overlayFnsRef.current.clearTeeShotOverlays();
       await overlayFnsRef.current.fitCameraToHole(hd);
-      await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, positionRef.current);
+      await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, pos);
 
       // Tee-shot overlays ride the SAME serialized queue so a rapid multi-hole
       // swipe never races two hole's plates onto the map at once.
-      const pos = positionRef.current;
       const visible = teeShotOverlaysVisible({
         position: pos ? { lat: pos.lat, lng: pos.lng } : null,
         gpsOnHole,
@@ -874,7 +915,7 @@ export default function GoogleSatelliteMap({
 
     if (!currentHoleData || centerOnly) return;
 
-    cameraQueueRef.current.request(currentHoleData);
+    cameraQueueRef.current.request({ hd: currentHoleData, reason: 'hole', pos: positionRef.current });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentHoleData]);
 
@@ -921,9 +962,16 @@ export default function GoogleSatelliteMap({
       }
 
       // ── Refresh hole overlays so FCB/distance rings reflect new GPS ────
+      // Routed through the SAME serialized camera queue as the hole-change
+      // path (v1.1.9 Item 3 fix) — a direct clear→add call here, racing the
+      // queue's own clear→add on hole change, was a two-writer race on
+      // `holeMarkerIdsRef` that orphaned a marker on-map with no tracked id
+      // to clear it (the stray other-hole tee marker on holes 8/11). The
+      // queue's 'gps' branch does the clear+add ONLY — no camera move (that
+      // stays the separate `setCamera` call above) and no tee-shot churn
+      // (handled by the visibility-flip block below, a different id ref).
       if (hd && !centerOnly) {
-        await clearHoleOverlays();
-        await addHoleOverlays(hd, onHole, pos);
+        cameraQueueRef.current.request({ hd, reason: 'gps', pos });
       }
 
       // ── Tee-shot overlays: touch native circles ONLY on a visibility FLIP
@@ -998,7 +1046,7 @@ export default function GoogleSatelliteMap({
       if (!mapReadyRef.current) return; // not ready yet — nothing to re-frame
       if (centerOnly) return; // no per-hole framing in center-only mode
       const hd = currentHoleRef.current;
-      if (hd) cameraQueueRef.current.request(hd);
+      if (hd) cameraQueueRef.current.request({ hd, reason: 'hole', pos: positionRef.current });
     }).then((h) => {
       if (cancelled) { h.remove(); return; }
       handle = h;

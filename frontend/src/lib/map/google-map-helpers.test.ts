@@ -6,6 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   yardsToMeters,
   METRES_PER_YARD,
@@ -693,6 +695,91 @@ describe('createCameraQueue — coalescing serializer for rapid hole changes', (
     await flush();
 
     expect(calls).toEqual([1, 2]); // 2 still runs despite 1 rejecting
+  });
+});
+
+// ── Item 3 regression (v1.1.9 field-test fix) — GPS-tick overlay refresh
+// routed through createCameraQueue, so holeMarkerIdsRef has a single writer
+// and a hole-change chain can never orphan a marker the GPS-tick chain's
+// clear() didn't know about (the stray other-hole tee marker seen on holes
+// 8/11 — specs/map-fieldtest-v119-plan.md Item 3). ───────────────────────────
+
+describe('createCameraQueue — hole-change + GPS-refresh requests share one writer (Item 3 fix)', () => {
+  /** Simulates the component's `holeMarkerIdsRef`: a fake clear+add pair
+   *  that mutates a shared "currently on the map" id set, driven by
+   *  whichever `run` call is in flight — same shape as the real
+   *  clearHoleOverlays -> addHoleOverlays pair. `await flush()` between
+   *  clear and add stands in for the native round-trip where the real bug's
+   *  two un-serialized chains used to interleave. */
+  function makeTracker() {
+    const onMap = new Set<string>();
+    let nextId = 0;
+    return {
+      onMap,
+      async clearAndAdd(label: string): Promise<string> {
+        onMap.clear();
+        await flush();
+        const id = `${label}-${nextId++}`;
+        onMap.add(id);
+        return id;
+      },
+    };
+  }
+
+  it('a hole-change request immediately followed by a GPS-refresh request never orphans an id — the queue serializes, last write wins', async () => {
+    const tracker = makeTracker();
+    const queue = createCameraQueue<{ reason: 'hole' | 'gps'; label: string }>(async (t) => {
+      await tracker.clearAndAdd(t.label);
+    });
+
+    queue.request({ reason: 'hole', label: 'hole-change' }); // starts immediately, in flight
+    queue.request({ reason: 'gps', label: 'gps-tick' }); // arrives mid-flight — coalesced, NOT started concurrently
+
+    await flush(); // let the in-flight 'hole' run's clearAndAdd() resolve
+    await flush(); // let the single coalesced trailing 'gps' run execute + resolve
+
+    // Exactly one id survives, and it's the LAST run's — never a leftover
+    // from the first run that a concurrent second clear() didn't track (the
+    // orphan-marker bug this fix closes).
+    expect(tracker.onMap.size).toBe(1);
+    expect([...tracker.onMap][0].startsWith('gps-tick-')).toBe(true);
+  });
+
+  it('no run ever sees more than one id tracked at once — clear+add pairs never overlap', async () => {
+    const tracker = makeTracker();
+    const sizesAfterEachRun: number[] = [];
+    const queue = createCameraQueue<string>(async (label) => {
+      await tracker.clearAndAdd(label);
+      sizesAfterEachRun.push(tracker.onMap.size);
+    });
+
+    queue.request('hole-1');
+    queue.request('gps-2'); // coalesced
+    queue.request('gps-3'); // coalesces over gps-2 — only the trailing target runs
+    await flush();
+    await flush();
+
+    // Exactly 2 runs executed (hole-1, then trailing gps-3); each left
+    // exactly one tracked id — never two, i.e. never an orphan.
+    expect(sizesAfterEachRun).toEqual([1, 1]);
+  });
+});
+
+describe('Item 3 regression — handlePositionUpdate no longer calls clearHoleOverlays/addHoleOverlays directly', () => {
+  it('the GPS-tick handler routes its overlay refresh through cameraQueueRef.current.request({ reason: "gps", ... }) instead of calling clear/addHoleOverlays directly', () => {
+    const src = readFileSync(
+      join(__dirname, '..', '..', 'components', 'GoogleSatelliteMap.tsx'),
+      'utf-8'
+    );
+    const start = src.indexOf('const handlePositionUpdate');
+    const end = src.indexOf('const handleGpsError');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+
+    expect(body).not.toContain('clearHoleOverlays()');
+    expect(body).not.toContain('addHoleOverlays(hd');
+    expect(body).toContain("cameraQueueRef.current.request({ hd, reason: 'gps', pos })");
   });
 });
 
