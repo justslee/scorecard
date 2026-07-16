@@ -16757,3 +16757,48 @@ suites, guards unmodified).
   (caddie chat surface, though this PR is logic-only — no UI changes). Secondary finding from the
   plan (hole-3 header/caddie course-data mismatch) intentionally NOT folded in — flagged as its own
   future item per the plan §8.
+
+---
+## Cycle 127 (2026-07-15) — Owner field-test polish: tee-shot overlay fairway-center + distinct bunker glyph (NOTICEABLE)
+**Owner feedback (v1.1.7, 2 screenshots):** likes the shipped tee-shot yardage overlays; two polish
+asks — (1) the 200/150/100 markers should sit at the CENTER OF THE FAIRWAY (they hug/drift off the
+raw `golf=hole` centerline on Bethpage Red); (2) the bunker markers should look DISTINCT from the
+round yardage dots (the white bunker circle is confusable with the white 150 plate) and the overlay
+UI "could look cooler." Isolated worktree lane, rebased onto origin/integration/next (a96a67b, after
+the caddie double-emit fix landed).
+
+**Plan (fable):** `specs/tee-shot-overlays-center-and-style-plan.md` — cross-section fairway-center
+math (ports backend hazards.py's Cramer's-rule ray/ring engine into the import-free overlays module)
++ sand-bean-with-ink-outline bunker glyph concept.
+
+**Build (Part A — geometry, `frontend/src/lib/map/tee-shot-overlays.ts`):** new
+`fairwayRingsFromFeatures` / `latLngInRing` / `fairwayCenterAtStation` (perpendicular cross-section at
+each plate station using the LOCAL segment heading → dogleg-correct; even-odd span parity;
+containing-span-wins then nearest-gap ≤20y fallback; final in-ring guard). Optional 4th `fairways`
+param on `distanceMarkersFromGreen` wired from `computeTeeShotOverlays`. HONEST by construction:
+every fallback returns today's exact centerline point (byte-identical for all ≤3-arg callers), the
+along-hole distance-to-green is never changed (pure lateral shift), a plate is never placed outside
+the fairway. Tests 14a–14g appended (offset centerline centers; dogleg local-heading; no-fairway
+byte-identical; miss/large-gap fallback; result proven inside ring; split-fairway) → 33/33.
+
+**Build (Part B — render):** new stdlib-zlib `frontend/scripts/generate-bunker-marker.py` →
+`frontend/public/assets/bunker-marker.png` (96×96 RGBA, 1623 B, sand `#d9c492` + ink outline + halo
++ stipple, asymmetric non-round silhouette). `bunkerMarkerIconUrl()` helper. `GoogleSatelliteMap.tsx`:
+bunker circles → batched `addMarkers` glyph via a new `teeShotMarkerIdsRef` (cleared on every
+hole-change/visibility-flip; all native calls stay behind the onMapReady gate — SIGTRAP discipline);
+plates stay native circles with a restrained stroke bump; DOM carry-chip softened shadow + inline
+sand-bean swatch (enlarged 9→12px per designer fold so the silhouette survives at micro-size).
+
+**Verdicts:** reviewer **SHIP** (geometry hand-verified — Cramer's-rule re-derived, dogleg local
+heading confirmed, distance-unchanged, never-outside guard fires, fallbacks byte-identical; render
+SIGTRAP-safe, no marker leaks; security clean; d2-fixture deviation reproduced + confirmed correct).
+qa **PASS** (lint / tsc / overlay-tests 33/33 / full suite 2437/2437 / build / voice 278/278 / ruff;
+PNG asset verified real). designer **APPROVE** (bunker glyph immediately distinct at true scale, sand
++ ink is print-like not SaaS, palette inside the ink/paper/tee family; one nit folded).
+
+**Honest deferral:** NO Xcode/iOS-simulator in this env — the on-satellite rendered look at pinch-zoom
+and confirmation that Bethpage Red plates visually land in the fairway need the OWNER'S DEVICE (the
+shipped overlays carried the identical caveat). Everything code/asset-level is verified.
+
+**Landed:** rebased onto origin/integration/next; NOTICEABLE, rides bundle **PR #141**. Do NOT
+ship/ping this cycle (per brief). All gates green on the rebased head.

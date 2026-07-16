@@ -3,6 +3,17 @@
   "note": "Cycle 126 (2026-07-15): OWNER P0 caddie-realtime-double-emit LANDED @e75ae2f on bundle #141 (NOTICEABLE — first ship-worthy item in the bundle; SHIP/PASS/PASS from reviewer/qa/designer); filed 2 non-blocking follow-ups (caddie-realtime-deadcode-detach, caddie-hole-context-preingest-mismatch). Bundle #141 now = 1 noticeable + 1 silent, ship-worthy on the next release pass. Prior consolidation retro/grooming (2026-07-15, after the v1.1.1->v1.1.7 shipping burst): 28 shipped-to-main terminal items archived to backlog-archive.json (188 archived total); backlog 78->50 live. guide-pauseturn-reserialize-hardening kept live (rides the STILL-OPEN bundle #141 — terminal-mark on ship). Filed prod-database-url-secret-refresh (owed infra). This file = LIVE queue only; terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields). Cycle-78 note (2026-07-11): statuses normalized to enum; ~150 items archived.",
   "items": [
     {
+      "id": "tee-shot-overlays-center-and-style",
+      "title": "OWNER field-test polish: fairway-center the 200/150/100 plates + distinct bunker glyph",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "done-on-bundle",
+      "why": "Owner v1.1.7 field test (2 screenshots) — LIKES the shipped tee-shot yardage overlays; two polish asks: (1) the 200/150/100 markers should sit at the CENTER OF THE FAIRWAY (they hug/drift off the raw golf=hole centerline on Bethpage Red); (2) the bunker markers should look DISTINCT from the round yardage dots (white bunker circle confusable with the white 150 plate) and the overlay UI could look cooler. Plan (fable): specs/tee-shot-overlays-center-and-style-plan.md.",
+      "resolution": "DONE on bundle #141 2026-07-15 (cycle 127, integration/next). Part A: new fairwayCenterAtStation/fairwayRingsFromFeatures/latLngInRing in frontend/src/lib/map/tee-shot-overlays.ts — perpendicular cross-section at each plate station using the LOCAL segment heading (dogleg-correct), even-odd span parity, containing-span-wins then nearest-gap<=20y snap, final in-ring guard; optional 4th fairways param on distanceMarkersFromGreen wired from computeTeeShotOverlays. HONEST: every fallback returns today's exact centerline point (byte-identical for all <=3-arg callers), along-hole distance never changed (pure lateral shift), plate never outside the fairway. Ports backend hazards.py Cramer's-rule ray/ring engine. Tests 14a-14g (33/33). Part B: new stdlib-zlib generate-bunker-marker.py -> public/assets/bunker-marker.png (sand-bean + ink outline + halo + stipple, asymmetric non-round), bunkerMarkerIconUrl(), GoogleSatelliteMap.tsx bunker circles->batched addMarkers glyph via new teeShotMarkerIdsRef (cleared on every hole-change/visibility-flip, all native calls onMapReady-gated), plate stroke bump + DOM chip softer shadow + 12px sand-bean swatch. reviewer SHIP (geometry hand-verified, SIGTRAP-safe, security clean), qa PASS (lint/tsc/33+2437 tests/build/voice 278/ruff), designer APPROVE (glyph immediately distinct, print-like not SaaS; one nit folded). NOTICEABLE, rides #141, no ship/ping. DEFERRED to owner device (no Xcode in env, same caveat the shipped overlays carried): on-satellite pinch-zoom look + confirmation Bethpage Red plates visually land in the fairway on the real hole.",
+      "depends_on": []
+    },
+    {
       "id": "caddie-realtime-double-emit",
       "title": "OWNER P0: live caddie chat duplicates every turn (zombie 2nd Realtime session)",
       "type": "major",
