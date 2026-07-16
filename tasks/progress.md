@@ -16802,3 +16802,29 @@ shipped overlays carried the identical caveat). Everything code/asset-level is v
 
 **Landed:** rebased onto origin/integration/next; NOTICEABLE, rides bundle **PR #141**. Do NOT
 ship/ping this cycle (per brief). All gates green on the rebased head.
+---
+## Cycle 127 (2026-07-15) — CADDIE-EXPERIENCE MEASUREMENT PROGRAM (owner crux directive)
+Isolated worktree lane (agent-a86844bf0a0da63e0). Owner directive: caddie experience is the #1
+priority (no dupes, smart, flowing, non-robotic voice, consistency, reliability, minimal loading).
+Turned it into an 8-dimension MEASURABLE bar + landed the first improvements.
+- **Plan (fable):** specs/caddie-experience-harness-plan.md — a caddie-experience eval/test harness.
+- **Voice research verdict:** current default voice `sage` @ speed 1.15; `cedar` is the best
+  less-robotic Realtime voice (one-field swap, no latency/cost hit). `voice_id="fable"` (The
+  Professor, personalities.py:123) is INVALID for the Realtime API (legacy TTS voice → enum error,
+  NOT a silent fallback) = a latent broken persona. LAND: repoint fable→cedar + a voice-validity
+  pin test. FILE (owner-gated, audible): Classic→cedar default swap + speed 1.15→~1.0 nudge.
+- **Integration audit (dim 8):** 8 incoherences filed as backlog items — headline: the omnipresent
+  orb (CaddieOrbSheet) hardcodes personality "classic", silently discarding the user's chosen
+  persona on every non-round surface. Plus dead CaddiePanel/CaddieModal/CaddieNotesCard (1300 lines).
+- Harness = SILENT; fable→cedar fix = small NOTICEABLE reliability fix. Do NOT ship/ping this cycle.
+
+## AWAITING — builder implementing specs/caddie-experience-harness-plan.md on the worktree branch
+- Land-now scope (§8): named caddie-experience suite + manifest guard + CADDIE_EXPERIENCE.md;
+  backend eval multi-turn context-retention checks + 3 golden scenarios + teeth; voice-config pins
+  + fable→cedar repoint; substance extractor + teeth + probes jsonl; CaddieSheet.realtime-glitch.tsx
+  (4 tests); gated run_consistency.py + run_latency.py (inert without keys) + gate-refusal tests.
+- On return: reviewer (measurements honest / deterministic-where-claimed / no regression from
+  fable→cedar / spend bounded) + qa (all gates SUCCESS on pushed head) + designer BLOCKING only if
+  a user-facing change lands (the fable→cedar repoint counts). Then file backlog items (B/C/D) via
+  targeted edits + diff-check, rebase onto origin/integration/next, push to add to PR #141.
+- DO NOT touch realtime.ts / realtime-ordering.ts (dedup lane owns them). Reconcile from branch log.
