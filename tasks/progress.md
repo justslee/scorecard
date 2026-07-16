@@ -17337,3 +17337,35 @@ caddie suites) running IN PARALLEL. On both green → designer BLOCKING on rende
 4 surfaces (VoiceSheet / LooperSheet orb / CaddieSheet classic / CaddieSheet live). SHIP+PASS+PASS(des)
 → PR #141 checklist (NOTICEABLE) + backlog done-on-bundle. BLOCKING → re-dispatch builder + re-review.
 HOLD push if integration/next recut. Do NOT ship/ping.
+
+## Cycle 132 update — reviewer SHIP, qa PASS(feature); DISCOVERED + FIXED a bundle-CI blocker
+reviewer @23a9a62: **SHIP** — dedup/ordering invariant HOLDS (Transcript renders as-given, no
+sort/filter/dedup/re-key; LiveVoiceBody adapter 1:1 key=m.id); streaming:m.partial → opacity 1 + pulse,
+never drops a turn; VoiceBody slice(0,-2)+current-turn card preserved, newest turn never doubles; dead
+code safely deleted (tsc clean proves no dangling imports); quote-glyph sibling-span legit (not
+test-gaming); one-mic/persona/no-forked-bubbles confirmed; /code-review returned []; security N/A.
+qa @e16b4c5: **PASS (feature)** — lint/tsc/build clean, full vitest 2496/2496, test:caddie-experience
+239/239, voice 278/278, the 9 locked caddie suites byte-identical (git diff empty each), backend ruff
+clean + zero backend diff, invariant diff-gate EMPTY. Playwright skipped (no preview URL).
+
+DISCOVERED via qa: PR #141 **Backend CI gate was RED** — 4 real pytest failures (NOT the container
+flake), pre-existing on integration/next, unrelated to the frontend feature (zero backend diff from it).
+Root cause: the advice-stability item (e3026b5, earlier in THIS bundle) intentionally appended
+DECISION_GROUNDING_RULE to close the stable voice-prompt block (routes/caddie.py:846,:1525;
+voice_prompts.py:216 — reviewer-approved, shipped) but two guard suites predated it and were never
+updated. FIXED (SILENT bundle-health rider, test-only, @03a427f): test_caddie_caching.py templates +
+both modulo-order set-compares now include {decision_rule}; test_voice_stream.py's two 'stable-block
+closer' asserts now check the block ENDS with DECISION_GROUNDING_RULE (still asserting MISS_SIDE
+present). NOT a weakening — mirroring an intentional product change the advice-stability QA missed.
+Verified locally: the 4 pass; both files 31/31 green; ruff clean. Diff scoped to exactly the 2 test
+files (no product code). This unblocks the bundle CI (and the owner's pending v1.1.8 ship).
+
+## AWAITING
+1. designer BLOCKING review (a5d7d8158527d668f) — rendered screenshots across all 4 caddie surfaces vs
+   the concept spec. PASS(ships) → finalize; BLOCKING → re-dispatch builder. NOTE: designer created an
+   untracked frontend/src/app/qa-transcript-harness/ screenshot harness — MUST rm it before final (a
+   stray app route must NOT ship). 2. CI on the pushed head — confirm Frontend + Backend gates BOTH
+   SUCCESS (backend now expected green after 03a427f). On designer PASS: rm the harness, update PR #141
+   checklist (transcript-unify NOTICEABLE + dead-code sweep SILENT + backend-guard fix SILENT), backlog
+   done-on-bundle (targeted edits + diff-check), final commit, pin CI to final head = both SUCCESS.
+   Do NOT ship/ping.
