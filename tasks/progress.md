@@ -42,11 +42,15 @@ caddie/hole-yardage) + code audit are the AUTHORITATIVE backing. Simulated GPS i
 perfect-accuracy → real jitter/accuracy/tree-canopy loss are NOT-VERIFIABLE (only Saturday);
 only the `simctl location clear` loss→from-tee-fallback path is sim-checkable.
 
-## AWAITING — Fable Plan agent (ab132a3897e1a75a9) writing specs/oncourse-gps-readiness-plan.md
-On completion: checkpoint, dispatch builder for the harness (ops/harness/oncourse-sim/ +
-ONCOURSE_READINESS.md) NEW files only, then reviewer + qa, then poll map lane, re-verify #3
-(stray-marker race) after it lands, land everything on a rebased integration/next. Do NOT
-push until both lanes land.
+## AWAITING — builder (a5d093cd2511f5093) implementing specs/oncourse-gps-readiness-plan.md
+Plan done (Fable, saved @spec commit). Builder building the harness (ops/harness/oncourse-sim/),
+offline Bethpage Red fixture, diagnostic patch (reverted), best-effort on-device sim drive,
+ONCOURSE_READINESS.md, + filing 2 backlog gaps. NEW files only.
+On builder completion: reviewer (fresh) on any behavior-affecting code + qa gates on the pushed
+head; then poll origin/fix/map-fieldtest-v119 — once it + multi-user both land on
+origin/integration/next, rebase this branch onto the new tip, re-verify behavior #3
+(stray-marker race during GPS ticks) against the harness, finalize the report, THEN push/land.
+Until both lanes land: HOLD all pushes. Do NOT ship/ping.
 
 ## 2026-07-16 DONE — multiuser-p0-client-identity landed on integration/next (SILENT)
 Builder implemented specs/multi-user-epic-plan.md §3.5 (client identity, storage
