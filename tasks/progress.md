@@ -17922,3 +17922,17 @@ STILL AWAITING: reviewer (a0591a2b) — correctness/single-writer race verdict o
   integration/next (never force), update PR #143 checklist (NOTICEABLE), close backlog #8.
   reviewer BLOCKING -> re-dispatch builder, re-review. Head to land: 8685ed7 (60765e4 code +
   8685ed7 copy). NOT shipping/pinging (owner decisions pending, main session).
+
+## AWAITING UPDATE — reviewer BLOCKING; re-dispatching builder — 2026-07-16
+reviewer verdict on 60765e4: BLOCKING (1 real race) + everything else correct.
+RACE: placeTarget's inPlaceRef is one-directional — set at top / cleared in finally, but nothing
+at the TOP of placeTarget CHECKS it. Only the GPS re-place reads it; tap (~976) + drag-end (~1002)
+call placeTarget UNGUARDED. A tap landing during an in-flight GPS re-place => two concurrent
+placeTarget bodies both write tapLineIdsRef/tapMarkerIdRef => last-writer orphans the other's
+polyline+reticle (v1.1.9 orphan class). The "single in-flight writer" test (google-map-helpers.test
+~1030) is grep-only => false confidence.
+FIX: serialize ALL placeTarget callers (promise-chain mutex: placeTarget awaits the prior in-flight
+run before writing). Ensure clearTapMarker (same id space) is safe under it. Fold nit: reset
+draggingRef=false in clearTapMarker (else mid-drag marker removal permanently disables live-follow).
+Add a REAL concurrency test (not grep) proving serialization / no id orphaning.
+Re-dispatching builder on 8685ed7 (60765e4 code + copy). Then re-review (reviewer re-checks the mutex).
