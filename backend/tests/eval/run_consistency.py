@@ -102,7 +102,12 @@ def run(args: argparse.Namespace) -> int:
             "n": probe.n,
             "answers": answers,
             "substances": [
-                {"club": s.club, "yardages": list(s.yardages), "hazards": sorted(s.hazards)}
+                {
+                    "club": s.club,
+                    "endorsed_club": s.endorsed_club,
+                    "yardages": list(s.yardages),
+                    "hazards": sorted(s.hazards),
+                }
                 for s in substances
             ],
             "variance": {
@@ -110,6 +115,7 @@ def run(args: argparse.Namespace) -> int:
                 "club_agreement_rate": report.club_agreement_rate,
                 "hazard_symmetric_diff_max": report.hazard_symmetric_diff_max,
                 "yardage_spread_max": report.yardage_spread_max,
+                "distinct_endorsements": report.distinct_endorsements,
                 "consistent": report.consistent,
                 "notes": report.notes,
             },

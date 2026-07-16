@@ -99,6 +99,7 @@ _VALID_RULE_NAMES = {
     "GREEN_GROUNDING_RULE", "BEND_GROUNDING_RULE", "INPUT_GROUNDING_RULE",
     "YARDAGE_GROUNDING_RULE", "POSITIONING_SHOT_RULE",
     "NUMBERS_COHERENCE_RULE", "MISS_SIDE_GROUNDING_RULE",
+    "DECISION_GROUNDING_RULE",
 }
 _VALID_MOUTHS = {"text", "realtime"}
 
@@ -176,6 +177,12 @@ class Situation(BaseModel):
     # synthetic RoundSession's conversation_history, oldest-first. Empty by
     # default — most scenarios are single-turn.
     history: list[HistoryTurn] = Field(default_factory=list)
+    # Decision-grounding fidelity (specs/caddie-advice-stability-tee-shot-plan
+    # .md §3.4): when true, `build_round_session` seeds a REAL engine-computed
+    # `last_recommendation` (via `generate_recommendation`) so the harness
+    # mirrors what production actually sends on a follow-up turn. False by
+    # default — most scenarios have no prior recommendation.
+    seed_recommendation: bool = False
 
 
 # ── Expected checks ──────────────────────────────────────────────────────────

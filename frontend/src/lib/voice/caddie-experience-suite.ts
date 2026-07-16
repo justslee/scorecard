@@ -63,4 +63,8 @@ export const CADDIE_EXPERIENCE_SUITE: CaddieExperienceSuiteEntry[] = [
   { file: "backend/tests/eval/test_golden_tier1.py", dimensions: [2, 3] },
   { file: "backend/tests/eval/test_realtime_session_config.py", dimensions: [4] },
   { file: "backend/tests/eval/test_substance_teeth.py", dimensions: [5] },
+  // NEW (caddie-advice-stability-tee-shot-plan.md §3.8) — DECISION_GROUNDING_RULE
+  // pins the club CALL to the engine's decision (dim 2 smart caddie) and is the
+  // direct fix for the 2026-07-15 recommendation-flip consistency defect (dim 5).
+  { file: "backend/tests/test_decision_grounding_prompt.py", dimensions: [2, 5] },
 ];

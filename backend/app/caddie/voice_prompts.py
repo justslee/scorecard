@@ -140,6 +140,30 @@ MISS_SIDE_GROUNDING_RULE = (
     "a hazard type the data doesn't list."
 )
 
+# Decision-grounding rule (consistency baseline 2026-07-15, probe
+# followup-3wood-after-driver: 5 identical asks, 3/5 answers endorsed laying
+# up with the 3-wood, 2/5 said stick with driver — same input, opposite
+# advice). The grounding doctrine extends from NUMBERS to the CALL: the
+# engine decides the club; the caddie explains it. Shared by BOTH mouths
+# (build_realtime_instructions below and the two stable_text blocks in
+# routes/caddie.py) so wording never drifts.
+DECISION_GROUNDING_RULE = (
+    "The club call is the engine's decision, not a fresh judgment each turn. "
+    "When the context carries a recommendation ('Last recommendation'), that "
+    "club IS the call for this shot: explain it, don't re-decide it. If the "
+    "player floats a different club ('what about my 3-wood?'), compare it "
+    "honestly against the call using only numbers you have — what it carries, "
+    "what it leaves, what it takes out of play — then keep the recommended "
+    "club as the call unless those numbers genuinely favor the alternative or "
+    "the player gives NEW information the engine didn't have (a lie, a gust, "
+    "something they can see, 'driver's not working today'). A preference "
+    "alone is not new information — never flip the call just to agree, and "
+    "the same question on the same facts always gets the same call. If the "
+    "context carries no recommendation, fetch one with a tool before making a "
+    "club call; when no tool data exists, advise from the CURRENT SITUATION "
+    "and stay consistent with what you already told them this hole."
+)
+
 # Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
 # caddie now carries the same six tools the Realtime orb has (canonical
 # registry in app/caddie/tools.py). Appended to BOTH text builders'
@@ -189,6 +213,7 @@ def build_realtime_instructions(
         + "\n" + POSITIONING_SHOT_RULE
         + "\n" + NUMBERS_COHERENCE_RULE
         + "\n" + MISS_SIDE_GROUNDING_RULE
+        + "\n" + DECISION_GROUNDING_RULE
     )
 
     return "\n\n".join(parts)

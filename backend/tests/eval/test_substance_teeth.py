@@ -78,7 +78,9 @@ def test_substance_variance_goes_red_on_a_blind_stubbed_extractor():
     assert all(s.club == "7iron" for s in real_samples)  # sanity: real extractor sees the club
     assert substance_variance(real_samples).consistent
 
-    blind = AnswerSubstance(club=None, yardages=real_samples[0].yardages, hazards=real_samples[0].hazards)
+    blind = AnswerSubstance(
+        club=None, yardages=real_samples[0].yardages, hazards=real_samples[0].hazards, endorsed_club=None,
+    )
     mixed = real_samples[:2] + [blind]
     report = substance_variance(mixed)
     assert report.distinct_clubs == 2
@@ -104,6 +106,82 @@ def test_substance_variance_flags_yardage_spread_beyond_tolerance():
 def test_substance_variance_requires_at_least_one_sample():
     with pytest.raises(ValueError):
         substance_variance([])
+
+
+# ── Decision-grounding fidelity (caddie-advice-stability-tee-shot-plan.md
+# §3.5/§3.7): `AnswerSubstance.club` is the FIRST-mentioned club regardless of
+# whether the answer endorses or rejects it — in the 2026-07-15 baseline's
+# answers that's usually "3wood" whether the caddie recommends it OR argues
+# for the driver instead, which is exactly why the 3/2 flip only surfaced by
+# eyeballing. `endorsed_club` is the falsifiable fix: it reads the club the
+# answer actually RECOMMENDS via a closed endorsement-cue lexicon. Fixtures
+# below are shaped on the real baseline answers (3 lay-up, 2 driver). ─────
+
+_LAYUP_ANSWERS = [
+    "The 3-wood is the call here.",
+    "Safe play with the 3 wood into this green.",
+    "I'd lay up with the three-wood — that's the play.",
+]
+_DRIVER_ANSWERS = [
+    "I'd stick with driver here.",
+    "Stick with driver and favor left.",
+]
+
+
+def test_extract_substance_endorsed_club_reads_lay_up_direction():
+    for answer in _LAYUP_ANSWERS:
+        substance = extract_substance(answer, _CLUB_DISTANCES)
+        assert substance.endorsed_club == "3wood", (answer, substance)
+
+
+def test_extract_substance_endorsed_club_reads_driver_direction():
+    for answer in _DRIVER_ANSWERS:
+        substance = extract_substance(answer, _CLUB_DISTANCES)
+        assert substance.endorsed_club == "driver", (answer, substance)
+
+
+def test_substance_variance_catches_the_3_2_recommendation_flip():
+    """RED-proof for the 2026-07-15 defect itself: `club` alone reads
+    "3wood" as the FIRST mention in most of these answers regardless of
+    direction, so the flip would NOT surface via `distinct_clubs`. Only
+    `distinct_endorsements` catches it — this reproduces the BEFORE state as
+    a red the suite can run, not just eyeball."""
+    samples = [extract_substance(a, _CLUB_DISTANCES) for a in _LAYUP_ANSWERS + _DRIVER_ANSWERS]
+    report = substance_variance(samples)
+    assert report.distinct_endorsements == 2
+    assert not report.consistent
+
+
+def test_substance_variance_5_of_5_driver_is_green():
+    """AFTER state: same club recommended every time -> consistent."""
+    answers = [
+        "I'd stick with driver here.",
+        "Stick with driver off the tee.",
+        "Stay with driver — no reason to lay up.",
+        "Take the driver, it's the play.",
+        "Driver is the call today.",
+    ]
+    samples = [extract_substance(a, _CLUB_DISTANCES) for a in answers]
+    assert all(s.endorsed_club == "driver" for s in samples)
+    report = substance_variance(samples)
+    assert report.distinct_endorsements == 1
+    assert report.consistent
+
+
+def test_substance_variance_all_none_endorsements_stay_consistent():
+    """Vacuous probes (no endorsement cue anywhere in any sample) must not
+    flip their existing True verdict just because `endorsed_club` now
+    exists — `distinct_endorsements` counts a single distinct `None` value,
+    not zero samples' worth of disagreement."""
+    answers = [
+        "Watch the bunker on the right, carry is about 240.",
+        "There is a bunker right at 240, favor the left side.",
+    ]
+    samples = [extract_substance(a, _CLUB_DISTANCES) for a in answers]
+    assert all(s.endorsed_club is None for s in samples)
+    report = substance_variance(samples)
+    assert report.distinct_endorsements == 1
+    assert report.consistent
 
 
 # ── golden/consistency_probes.jsonl loading — fail-closed ───────────────
