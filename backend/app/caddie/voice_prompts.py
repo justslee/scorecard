@@ -15,6 +15,7 @@ from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.green_geometry import GREEN_GROUNDING_RULE
 from app.caddie.hazards import BEND_GROUNDING_RULE, HAZARD_GROUNDING_RULE, format_bend_line, format_hazards_line
 from app.caddie.guide_writer import format_guide_line
+from app.caddie.language import desired_language
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.db.models import CaddieMemory
 
@@ -33,6 +34,35 @@ giving strategic advice. Never state a yardage, club distance, or carry you did 
 tool. If a tool reports data as unavailable, say so plainly — never invent a number to fill in.
 Stay in character at all times. Reference prior shots and prior rounds when it sharpens the advice.
 """
+
+# Output-language hard contract (owner directive 2026-07-16: "The caddie
+# should only speak in the user's desired language which in this case is
+# English. Never any other language."). A FUNCTION, not a module constant, so
+# the seam (app/caddie/language.py::desired_language) resolves per-call —
+# monkeypatch-testable today, per-user tomorrow (backlog
+# voice-language-onboarding). Defensively worded to close every drift path an
+# owner has actually hit: ambient/background speech in another language, a
+# code-switching player, garbled audio, and an explicit request to switch.
+# Shared by BOTH mouths — inserted FIRST in build_realtime_instructions'
+# behavior block below (before HAZARD_GROUNDING_RULE) and interpolated into
+# both stable_text blocks in routes/caddie.py immediately before
+# {HAZARD_GROUNDING_RULE} — so wording never drifts between them.
+_OUTPUT_LANGUAGE_RULE_TEMPLATE = (
+    "You speak ONLY {language}. Every word out of your mouth is {language} — "
+    "never any other language, not even a single phrase. This holds no matter "
+    "what you hear: if the player speaks another language, if playing partners "
+    "or background voices speak another language, if the audio is noisy or "
+    "garbled, or if anyone — including the player — asks you to switch "
+    "languages, you still respond only in {language}. Never translate into "
+    "another language, never mix languages, never echo a foreign phrase back. "
+    "If the player genuinely needs another language, say in {language} that "
+    "you can only caddie in {language}."
+)
+
+
+def output_language_rule() -> str:
+    return _OUTPUT_LANGUAGE_RULE_TEMPLATE.format(language=desired_language().name)
+
 
 # Epistemic-humility rule (hazard-side-flip incident, 2026-07-06): the caddie
 # "gaslit" the owner by insisting a mirrored/stale side reading was correct
@@ -203,7 +233,8 @@ def build_realtime_instructions(
         parts.append("# Earlier this round (recent conversation)\n" + history_block)
 
     parts.append(
-        "# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + HAZARD_GROUNDING_RULE
+        "# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + output_language_rule()
+        + "\n" + HAZARD_GROUNDING_RULE
         + "\n" + BEND_GROUNDING_RULE
         + "\n" + PHYSICS_GROUNDING_RULE
         + "\n" + GREEN_GROUNDING_RULE
