@@ -48,11 +48,21 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
       "why": "CADDIE-EXPERIENCE dim 8. LooperSheetShell labels every assistant turn 'Looper' (LooperSheet.tsx:292,320; header kicker :176), while CaddieSheet / VoiceSheet label the same assistant with the persona name + 'On the bag' (CaddieSheet.tsx:1337). Effect: the caddie the user named/chose appears to be a different entity ('Looper') in the orb. Mostly cosmetic (thread the persona display name into the shell) but only meaningful once caddie-orb-persona-consistency lands (the orb must actually USE the chosen persona first).",
       "depends_on": [
         "caddie-orb-persona-consistency"
-      ]
+      ],
+      "resolution": "DONE on bundle #141 2026-07-16 (cycle 131, integration/next, NOTICEABLE -- cross-surface caddie identity coherence). Feature commit 6a27cbb + word-boundary polish cd2a102. Label-only, pure frontend. The shared LooperSheetShell hardcoded 'LOOPER' at 4 sites so the orb greeted 'The Hype Man here...' then captioned its own reply 'LOOPER' (the visible remainder of the name-coherence crux after caddie-orb-persona-consistency landed the voice/greeting). FIX: shell gains optional speakerLabel?:string (default 'Looper' -> every consumer + the existing back-compat test behavior-identical) wired to the reply caption/streaming caption/thinking pulse; the KICKER wordmark stays 'LOOPER' (designer's deliberate call: app product identity vs inline speaker attribution). CaddieOrbSheet computes the label from the SAME useCaddiePersona() pub-sub that drives the spoken voice (one resolution path, no fork) + the render-time lane var: task lane (tee-time dispatch etc) OR classic OR unresolved -> 'Looper'; converse/general + non-classic -> stripped short persona name (Hype Man/Strategist/Professor). Shared shortPersonaName/captionPersonaName helpers in persona.ts (single derivation); captionPersonaName truncates long CUSTOM names on a WORD boundary ('Sunday Money...', never a mid-word 'Sunday Money Mak...'). No VAD/mic/dedup/one-mic/TTS/shared-type change. Designer LED the lane->label semantics (authoritative table). Plan(Fable): specs/caddie-cross-surface-identity-label-plan.md. Tests RED-first vs the hardcode: LooperSheet.test.tsx (3 caption sites reflect speakerLabel, omitted->Looper, kicker invariant, You unchanged), CaddieOrbSheet.test.tsx in the caddie-experience gate (converse+non-classic->short name RED today, task/classic/unresolved->Looper), persona.test.ts (shortPersonaName + captionPersonaName word-boundary/hard-cut/custom-max). Reviewer SHIP (single resolution path -- label can't fork/lag the voice; lane discriminator = render-current boundId state not the one-render-late ref; back-compat + kicker invariant intact; classic->Looper traced; no dangerouslySetInnerHTML). QA PASS on 110494c and re-verified cd2a102: lint/tsc/build clean, voice 278/278, test:caddie-experience 227/227, persona+component 49/49, backend ruff clean (zero backend diff). Designer PASS (ships) -- rendered end-to-end incl browser screenshots: non-classic caddie now captions replies with the same identity it greets with, incoherence gone, task lane honestly LOOPER, NORTHSTAR-clean; its one fast-follow (mid-word truncation) was folded in this cycle. Filed caddie-custom-persona-name-maxlength. Rides #141, no ship/ping this cycle."
+    },
+    {
+      "id": "caddie-custom-persona-name-maxlength",
+      "title": "Custom persona name input is uncapped -> long names truncate in tiny orb captions",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "ready",
+      "why": "Designer fast-follow from cycle 131 (caddie-cross-surface-identity-label). CustomPersonaModal.tsx's name <input> has no maxLength and its placeholder ('e.g. The Quiet Reader') invites long names, so a golfer can create a custom persona whose name overflows the tiny mono attribution captions in the Looper sheet. Cycle 131 already made the caption truncation word-boundary-aware (captionPersonaName in persona.ts, 'Sunday Money...' not mid-word), which fully avoids the ugly render; this is the belt-and-suspenders upstream cap. ACTION: add maxLength ~24-28 to the CustomPersonaModal name input (frontend/src/components/CustomPersonaModal.tsx ~:106) + a short helper/counter if the pattern fits. Pure frontend, trivial. Not blocking -- the render is already clean without it."
     },
     {
       "id": "caddie-setup-persona-blind",
