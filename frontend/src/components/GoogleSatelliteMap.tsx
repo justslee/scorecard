@@ -1329,9 +1329,7 @@ export default function GoogleSatelliteMap({
             </button>
             <div style={{ textAlign: "center", marginTop: 4 }}>
               <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
-                {/* designer: on-GPS label copy — "Carry" ships until the designer
-                    confirms the rangefinder-honest wording for the on-you case. */}
-                {tapTarget.fromGps ? "Carry" : "From tee"}
+                {tapTarget.fromGps ? "From you" : "From tee"}
               </div>
               <div style={{ fontFamily: T.serif, fontSize: 22, lineHeight: 1, color: T.ink }}>
                 {tapTarget.carry ?? "—"}
