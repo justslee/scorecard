@@ -35,6 +35,8 @@ import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import type { Caddy } from "@/components/yardage/tokens";
 import { Waveform, PulseDot } from "@/components/yardage/Voice";
+import { Transcript, ConversationTurn } from "@/components/yardage/Transcript";
+import { captionPersonaName } from "@/lib/caddie/persona";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
 import { pickDictationTranscript, isEmptyTranscript, humanizeVoiceError } from "@/lib/caddie/dictation";
@@ -1811,28 +1813,20 @@ function LiveVoiceBody({
           {liveEmptyStateHint(status, paused, caddy.name)}
         </div>
       )}
-      {messages.map((m) => (
-        <div
-          key={m.id}
-          style={{
-            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-            maxWidth: "85%",
-            padding: "10px 14px",
-            borderRadius: 14,
-            background: m.role === "user" ? T.ink : T.paperDeep,
-            border: m.role === "user" ? "none" : `1px solid ${T.hairline}`,
-            color: m.role === "user" ? T.paper : T.ink,
-            fontFamily: T.serif,
-            fontStyle: m.role === "user" ? "normal" : "italic",
-            fontSize: 15,
-            lineHeight: 1.4,
-            letterSpacing: -0.1,
-            opacity: m.partial ? 0.7 : 1,
-          }}
-        >
-          {m.text}
-        </div>
-      ))}
+      {/* render as-is — messages arrive PRE-SORTED by `order` from
+          useCaddieLiveSession; this adapter is 1:1 (no filter/sort/dedup) so
+          the caddie-realtime-double-emit fix upstream is never regressed. */}
+      <Transcript
+        turns={messages.map((m) => ({
+          key: m.id,
+          speaker: m.role === "user" ? "user" : "caddie",
+          text: m.text,
+          // DESIGNER OVERRIDE (plan §3.2): partial -> streaming (opacity 1 +
+          // caption pulse), NOT muted/0.7 — dimmed live text reads as broken.
+          streaming: m.partial,
+        }))}
+        speakerLabel={captionPersonaName(caddy.name)}
+      />
     </div>
   );
 }
@@ -2069,44 +2063,14 @@ function VoiceBody({
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Conversation history (all prior turns except current) */}
       {convHistory.length > 2 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {convHistory.slice(0, -2).map((msg, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "9px 12px",
-                borderRadius: 12,
-                background: msg.role === "user" ? T.paperDeep : T.paperEdge,
-                border: `1px solid ${T.hairline}`,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: T.mono,
-                  fontSize: 8,
-                  letterSpacing: 1.3,
-                  color: T.pencilSoft,
-                  textTransform: "uppercase",
-                  marginBottom: 3,
-                }}
-              >
-                {msg.role === "user" ? "You" : caddy.name}
-              </div>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: msg.role === "assistant" ? "italic" : "normal",
-                  fontSize: 14,
-                  color: T.ink,
-                  lineHeight: 1.45,
-                  letterSpacing: -0.1,
-                }}
-              >
-                {msg.content}
-              </div>
-            </div>
-          ))}
-        </div>
+        <Transcript
+          turns={convHistory.slice(0, -2).map((msg, i) => ({
+            key: String(i),
+            speaker: msg.role === "user" ? "user" : "caddie",
+            text: msg.content,
+          }))}
+          speakerLabel={captionPersonaName(caddy.name)}
+        />
       )}
 
       {/* Current / most recent turn */}
@@ -2151,30 +2115,11 @@ function VoiceBody({
                 border: `1px solid ${T.hairline}`,
               }}
             >
-              <div
-                style={{
-                  fontFamily: T.mono,
-                  fontSize: 8.5,
-                  letterSpacing: 1.3,
-                  color: accent,
-                  textTransform: "uppercase",
-                  marginBottom: 6,
-                }}
-              >
-                {caddy.name}
-              </div>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 18,
-                  color: T.ink,
-                  lineHeight: 1.5,
-                  letterSpacing: -0.2,
-                }}
-              >
-                {voiceAnswer}
-              </div>
+              <ConversationTurn
+                turn={{ key: "current", speaker: "caddie", text: voiceAnswer }}
+                speakerLabel={captionPersonaName(caddy.name)}
+                captionColor={T.pencilSoft}
+              />
             </div>
 
             {/* Follow-up / clear — unmounted until the reply has FINISHED

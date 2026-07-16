@@ -51,6 +51,11 @@ export const CADDIE_EXPERIENCE_SUITE: CaddieExperienceSuiteEntry[] = [
   { file: "frontend/src/lib/voice/noinput-clarifier.test.ts", dimensions: [3, 6] },
 
   // ── Frontend — components ────────────────────────────────────────────
+  // The ONE shared caddie/user turn primitive (specs/caddie-transcript-
+  // render-unify-plan.md) every live surface renders through — order-as-
+  // given/no-dedup/no-re-key invariants (dim 1) + the calm flowing-
+  // conversation idiom (dim 3, dim 8 well-integrated across surfaces).
+  { file: "frontend/src/components/yardage/Transcript.test.tsx", dimensions: [3, 8] },
   { file: "frontend/src/components/CaddieSheet.realtime.test.tsx", dimensions: [1, 3, 6] },
   { file: "frontend/src/components/CaddieOrbSheet.test.tsx", dimensions: [3, 8] },
   { file: "frontend/src/components/CaddieSheet.handsfree.test.tsx", dimensions: [3, 6] },

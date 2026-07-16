@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { PulseDot } from "@/components/yardage/Voice";
+import { Transcript, ConversationTurn } from "@/components/yardage/Transcript";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { useBodyScrollLock } from "@/lib/sheet";
 import { haptic } from "@/lib/haptics";
@@ -294,61 +295,19 @@ export function LooperSheetShell({
                   {emptyHint}
                 </div>
               )}
-              {turns.map((t, i) => (
-                <div key={i} style={{ marginBottom: 10 }}>
-                  <div
-                    style={{
-                      fontFamily: T.mono,
-                      fontSize: 8.5,
-                      letterSpacing: 1.4,
-                      color: T.pencilSoft,
-                      textTransform: "uppercase",
-                      marginBottom: 3,
-                    }}
-                  >
-                    {t.role === "user" ? "You" : speakerLabel}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: T.serif,
-                      fontSize: 15.5,
-                      fontStyle: t.role === "looper" ? "italic" : "normal",
-                      color: T.ink,
-                      lineHeight: 1.45,
-                      letterSpacing: -0.1,
-                    }}
-                  >
-                    {t.text}
-                  </div>
-                </div>
-              ))}
+              <Transcript
+                turns={turns.map((t, i) => ({
+                  key: String(i),
+                  speaker: t.role === "user" ? "user" : "caddie",
+                  text: t.text,
+                }))}
+                speakerLabel={speakerLabel}
+              />
               {streamingTurn != null && (
-                <div style={{ marginBottom: 10 }}>
-                  <div
-                    style={{
-                      fontFamily: T.mono,
-                      fontSize: 8.5,
-                      letterSpacing: 1.4,
-                      color: T.pencilSoft,
-                      textTransform: "uppercase",
-                      marginBottom: 3,
-                    }}
-                  >
-                    {speakerLabel}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: T.serif,
-                      fontSize: 15.5,
-                      fontStyle: "italic",
-                      color: T.ink,
-                      lineHeight: 1.45,
-                      letterSpacing: -0.1,
-                    }}
-                  >
-                    {streamingTurn}
-                  </div>
-                </div>
+                <ConversationTurn
+                  turn={{ key: "streaming", speaker: "caddie", text: streamingTurn, streaming: true }}
+                  speakerLabel={speakerLabel}
+                />
               )}
               {phase === "listening" && (
                 <div
