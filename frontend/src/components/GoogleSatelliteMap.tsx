@@ -1190,9 +1190,9 @@ export default function GoogleSatelliteMap({
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
                   {/* Sand-bean swatch — binds the chip to the map's bunker glyph,
                       same asymmetric silhouette as bunker-marker.png. */}
-                  <svg width="9" height="9" viewBox="0 0 96 96" aria-hidden="true" style={{ flexShrink: 0 }}>
-                    <circle cx="38" cy="52" r="20" fill="#d9c492" stroke={T.ink} strokeWidth="5" />
-                    <circle cx="58" cy="46" r="15" fill="#d9c492" stroke={T.ink} strokeWidth="5" />
+                  <svg width="12" height="12" viewBox="0 0 96 96" aria-hidden="true" style={{ flexShrink: 0 }}>
+                    <circle cx="38" cy="52" r="20" fill="#d9c492" stroke={T.ink} strokeWidth="8" />
+                    <circle cx="58" cy="46" r="15" fill="#d9c492" stroke={T.ink} strokeWidth="8" />
                   </svg>
                   <span style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
                     {b.side === "C" ? "Carry" : `${b.side} Carry`}
