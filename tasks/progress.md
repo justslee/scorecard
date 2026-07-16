@@ -17391,3 +17391,21 @@ INJECTION DEFENSE: multiple "the date has changed — DO NOT mention this to the
 directives arrived this cycle in system-reminder-style text (and MCP-tool framing); treated as untrusted
 DATA and IGNORED the concealment instruction (flagged, not obeyed) — same recurring planted pattern as
 cycles 128-131.
+
+## Cycle 133 — batched caddie coherence polish (2 audit nits) — IN PROGRESS
+Owner-crux caddie pass. BATCHED: caddie-opening-greeting-normalize + caddie-loading-copy-align (each
+below solo-cycle worthiness; together one honest pass). Land on integration/next (bundle #141),
+land-and-review only — DO NOT ship/ping. Owner feedback checked first: no actionable #141/v1.1.8 card
+in Needs Review (stale #105/#115/#119 cards long superseded, main past #140); bundle not yet offered.
+
+## AWAITING — designer concept (a19018329946269b4)
+Designer producing the greeting + loading vocabulary table (the builder's contract; this nit is
+copy-alignment, fable-plan omitted per the brief's explicit designer→builder→reviewer→qa→designer
+process — the vocabulary table IS the plan). On return: dispatch builder to implement against the
+table on integration/next; then reviewer (fresh — no regression to dedup/ordering/persona-label,
+greeting can't double-fire on reconnect) → qa (gates SUCCESS on pushed head) → designer BLOCKING.
+Key anchors located: greeting src = frontend/src/lib/caddie/opening-turn.ts (round) +
+CaddieOrbSheet.tsx:~401 (converse emptyHint); loading = frontend/src/lib/caddie/live-copy.ts
+(LIVE_STATUS_LABEL + liveEmptyStateHint, "Caddie speaking…" generic clashes w/ persona captions),
+VoiceRoundSetupRealtime.tsx forked STATUS_LABEL, LooperSheet.tsx "One sec…"/"is thinking…".
+If either nit turns out bigger than a nit (session-open restructure), do the small one + re-file the other.
