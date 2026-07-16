@@ -16,7 +16,7 @@ import { LooperSheetShell, type LooperTurn, type LooperPhase } from "@/component
 import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import { talkToCaddie, talkToCaddieStream, BeforeFirstByteError } from "@/lib/caddie/api";
-import { useCaddiePersona, shortPersonaName } from "@/lib/caddie/persona";
+import { useCaddiePersona, captionPersonaName } from "@/lib/caddie/persona";
 import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
 import { onLooperOpen } from "@/lib/looper-bus";
 import { haptic } from "@/lib/haptics";
@@ -383,14 +383,10 @@ export default function CaddieOrbSheet() {
   // maps to "Looper" too (the app's own caddie name, matching the empty-hint
   // treatment). Only converse/general + a non-classic persona shows the
   // short persona name, truncated for the tiny mono captions.
-  const CAPTION_MAX = 16;
-  const shortName = shortPersonaName(caddy.name);
   const speakerLabel =
     activeTask != null || personaId === "classic"
       ? "Looper"
-      : shortName.length > CAPTION_MAX
-      ? `${shortName.slice(0, CAPTION_MAX)}…`
-      : shortName;
+      : captionPersonaName(caddy.name);
 
   return (
     <LooperSheetShell

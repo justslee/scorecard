@@ -71,6 +71,22 @@ export function shortPersonaName(name: string): string {
   return name.replace(/^The\s+/i, '').trim();
 }
 
+/** The short persona name fit for the tiny mono attribution captions in the
+ *  Looper sheet (reply/streaming/thinking). Strips the "The " article, then —
+ *  if still over `max` chars — truncates on a WORD boundary (the last space
+ *  before the cap, as long as it keeps ≥ 8 chars) so a long custom name reads
+ *  "Sunday Money…" rather than a mid-word "Sunday Money Mak…". A single
+ *  overlong word with no usable space falls back to a hard cut. Built-in names
+ *  (≤ 10 chars) pass through untouched. */
+export function captionPersonaName(name: string, max = 16): string {
+  const short = shortPersonaName(name);
+  if (short.length <= max) return short;
+  const cut = short.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  const base = lastSpace >= 8 ? cut.slice(0, lastSpace) : cut;
+  return `${base.trimEnd()}…`;
+}
+
 /** Display adapter: backend persona → the yardage-book Caddy shape the round
  *  screen + sheet already render (medallion initial, name, tag line). */
 export function personaToCaddy(p: CaddiePersonalityInfo): Caddy {
