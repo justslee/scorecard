@@ -53,9 +53,10 @@ import { roundCourseAnchor } from "@/lib/round-anchor";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, compassFrom } from "@/lib/map/wind";
 import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
-import { computeFCBDistances } from "@/lib/course/course-coordinates";
+import { computeFCBDistances, isGpsPlausibleToGreen } from "@/lib/course/course-coordinates";
 import { buildFcbTiles, effectiveFcbSource } from "@/lib/course/fcb-tiles";
 import { fcbSourceCaption } from "@/lib/caddie/fcb-labels";
+import { displayPar } from "@/lib/hole/par-sanity";
 import { usePhysicsPlaysLike } from "@/lib/caddie/use-physics-plays-like";
 import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
 import { playsBasis } from "@/lib/caddie/plays-basis";
@@ -1191,10 +1192,7 @@ export default function RoundPage() {
   // of it. Anything else (home testing, wrong hole selected) reads from tee.
   const posOnHole =
     playerPos && holeCoordsForTiles?.green
-      ? (() => {
-          const d = yardsDistance(playerPos, holeCoordsForTiles.green);
-          return d >= 5 && d <= 800;
-        })()
+      ? isGpsPlausibleToGreen(playerPos, holeCoordsForTiles.green)
       : false;
   const fcbLive = posOnHole && playerPos ? computeFCBDistances(playerPos, holeCoordsForTiles!) : null;
   // Which stored tee box (if any) resolveTeeAnchor picked for this hole —
@@ -1270,6 +1268,14 @@ export default function RoundPage() {
   // round must never fall back to the mock number (that's exactly this
   // incident: a phantom 178/232 disagreement from two different sources).
   const headerYards = resolvedYardage.yards ?? (mappedCourse || roundAnchor ? null : hole.yards);
+  // Display-side sanity guard (owner field-test incident: Bethpage Red-11
+  // showed "PAR 3 · 462Y" — stale stored par, real par is 4). Suppresses a
+  // par-3 whose yardage is physically implausible rather than confidently
+  // printing a par we can prove is wrong; 280y threshold kept in lockstep
+  // with the caddie's own guard (backend voice_prompts.py:
+  // PAR_SANITY_MIN_YARDS_FOR_PAR3). Primary fix is a data re-ingest — this
+  // is defense only. specs/map-fieldtest-v119-plan.md Item 5.
+  const safeHolePar = displayPar(holePar, headerYards);
   // Per-hole relative wind: same weather, different bearing per hole.
   const holeBearing = holeCoordsForTiles?.tee && holeCoordsForTiles?.green
     ? bearingDeg(holeCoordsForTiles.tee, holeCoordsForTiles.green)
@@ -2092,7 +2098,7 @@ export default function RoundPage() {
                     <span style={{ fontFamily: T.serif, fontSize: 15, letterSpacing: -0.3, textTransform: "none" }}>
                       {String(currentHole).padStart(2, "0")}
                     </span>
-                    <span>Par {holePar}</span>
+                    <span>{safeHolePar != null ? `Par ${safeHolePar}` : "Par —"}</span>
                     <span>{headerYards != null ? `${headerYards}y` : "—"}</span>
                     <span style={{ color: T.pencil }}>Hcp {hole.hcp}</span>
                   </div>

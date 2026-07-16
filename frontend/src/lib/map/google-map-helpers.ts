@@ -347,6 +347,9 @@ export interface CameraQueue<T> {
    * immediately. If a run IS in flight, overwrites any prior pending target
    * (last write wins) — a rapid multi-hole swipe settles on a single trailing
    * camera move for the final hole, never a pile-up of stale in-between moves.
+   * Priority-aware when `shouldReplace` is supplied (see `createCameraQueue`):
+   * an incoming request that `shouldReplace` rejects is dropped instead of
+   * evicting the current pending target.
    */
   request(target: T): void;
 }
@@ -369,9 +372,28 @@ export interface CameraQueue<T> {
  * not know about map readiness. A `run` that no-ops while not ready is safe:
  * the queue still resolves and is ready to flush the next request.
  *
+ * `shouldReplace(pending, incoming)` (optional, defaults to always-true =
+ * plain last-write-wins) — PRIORITY-AWARE coalescing (v1.1.9 field-test
+ * review fix, Item 3 follow-up): GoogleSatelliteMap shares this queue
+ * between a hole-change request (`reason:'hole'` — full clear→frame→add +
+ * tee-shot overlays) and a GPS-tick refresh (`reason:'gps'` — overlays only,
+ * no camera move, no tee-shot churn). Plain last-write-wins let a `'gps'`
+ * request silently EVICT an already-pending `'hole'` request — the trailing
+ * run would then execute the cheaper `'gps'` branch, which deliberately
+ * skips `fitCameraToHole`/tee-shot overlays, so a hole swipe during an
+ * in-flight GPS refresh could drop its camera reframe and tee-shot redraw
+ * entirely. The component passes a predicate that returns `false` for
+ * `pending.reason==='hole', incoming.reason==='gps'`, so a GPS tick can never
+ * evict a pending hole-change (the hole branch already does everything the
+ * GPS branch wanted); a pending `'gps'` can still be replaced by a newer
+ * `'gps'` or by a `'hole'`.
+ *
  * Pure function — no side effects, headless-testable.
  */
-export function createCameraQueue<T>(run: (target: T) => Promise<void>): CameraQueue<T> {
+export function createCameraQueue<T>(
+  run: (target: T) => Promise<void>,
+  shouldReplace: (pending: T, incoming: T) => boolean = () => true,
+): CameraQueue<T> {
   let inFlight = false;
   let pendingTarget: T | undefined;
   let hasPending = false;
@@ -397,8 +419,58 @@ export function createCameraQueue<T>(run: (target: T) => Promise<void>): CameraQ
         start(target);
         return;
       }
+      if (hasPending && !shouldReplace(pendingTarget as T, target)) {
+        return; // lower-priority incoming request — keep the pending one
+      }
       pendingTarget = target;
       hasPending = true;
+    },
+  };
+}
+
+// ── Serial runner — strict FIFO mutex (unlike the coalescing camera queue) ────
+
+export interface SerialRunner {
+  /**
+   * Enqueue `task`. If nothing is in flight, runs it immediately. If a
+   * previous `run()` call's task is still in flight, WAITS for it (and every
+   * other already-queued task ahead of it) to settle before starting —
+   * strictly one task in flight at a time, in call order. Unlike
+   * `createCameraQueue`, NOTHING is dropped or coalesced: every enqueued task
+   * eventually runs, and each caller gets its own task's resolved value/error
+   * back (not some other task's).
+   */
+  run<T>(task: () => Promise<T>): Promise<T>;
+}
+
+/**
+ * Strict FIFO async mutex.
+ *
+ * `placeTarget` (GoogleSatelliteMap) is the single writer of the tap-target
+ * marker/line id refs, but it has THREE callers that can each be mid-flight
+ * when another fires — a tap, a reticle drag-end, and a live GPS re-place —
+ * plus `clearTapMarker` (hole-change, the "×" pill button), which writes the
+ * SAME id refs. A one-directional in-flight flag (set true at the top of
+ * `placeTarget`, checked only by the GPS caller) does not stop a concurrent
+ * tap/drag-end/clear from interleaving: two native await chains can both be
+ * mid-flight, and whichever's `tapLineIdsRef`/`tapMarkerIdRef` write lands
+ * LAST wins — orphaning the other's polylines/reticle on the map with no
+ * tracked id left to clear them (the v1.1.9 orphan-line class of bug).
+ * Routing every caller's body through ONE `SerialRunner.run()` makes them
+ * queue instead: task N cannot start (and so cannot write those refs) until
+ * task N-1 has fully settled.
+ *
+ * Pure function — no side effects, headless-testable.
+ */
+export function createSerialRunner(): SerialRunner {
+  let chain: Promise<unknown> = Promise.resolve();
+  return {
+    run<T>(task: () => Promise<T>): Promise<T> {
+      const result = chain.then(() => task());
+      // Never let a rejected task poison the chain for later-queued tasks —
+      // each caller still observes its own task's rejection via `result`.
+      chain = result.then(() => undefined, () => undefined);
+      return result;
     },
   };
 }

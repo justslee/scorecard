@@ -92,6 +92,37 @@ def _make_polygon(osm_id: str, feature_type: str, center_lon: float,
     }
 
 
+def _make_multipolygon_bunker(
+    osm_id: str, members: list[tuple[float, float, float]],
+) -> dict:
+    """Build a GeoJSON MultiPolygon Feature (relation-sourced bunker complex).
+
+    Args:
+        osm_id: Feature ``properties.osm_id`` (e.g. ``"relation/19545022"``).
+        members: List of ``(center_lon, center_lat, half_deg)`` squares — one
+                 per member polygon, mirroring ``_make_polygon``'s ring shape.
+    """
+    polygons = []
+    for center_lon, center_lat, half_deg in members:
+        lo_lon = center_lon - half_deg
+        hi_lon = center_lon + half_deg
+        lo_lat = center_lat - half_deg
+        hi_lat = center_lat + half_deg
+        ring = [
+            [lo_lon, lo_lat],
+            [hi_lon, lo_lat],
+            [hi_lon, hi_lat],
+            [lo_lon, hi_lat],
+            [lo_lon, lo_lat],  # closed
+        ]
+        polygons.append([ring])
+    return {
+        "type": "Feature",
+        "geometry": {"type": "MultiPolygon", "coordinates": polygons},
+        "properties": {"featureType": "bunker", "osm_id": osm_id},
+    }
+
+
 # ── Shared fixtures ───────────────────────────────────────────────────────────
 
 ALL_HOLES = [
@@ -1069,3 +1100,102 @@ class TestCorridorCap:
         assert "way/red_g" not in all_ids, (
             "Polygon nearest a Red hole must be excluded from Black output"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MultiPolygon bunker support (Red-9 relation waste-bunker fix)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestMultiPolygonBunkerAssignment:
+    """assign_features_to_holes / build_course_feature_collection handle
+    relation-sourced MultiPolygon bunkers (e.g. OSM relation[golf=bunker]).
+
+    Self-contained hole-9 fixture:
+      • Hole 9 (Red): runs N-S along lon=-72.850, lat 40.700→40.702.
+      • Hole 8 (Red): parallel neighbour, lon=-72.849 (~84 m east).
+
+    Bunker complex ("relation/19545022"):
+      • Main member: a wide square straddling hole 9's centerline (lon
+        -72.8504→-72.8496) — Tier 1 (centerline-through-polygon) picks hole 9.
+      • Decoy member: much smaller, centred nearer hole 8's line, but its area
+        is far smaller than the main member's so the largest-member rule keeps
+        the main member as the representative ring.
+    """
+
+    _HOLE9_RED = _make_hole("9", "Red", -72.850, 40.700, -72.850, 40.702)
+    _HOLE8_RED = _make_hole("8", "Red", -72.849, 40.700, -72.849, 40.702)
+    _HOLES = [_HOLE9_RED, _HOLE8_RED]
+
+    # Main sand body: straddles hole 9's centerline (lon=-72.850).
+    _MAIN_MEMBER = (-72.850, 40.701, 0.0004)
+    # Decoy: small, sits nearer hole 8's line (lon=-72.849), never wins.
+    _DECOY_MEMBER = (-72.849, 40.701, 0.0001)
+
+    _BUNKER = _make_multipolygon_bunker(
+        "relation/19545022", [_MAIN_MEMBER, _DECOY_MEMBER]
+    )
+
+    # ── 1. RED → GREEN: MultiPolygon bunker assigns to hole 9, within cap ────
+
+    def test_multipolygon_bunker_assigns_to_hole_9(self):
+        result = assign_features_to_holes(self._HOLES, [self._BUNKER])
+        ref, course, _dist = result["relation/19545022"]
+        assert ref == "9"
+        assert course == "Red"
+
+    def test_multipolygon_bunker_distance_under_corridor_cap(self):
+        result = assign_features_to_holes(self._HOLES, [self._BUNKER])
+        _ref, _course, dist = result["relation/19545022"]
+        assert dist < _CORRIDOR_CAPS_M["bunker"]
+
+    def test_multipolygon_bunker_emitted_with_geometry_preserved(self):
+        result = build_course_feature_collection(self._HOLES, [self._BUNKER], "Red")
+        hole9 = next(h for h in result if h["number"] == 9)
+        feat = next(
+            f for f in hole9["features"]["features"]
+            if f["properties"]["osm_id"] == "relation/19545022"
+        )
+        assert feat["geometry"]["type"] == "MultiPolygon"
+
+    # ── 2. Multi-member correctness: largest-member rule beats the decoy ────
+
+    def test_decoy_member_does_not_steal_assignment(self):
+        """A small decoy member nearer hole 8's line must not win — the larger
+        main member (which hole 9's centerline runs through) is representative."""
+        result = assign_features_to_holes(self._HOLES, [self._BUNKER])
+        ref, course, _dist = result["relation/19545022"]
+        assert ref == "9"
+        assert course == "Red"
+        assert ref != "8"
+
+    # ── 3. Degenerate guard: all members unusable → dropped ─────────────────
+
+    def test_degenerate_multipolygon_all_members_unusable(self):
+        bad = {
+            "type": "Feature",
+            "geometry": {
+                "type": "MultiPolygon",
+                "coordinates": [
+                    [[]],  # empty outer ring
+                    [[[-72.850, 40.700], [-72.850, 40.701]]],  # 2 points, < 4
+                ],
+            },
+            "properties": {"featureType": "bunker", "osm_id": "relation/bad"},
+        }
+        result = assign_features_to_holes(self._HOLES, [bad])
+        ref, course, dist = result["relation/bad"]
+        assert ref is None
+        assert course is None
+        assert dist == float("inf")
+
+    # ── 4. Regression pin: no way-bunker drift, no cross-hole spam ──────────
+
+    def test_existing_assignments_unchanged_when_multipolygon_bunker_added(self):
+        baseline = assign_features_to_holes(ALL_HOLES, ALL_POLYGONS)
+        with_bunker = assign_features_to_holes(ALL_HOLES, ALL_POLYGONS + [self._BUNKER])
+        for poly in ALL_POLYGONS:
+            osm_id = poly["properties"]["osm_id"]
+            assert with_bunker[osm_id] == baseline[osm_id], (
+                f"Pre-existing assignment for {osm_id!r} changed after adding "
+                "a MultiPolygon bunker to the polygon list"
+            )

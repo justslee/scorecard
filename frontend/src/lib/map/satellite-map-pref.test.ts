@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  MAP_VIEW_PREF_KEY,
+  mapViewPrefKey,
   getMapViewPref,
   setMapViewPref,
   mapRendererFor,
@@ -54,27 +54,27 @@ describe('getMapViewPref — default and stored preference', () => {
   });
 
   it('returns "holediagram" when "holediagram" was explicitly stored', () => {
-    mockStorage.setItem(MAP_VIEW_PREF_KEY, 'holediagram');
+    mockStorage.setItem(mapViewPrefKey(), 'holediagram');
     expect(getMapViewPref()).toBe('holediagram');
   });
 
   it('returns "satellite" when "satellite" was previously stored', () => {
-    mockStorage.setItem(MAP_VIEW_PREF_KEY, 'satellite');
+    mockStorage.setItem(mapViewPrefKey(), 'satellite');
     expect(getMapViewPref()).toBe('satellite');
   });
 
   it('returns "satellite" for an unrecognised stored value (defensive)', () => {
-    mockStorage.setItem(MAP_VIEW_PREF_KEY, 'google');
+    mockStorage.setItem(mapViewPrefKey(), 'google');
     expect(getMapViewPref()).toBe('satellite');
   });
 
   it('returns "satellite" for an empty string', () => {
-    mockStorage.setItem(MAP_VIEW_PREF_KEY, '');
+    mockStorage.setItem(mapViewPrefKey(), '');
     expect(getMapViewPref()).toBe('satellite');
   });
 
   it('returns "satellite" for a random string', () => {
-    mockStorage.setItem(MAP_VIEW_PREF_KEY, 'mapbox');
+    mockStorage.setItem(mapViewPrefKey(), 'mapbox');
     expect(getMapViewPref()).toBe('satellite');
   });
 });
@@ -96,13 +96,13 @@ describe('setMapViewPref — persisting the preference', () => {
 
   it('writes to the correct localStorage key', () => {
     setMapViewPref('satellite');
-    expect(mockStorage.getItem(MAP_VIEW_PREF_KEY)).toBe('satellite');
+    expect(mockStorage.getItem(mapViewPrefKey())).toBe('satellite');
   });
 
   it('overwrites a previous value', () => {
     setMapViewPref('satellite');
     setMapViewPref('holediagram');
-    expect(mockStorage.getItem(MAP_VIEW_PREF_KEY)).toBe('holediagram');
+    expect(mockStorage.getItem(mapViewPrefKey())).toBe('holediagram');
   });
 });
 

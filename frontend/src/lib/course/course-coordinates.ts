@@ -176,3 +176,19 @@ export function computeFCBDistances(
     back:   yardsDistance(pos, coords.back   ?? coords.green),
   };
 }
+
+/**
+ * Is a live GPS fix a plausible ON-HOLE origin for a shot to this green?
+ * Plausible = 5..800 yards to the green (too close = on/at the green; too far =
+ * home testing / wrong hole). distanceYards is injected so callers reuse their own
+ * (identical-basis) turf distance fn; defaults to yardsDistance so posOnHole stays
+ * byte-identical.
+ */
+export function isGpsPlausibleToGreen(
+  pos: { lat: number; lng: number },
+  green: { lat: number; lng: number },
+  distanceYards: (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => number = yardsDistance,
+): boolean {
+  const d = distanceYards(pos, green);
+  return d >= 5 && d <= 800;
+}

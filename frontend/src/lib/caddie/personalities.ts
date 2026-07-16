@@ -1,5 +1,7 @@
 // Local personality definitions for UI rendering (mirrors Python backend)
 
+import { storageKey } from '../storage-keys';
+
 export interface CaddiePersonality {
   id: string;
   name: string;
@@ -90,12 +92,16 @@ export const PERSONALITIES: CaddiePersonality[] = [
   },
 ];
 
-const CADDIE_PERSONALITY_KEY = 'scorecard_caddie_personality';
+// Per-user namespaced (specs/multi-user-epic-plan.md §3.5) — computed per
+// call, not cached, so a user switch on one device reads the new namespace.
+function personalityStorageKey(): string {
+  return storageKey('caddie_personality');
+}
 const CLASSIC = PERSONALITIES.find(p => p.id === 'classic')!;
 
 export function getSelectedPersonalityId(): string {
   if (typeof window === 'undefined') return CLASSIC.id;
-  return localStorage.getItem(CADDIE_PERSONALITY_KEY) || CLASSIC.id;
+  return localStorage.getItem(personalityStorageKey()) || CLASSIC.id;
 }
 
 export function getSelectedPersonality(personas: CaddiePersonality[] = PERSONALITIES): CaddiePersonality {
@@ -108,7 +114,7 @@ export function getSelectedPersonality(personas: CaddiePersonality[] = PERSONALI
 
 export function setSelectedPersonality(id: string): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(CADDIE_PERSONALITY_KEY, id);
+  localStorage.setItem(personalityStorageKey(), id);
 }
 
 /**

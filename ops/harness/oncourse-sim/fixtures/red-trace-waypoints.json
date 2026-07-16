@@ -1,0 +1,854 @@
+[
+  {
+    "hole": 1,
+    "station": "tee",
+    "lat": 40.7428432,
+    "lng": -73.4562572
+  },
+  {
+    "hole": 1,
+    "station": "fairway25",
+    "lat": 40.74374658229907,
+    "lng": -73.45585138568427
+  },
+  {
+    "hole": 1,
+    "station": "fairway50",
+    "lat": 40.74464996459813,
+    "lng": -73.45544557136854
+  },
+  {
+    "hole": 1,
+    "station": "fairway75",
+    "lat": 40.745561193856304,
+    "lng": -73.45507263191817
+  },
+  {
+    "hole": 1,
+    "station": "approach90",
+    "lat": 40.746111097542524,
+    "lng": -73.45486213276727
+  },
+  {
+    "hole": 1,
+    "station": "green",
+    "lat": 40.7464777,
+    "lng": -73.4547218
+  },
+  {
+    "hole": 1,
+    "station": "to-next-tee-walk1",
+    "lat": 40.746652749999996,
+    "lng": -73.45483565
+  },
+  {
+    "hole": 1,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7468278,
+    "lng": -73.4549495
+  },
+  {
+    "hole": 2,
+    "station": "tee",
+    "lat": 40.7468278,
+    "lng": -73.4549495
+  },
+  {
+    "hole": 2,
+    "station": "fairway25",
+    "lat": 40.746882178726665,
+    "lng": -73.45606518176712
+  },
+  {
+    "hole": 2,
+    "station": "fairway50",
+    "lat": 40.74693655745333,
+    "lng": -73.45718086353423
+  },
+  {
+    "hole": 2,
+    "station": "fairway75",
+    "lat": 40.74667210873958,
+    "lng": -73.45816477667036
+  },
+  {
+    "hole": 2,
+    "station": "approach90",
+    "lat": 40.74635608349583,
+    "lng": -73.45869009066814
+  },
+  {
+    "hole": 2,
+    "station": "green",
+    "lat": 40.7461454,
+    "lng": -73.4590403
+  },
+  {
+    "hole": 2,
+    "station": "to-next-tee-walk1",
+    "lat": 40.74642435,
+    "lng": -73.45948634999999
+  },
+  {
+    "hole": 2,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7467033,
+    "lng": -73.4599324
+  },
+  {
+    "hole": 3,
+    "station": "tee",
+    "lat": 40.7467033,
+    "lng": -73.4599324
+  },
+  {
+    "hole": 3,
+    "station": "fairway25",
+    "lat": 40.747180507168075,
+    "lng": -73.4590729936668
+  },
+  {
+    "hole": 3,
+    "station": "fairway50",
+    "lat": 40.74765771433615,
+    "lng": -73.4582135873336
+  },
+  {
+    "hole": 3,
+    "station": "fairway75",
+    "lat": 40.74773533769973,
+    "lng": -73.45721700345713
+  },
+  {
+    "hole": 3,
+    "station": "approach90",
+    "lat": 40.74767561507989,
+    "lng": -73.45658256138286
+  },
+  {
+    "hole": 3,
+    "station": "green",
+    "lat": 40.7476358,
+    "lng": -73.4561596
+  },
+  {
+    "hole": 3,
+    "station": "to-next-tee-walk1",
+    "lat": 40.7475687,
+    "lng": -73.45581265000001
+  },
+  {
+    "hole": 3,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7475016,
+    "lng": -73.4554657
+  },
+  {
+    "hole": 4,
+    "station": "tee",
+    "lat": 40.7475016,
+    "lng": -73.4554657
+  },
+  {
+    "hole": 4,
+    "station": "fairway25",
+    "lat": 40.747290325,
+    "lng": -73.455050975
+  },
+  {
+    "hole": 4,
+    "station": "fairway50",
+    "lat": 40.747079049999996,
+    "lng": -73.45463625
+  },
+  {
+    "hole": 4,
+    "station": "fairway75",
+    "lat": 40.746867775,
+    "lng": -73.454221525
+  },
+  {
+    "hole": 4,
+    "station": "approach90",
+    "lat": 40.74674101,
+    "lng": -73.45397269
+  },
+  {
+    "hole": 4,
+    "station": "green",
+    "lat": 40.7466565,
+    "lng": -73.4538068
+  },
+  {
+    "hole": 4,
+    "station": "to-next-tee-walk1",
+    "lat": 40.746942000000004,
+    "lng": -73.45358335
+  },
+  {
+    "hole": 4,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7472275,
+    "lng": -73.4533599
+  },
+  {
+    "hole": 5,
+    "station": "tee",
+    "lat": 40.7472275,
+    "lng": -73.4533599
+  },
+  {
+    "hole": 5,
+    "station": "fairway25",
+    "lat": 40.74818193218279,
+    "lng": -73.45373911396304
+  },
+  {
+    "hole": 5,
+    "station": "fairway50",
+    "lat": 40.74913636436557,
+    "lng": -73.4541183279261
+  },
+  {
+    "hole": 5,
+    "station": "fairway75",
+    "lat": 40.75009367682006,
+    "lng": -73.4540729053773
+  },
+  {
+    "hole": 5,
+    "station": "approach90",
+    "lat": 40.75066933072802,
+    "lng": -73.45385894215092
+  },
+  {
+    "hole": 5,
+    "station": "green",
+    "lat": 40.7510531,
+    "lng": -73.4537163
+  },
+  {
+    "hole": 5,
+    "station": "to-next-tee-walk1",
+    "lat": 40.75111335,
+    "lng": -73.454102
+  },
+  {
+    "hole": 5,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7511736,
+    "lng": -73.4544877
+  },
+  {
+    "hole": 6,
+    "station": "tee",
+    "lat": 40.7511736,
+    "lng": -73.4544877
+  },
+  {
+    "hole": 6,
+    "station": "fairway25",
+    "lat": 40.750586624485486,
+    "lng": -73.45502170538497
+  },
+  {
+    "hole": 6,
+    "station": "fairway50",
+    "lat": 40.74999964897096,
+    "lng": -73.45555571076991
+  },
+  {
+    "hole": 6,
+    "station": "fairway75",
+    "lat": 40.74933730991122,
+    "lng": -73.45567649411981
+  },
+  {
+    "hole": 6,
+    "station": "approach90",
+    "lat": 40.749020203964484,
+    "lng": -73.45529759764793
+  },
+  {
+    "hole": 6,
+    "station": "green",
+    "lat": 40.7488088,
+    "lng": -73.455045
+  },
+  {
+    "hole": 6,
+    "station": "to-next-tee-walk1",
+    "lat": 40.7487224,
+    "lng": -73.455284
+  },
+  {
+    "hole": 6,
+    "station": "to-next-tee-walk2",
+    "lat": 40.748636,
+    "lng": -73.455523
+  },
+  {
+    "hole": 7,
+    "station": "tee",
+    "lat": 40.748636,
+    "lng": -73.455523
+  },
+  {
+    "hole": 7,
+    "station": "fairway25",
+    "lat": 40.748641925,
+    "lng": -73.455997125
+  },
+  {
+    "hole": 7,
+    "station": "fairway50",
+    "lat": 40.74864785,
+    "lng": -73.45647124999999
+  },
+  {
+    "hole": 7,
+    "station": "fairway75",
+    "lat": 40.748653774999994,
+    "lng": -73.456945375
+  },
+  {
+    "hole": 7,
+    "station": "approach90",
+    "lat": 40.74865733,
+    "lng": -73.45722985
+  },
+  {
+    "hole": 7,
+    "station": "green",
+    "lat": 40.7486597,
+    "lng": -73.4574195
+  },
+  {
+    "hole": 7,
+    "station": "to-next-tee-walk1",
+    "lat": 40.7484759,
+    "lng": -73.4579337
+  },
+  {
+    "hole": 7,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7482921,
+    "lng": -73.4584479
+  },
+  {
+    "hole": 8,
+    "station": "tee",
+    "lat": 40.7482921,
+    "lng": -73.4584479
+  },
+  {
+    "hole": 8,
+    "station": "fairway25",
+    "lat": 40.749119963035795,
+    "lng": -73.45850278886704
+  },
+  {
+    "hole": 8,
+    "station": "fairway50",
+    "lat": 40.74994782607159,
+    "lng": -73.45855767773406
+  },
+  {
+    "hole": 8,
+    "station": "fairway75",
+    "lat": 40.750770998914604,
+    "lng": -73.45852200714089
+  },
+  {
+    "hole": 8,
+    "station": "approach90",
+    "lat": 40.751259699565836,
+    "lng": -73.45840014285635
+  },
+  {
+    "hole": 8,
+    "station": "green",
+    "lat": 40.7515855,
+    "lng": -73.4583189
+  },
+  {
+    "hole": 8,
+    "station": "to-next-tee-walk1",
+    "lat": 40.7517725,
+    "lng": -73.45871555
+  },
+  {
+    "hole": 8,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7519595,
+    "lng": -73.4591122
+  },
+  {
+    "hole": 9,
+    "station": "tee",
+    "lat": 40.7519595,
+    "lng": -73.4591122
+  },
+  {
+    "hole": 9,
+    "station": "fairway25",
+    "lat": 40.75107026298078,
+    "lng": -73.45957700976602
+  },
+  {
+    "hole": 9,
+    "station": "fairway50",
+    "lat": 40.750168258123296,
+    "lng": -73.45982068163703
+  },
+  {
+    "hole": 9,
+    "station": "fairway75",
+    "lat": 40.74923592906165,
+    "lng": -73.45953914081852
+  },
+  {
+    "hole": 9,
+    "station": "approach90",
+    "lat": 40.74867653162466,
+    "lng": -73.4593702163274
+  },
+  {
+    "hole": 9,
+    "station": "green",
+    "lat": 40.7483036,
+    "lng": -73.4592576
+  },
+  {
+    "hole": 9,
+    "station": "to-next-tee-walk1",
+    "lat": 40.7482425,
+    "lng": -73.45965845
+  },
+  {
+    "hole": 9,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7481814,
+    "lng": -73.4600593
+  },
+  {
+    "hole": 10,
+    "station": "tee",
+    "lat": 40.7481814,
+    "lng": -73.4600593
+  },
+  {
+    "hole": 10,
+    "station": "fairway25",
+    "lat": 40.74905481297744,
+    "lng": -73.46042520533057
+  },
+  {
+    "hole": 10,
+    "station": "fairway50",
+    "lat": 40.74992822595488,
+    "lng": -73.46079111066115
+  },
+  {
+    "hole": 10,
+    "station": "fairway75",
+    "lat": 40.75080081190869,
+    "lng": -73.46061556107473
+  },
+  {
+    "hole": 10,
+    "station": "approach90",
+    "lat": 40.751324184763476,
+    "lng": -73.4603932244299
+  },
+  {
+    "hole": 10,
+    "station": "green",
+    "lat": 40.7516731,
+    "lng": -73.460245
+  },
+  {
+    "hole": 10,
+    "station": "to-next-tee-walk1",
+    "lat": 40.752047149999996,
+    "lng": -73.4603682
+  },
+  {
+    "hole": 10,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7524212,
+    "lng": -73.4604914
+  },
+  {
+    "hole": 11,
+    "station": "tee",
+    "lat": 40.7524212,
+    "lng": -73.4604914
+  },
+  {
+    "hole": 11,
+    "station": "fairway25",
+    "lat": 40.75237549532135,
+    "lng": -73.45927296844876
+  },
+  {
+    "hole": 11,
+    "station": "fairway50",
+    "lat": 40.752329790642705,
+    "lng": -73.4580545368975
+  },
+  {
+    "hole": 11,
+    "station": "fairway75",
+    "lat": 40.75207519268167,
+    "lng": -73.45691775602357
+  },
+  {
+    "hole": 11,
+    "station": "approach90",
+    "lat": 40.75179667707267,
+    "lng": -73.45628484240943
+  },
+  {
+    "hole": 11,
+    "station": "green",
+    "lat": 40.751611,
+    "lng": -73.4558629
+  },
+  {
+    "hole": 11,
+    "station": "to-next-tee-walk1",
+    "lat": 40.7515714,
+    "lng": -73.455319
+  },
+  {
+    "hole": 11,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7515318,
+    "lng": -73.4547751
+  },
+  {
+    "hole": 12,
+    "station": "tee",
+    "lat": 40.7515318,
+    "lng": -73.4547751
+  },
+  {
+    "hole": 12,
+    "station": "fairway25",
+    "lat": 40.751854200000004,
+    "lng": -73.45514162500001
+  },
+  {
+    "hole": 12,
+    "station": "fairway50",
+    "lat": 40.7521766,
+    "lng": -73.45550815
+  },
+  {
+    "hole": 12,
+    "station": "fairway75",
+    "lat": 40.752499,
+    "lng": -73.45587467499999
+  },
+  {
+    "hole": 12,
+    "station": "approach90",
+    "lat": 40.752692440000004,
+    "lng": -73.45609458999999
+  },
+  {
+    "hole": 12,
+    "station": "green",
+    "lat": 40.7528214,
+    "lng": -73.4562412
+  },
+  {
+    "hole": 12,
+    "station": "to-next-tee-walk1",
+    "lat": 40.753084,
+    "lng": -73.4563481
+  },
+  {
+    "hole": 12,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7533466,
+    "lng": -73.456455
+  },
+  {
+    "hole": 13,
+    "station": "tee",
+    "lat": 40.7533466,
+    "lng": -73.456455
+  },
+  {
+    "hole": 13,
+    "station": "fairway25",
+    "lat": 40.753302924869026,
+    "lng": -73.45751324793112
+  },
+  {
+    "hole": 13,
+    "station": "fairway50",
+    "lat": 40.75325924973805,
+    "lng": -73.45857149586222
+  },
+  {
+    "hole": 13,
+    "station": "fairway75",
+    "lat": 40.75316547371664,
+    "lng": -73.45962398967919
+  },
+  {
+    "hole": 13,
+    "station": "approach90",
+    "lat": 40.75310824948666,
+    "lng": -73.46025537587168
+  },
+  {
+    "hole": 13,
+    "station": "green",
+    "lat": 40.7530701,
+    "lng": -73.4606763
+  },
+  {
+    "hole": 13,
+    "station": "to-next-tee-walk1",
+    "lat": 40.75285855,
+    "lng": -73.4609483
+  },
+  {
+    "hole": 13,
+    "station": "to-next-tee-walk2",
+    "lat": 40.752647,
+    "lng": -73.4612203
+  },
+  {
+    "hole": 14,
+    "station": "tee",
+    "lat": 40.752647,
+    "lng": -73.4612203
+  },
+  {
+    "hole": 14,
+    "station": "fairway25",
+    "lat": 40.75178725115175,
+    "lng": -73.46160164668805
+  },
+  {
+    "hole": 14,
+    "station": "fairway50",
+    "lat": 40.75092914413573,
+    "lng": -73.46198938558805
+  },
+  {
+    "hole": 14,
+    "station": "fairway75",
+    "lat": 40.75007737847373,
+    "lng": -73.46176327388629
+  },
+  {
+    "hole": 14,
+    "station": "approach90",
+    "lat": 40.74956751138949,
+    "lng": -73.46151218955451
+  },
+  {
+    "hole": 14,
+    "station": "green",
+    "lat": 40.7492276,
+    "lng": -73.4613448
+  },
+  {
+    "hole": 14,
+    "station": "to-next-tee-walk1",
+    "lat": 40.74914735,
+    "lng": -73.46111250000001
+  },
+  {
+    "hole": 14,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7490671,
+    "lng": -73.4608802
+  },
+  {
+    "hole": 15,
+    "station": "tee",
+    "lat": 40.7490671,
+    "lng": -73.4608802
+  },
+  {
+    "hole": 15,
+    "station": "fairway25",
+    "lat": 40.74810896500904,
+    "lng": -73.46121541215093
+  },
+  {
+    "hole": 15,
+    "station": "fairway50",
+    "lat": 40.74715083001808,
+    "lng": -73.46155062430186
+  },
+  {
+    "hole": 15,
+    "station": "fairway75",
+    "lat": 40.74639521233486,
+    "lng": -73.46232862136127
+  },
+  {
+    "hole": 15,
+    "station": "approach90",
+    "lat": 40.74599260493394,
+    "lng": -73.46290640854451
+  },
+  {
+    "hole": 15,
+    "station": "green",
+    "lat": 40.7457242,
+    "lng": -73.4632916
+  },
+  {
+    "hole": 15,
+    "station": "to-next-tee-walk1",
+    "lat": 40.74553795,
+    "lng": -73.46336769999999
+  },
+  {
+    "hole": 15,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7453517,
+    "lng": -73.4634438
+  },
+  {
+    "hole": 16,
+    "station": "tee",
+    "lat": 40.7453517,
+    "lng": -73.4634438
+  },
+  {
+    "hole": 16,
+    "station": "fairway25",
+    "lat": 40.74579139344056,
+    "lng": -73.46205350746213
+  },
+  {
+    "hole": 16,
+    "station": "fairway50",
+    "lat": 40.74619588259483,
+    "lng": -73.4606657902338
+  },
+  {
+    "hole": 16,
+    "station": "fairway75",
+    "lat": 40.74564249129742,
+    "lng": -73.4593481451169
+  },
+  {
+    "hole": 16,
+    "station": "approach90",
+    "lat": 40.745310456518965,
+    "lng": -73.45855755804676
+  },
+  {
+    "hole": 16,
+    "station": "green",
+    "lat": 40.7450891,
+    "lng": -73.4580305
+  },
+  {
+    "hole": 16,
+    "station": "to-next-tee-walk1",
+    "lat": 40.7450221,
+    "lng": -73.4577694
+  },
+  {
+    "hole": 16,
+    "station": "to-next-tee-walk2",
+    "lat": 40.7449551,
+    "lng": -73.4575083
+  },
+  {
+    "hole": 17,
+    "station": "tee",
+    "lat": 40.7449551,
+    "lng": -73.4575083
+  },
+  {
+    "hole": 17,
+    "station": "fairway25",
+    "lat": 40.7452732,
+    "lng": -73.45754925
+  },
+  {
+    "hole": 17,
+    "station": "fairway50",
+    "lat": 40.7455913,
+    "lng": -73.4575902
+  },
+  {
+    "hole": 17,
+    "station": "fairway75",
+    "lat": 40.7459094,
+    "lng": -73.45763115
+  },
+  {
+    "hole": 17,
+    "station": "approach90",
+    "lat": 40.746100260000006,
+    "lng": -73.45765571999999
+  },
+  {
+    "hole": 17,
+    "station": "green",
+    "lat": 40.7462275,
+    "lng": -73.4576721
+  },
+  {
+    "hole": 17,
+    "station": "to-next-tee-walk1",
+    "lat": 40.74638575,
+    "lng": -73.4572903
+  },
+  {
+    "hole": 17,
+    "station": "to-next-tee-walk2",
+    "lat": 40.746544,
+    "lng": -73.4569085
+  },
+  {
+    "hole": 18,
+    "station": "tee",
+    "lat": 40.746544,
+    "lng": -73.4569085
+  },
+  {
+    "hole": 18,
+    "station": "fairway25",
+    "lat": 40.74560330199921,
+    "lng": -73.456803915089
+  },
+  {
+    "hole": 18,
+    "station": "fairway50",
+    "lat": 40.74466260399842,
+    "lng": -73.45669933017798
+  },
+  {
+    "hole": 18,
+    "station": "fairway75",
+    "lat": 40.74372318076853,
+    "lng": -73.45672230499117
+  },
+  {
+    "hole": 18,
+    "station": "approach90",
+    "lat": 40.74316021230741,
+    "lng": -73.45680468199647
+  },
+  {
+    "hole": 18,
+    "station": "green",
+    "lat": 40.7427849,
+    "lng": -73.4568596
+  }
+]

@@ -1,0 +1,6 @@
+# Screenshots from drive_trace.sh runs are gitignored by default — only a
+# handful of key, hand-picked screenshots (referenced by ONCOURSE_READINESS.md)
+# are committed. To commit a new one: `git add -f evidence/<name>.png`.
+*.png
+!00-launch.png
+!01-round-nav-incomplete-blank.png

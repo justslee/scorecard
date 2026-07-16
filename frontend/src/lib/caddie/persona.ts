@@ -17,10 +17,15 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Caddy } from '@/components/yardage/tokens';
 import type { CaddiePersonalityInfo } from './types';
 import { fetchPersonalities, getCaddieProfile, updateCaddieProfile } from './api';
+import { storageKey } from '../storage-keys';
 
 export const DEFAULT_PERSONA_ID = 'classic';
 
-const STORAGE_KEY = 'looper.caddiePersonaId';
+// Per-user namespaced (specs/multi-user-epic-plan.md §3.5) — computed per
+// call, not cached, so a user switch on one device reads the new namespace.
+function personaStorageKey(): string {
+  return storageKey('caddie_persona');
+}
 
 /** Static fallback for the 4 built-ins so the sheet renders a real persona
  *  name before (or without) the network. Mirrors backend personalities.py. */
@@ -110,7 +115,7 @@ export function resolvePersonaId(
 function readLocalPersonaId(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(STORAGE_KEY);
+    return window.localStorage.getItem(personaStorageKey());
   } catch {
     return null;
   }
@@ -119,7 +124,7 @@ function readLocalPersonaId(): string | null {
 function writeLocalPersonaId(id: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, id);
+    window.localStorage.setItem(personaStorageKey(), id);
   } catch {
     // Private mode / quota — non-fatal, server profile still persists.
   }

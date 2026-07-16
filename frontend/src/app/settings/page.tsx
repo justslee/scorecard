@@ -6,6 +6,7 @@ import { useClerk } from '@clerk/react';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 import { getCallerVoice, placeRehearsalCall, setCallerVoice } from '@/lib/teetime/client';
 import type { CallerVoiceOption, RehearsalCallResponse } from '@/lib/teetime/types';
+import { clearCurrentUserStorage } from '@/lib/storage-keys';
 
 // ---------------------------------------------------------------------------
 // Inline icons — no lucide-react
@@ -285,7 +286,10 @@ function ClearCacheButton() {
   const [confirming, setConfirming] = useState(false);
 
   const handleClear = () => {
-    localStorage.clear();
+    // Only the current user's namespaced data (multiuser-p0-client-identity)
+    // — a bare localStorage.clear() would nuke every other signed-in user's
+    // cache on this device.
+    clearCurrentUserStorage();
     window.location.href = '/';
   };
 

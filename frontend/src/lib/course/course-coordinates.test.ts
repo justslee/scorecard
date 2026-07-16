@@ -22,6 +22,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   getCourseCoordinates,
   computeFCBDistances,
+  isGpsPlausibleToGreen,
   BETHPAGE_BLACK_ID,
   BETHPAGE_RED_ID,
 } from './course-coordinates';
@@ -169,6 +170,48 @@ describe('computeFCBDistances — from a midpoint position', () => {
     expect(fcb.back).toBeGreaterThan(0);
     expect(fcb.front).toBeLessThan(fcb.center);
     expect(fcb.center).toBeLessThan(fcb.back);
+  });
+});
+
+// ── isGpsPlausibleToGreen ────────────────────────────────────────────────────
+// The shared plausibility gate for a live-GPS tap-target origin (readiness
+// finding #8) — same 5..800y-to-green rule `posOnHole` uses, so the map and
+// the yardage card never disagree.
+
+describe('isGpsPlausibleToGreen — on-hole GPS origin plausibility gate', () => {
+  const pos   = { lat: 40.7445, lng: -73.4525 };
+  const green = { lat: 40.7451, lng: -73.4514 };
+  // Deterministic injected distance fn — returns a fixed value regardless of
+  // the actual points, so the boundary tests are exact.
+  const distAt = (yards: number) => () => yards;
+
+  it('true at the lower boundary (5 yards, inclusive)', () => {
+    expect(isGpsPlausibleToGreen(pos, green, distAt(5))).toBe(true);
+  });
+
+  it('true at the upper boundary (800 yards, inclusive)', () => {
+    expect(isGpsPlausibleToGreen(pos, green, distAt(800))).toBe(true);
+  });
+
+  it('false just below the lower boundary (4 yards — on/at the green)', () => {
+    expect(isGpsPlausibleToGreen(pos, green, distAt(4))).toBe(false);
+  });
+
+  it('false just above the upper boundary (801 yards — too far)', () => {
+    expect(isGpsPlausibleToGreen(pos, green, distAt(801))).toBe(false);
+  });
+
+  it('false when far away (home testing / wrong hole), using the real distance fn', () => {
+    // ~2450 miles from Bethpage, NY — nowhere near plausible.
+    const farAway = { lat: 34.0522, lng: -118.2437 }; // Los Angeles
+    expect(isGpsPlausibleToGreen(farAway, green)).toBe(false);
+  });
+
+  it('defaults to yardsDistance when no distanceYards fn is injected', () => {
+    // A point well within 5..800 yards of the green, using the real (default)
+    // distance function — proves the default param wires to yardsDistance.
+    const near = { lat: 40.74515, lng: -73.45115 };
+    expect(isGpsPlausibleToGreen(near, green)).toBe(true);
   });
 });
 
