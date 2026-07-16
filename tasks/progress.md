@@ -17271,3 +17271,27 @@ Fable plan (Plan agent, fable model → specs/caddie-transcript-render-unify-pla
 (reference pick + unified visual spec) running CONCURRENTLY. On return: reconcile → builder → reviewer
 → qa → designer BLOCKING (screenshots all 4 surfaces). SHIP verdict → PR #141 checklist (NOTICEABLE).
 BLOCKING → re-dispatch builder. Do NOT ship/ping.
+
+## Cycle 132 update — plan + designer concept landed, dispatching builder
+Fable plan (specs/caddie-transcript-render-unify-plan.md, saved by eng-lead — Fable runs read-only) +
+designer concept BOTH in, mutually consistent: base = LooperSheet flat-paper idiom; seam = new
+frontend/src/components/yardage/Transcript.tsx exporting ConversationTurn (slots: leading medallion,
+captionTrailing waveform; size book|display) + thin Transcript list container; normalized turn
+{key,speaker,text,streaming?,muted?}. Kill LiveVoiceBody chat bubbles + CaddieSheet cards + SAID chip
++ accent caption; medallion stays VoiceSheet-only; captionPersonaName everywhere captions appear.
+BLOCKING invariants: live path stays key=m.id, 1:1 adapter, NO re-sort/dedup/filter; realtime.ts /
+realtime-ordering.ts / useCaddieLiveSession.ts byte-identical (git diff gate); VoiceBody slice(0,-2) +
+separate current-turn card preserved with all AnimatePresence keys verbatim.
+RECONCILED conflict: Fable proposed muted:m.partial→0.7; designer OVERRODE (dimmed live text reads as
+broken) → use streaming:m.partial (opacity 1 + caption pulse). Designer LEADS visuals + BLOCKING at end.
+Dead-code rider (SILENT, conditional): delete CaddiePanel/CaddieModal/CaddieNotesCard/useRealtimeCaddie
+(~1300 lines, grep-proven dead) IF builder re-confirms zero live imports + accepts the 'notes on you'
+memory UI is intentionally gone.
+
+## AWAITING
+builder implementing specs/caddie-transcript-render-unify-plan.md on integration/next (commits +
+pushes; NO per-item PR). On its return: reviewer (fresh adversarial: dedup/ordering/one-mic preserved,
+no visual regression, deleted code truly dead) + qa (all gates SUCCESS on pushed head + full caddie
+suites) in parallel → designer BLOCKING on rendered screenshots across all 4 surfaces. SHIP+PASS+PASS →
+PR #141 checklist (NOTICEABLE) + backlog done-on-bundle. BLOCKING → re-dispatch builder. HOLD push if
+integration/next recut mid-cycle. Do NOT ship/ping.
