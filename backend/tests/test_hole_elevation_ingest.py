@@ -376,3 +376,55 @@ class TestNoneElevationHandling:
         )
         for hole in course["holes"]:
             assert "elevation" not in hole
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# sample_course_elevations — composite ref handling (never crashes, never 0)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Regression coverage for the 2026-07-17 championship-course ingest incident:
+# a plain int(ref) crashed on Pinehurst-style composite refs like "1 - #2".
+# sample_course_elevations must resolve the leading int honestly (via
+# parse_leading_int_ref) and skip holes whose ref doesn't parse at all,
+# rather than raising or keying the result dict on a fake "0".
+
+import asyncio  # noqa: E402
+from unittest.mock import AsyncMock, patch  # noqa: E402
+
+from app.services.elevation import sample_course_elevations  # noqa: E402
+
+
+class TestSampleCourseElevationsCompositeRef:
+    def _run(self, holes: list[dict]) -> dict:
+        # fetch_3dep_samples is called twice: tee/green batch, then the
+        # green-slope grid batch. Return a flat list of plausible elevations
+        # sized to whatever was requested so both calls succeed cleanly.
+        async def _fake_fetch(points):
+            return [100.0 for _ in points]
+
+        with patch(
+            "app.services.elevation.fetch_3dep_samples",
+            new=AsyncMock(side_effect=_fake_fetch),
+        ):
+            return asyncio.run(sample_course_elevations(holes, "Black"))
+
+    def test_composite_ref_resolves_to_leading_int_key(self):
+        composite_hole = _make_hole(
+            "1 - #2", "Black", -73.000, 40.700, -73.000, 40.702,
+        )
+        result = self._run([composite_hole])
+        assert set(result.keys()) == {1}
+
+    def test_unparseable_ref_is_skipped_not_crashed(self):
+        junk_hole = _make_hole("#weird", "Black", -73.000, 40.700, -73.000, 40.702)
+        # Must not raise (the old int(ref) would ValueError here).
+        result = self._run([junk_hole])
+        assert result == {}
+
+    def test_mixed_valid_and_unparseable_refs(self):
+        junk_hole = _make_hole("#weird", "Black", -72.990, 40.700, -72.990, 40.702)
+        result = self._run([_BH1, junk_hole])
+        # The plain-numeric hole resolves normally; the junk ref is dropped —
+        # critically, it never produces a fake hole 0 alongside it.
+        assert set(result.keys()) == {1}
+        assert 0 not in result

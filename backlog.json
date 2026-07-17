@@ -1228,16 +1228,18 @@
     {
       "id": "ingest-elevation-ref-parse-fix",
       "title": "elevation.py int(ref) crashes on composite hole refs like '1 - #2' (Pinehurst format)",
-      "status": "ready",
+      "status": "done",
       "priority": "p2",
+      "landed": "2026-07-17 on integration/next (bundle #146, SILENT). Added app.services.course_spatial.parse_leading_int_ref(ref) -> Optional[int]: takes only the leading run of digits at the START of the (trimmed) string, so '7'->7, '1 - #2'->1, '12A'->12, '#3'/junk/None->None (never a fake 0). elevation.py's sample_course_elevations now uses it (was a bare int(ref) crash); course_spatial.build_course_feature_collection now uses it too and SKIPS refs that don't parse instead of emitting a 'hole 0' via the old _ref_to_int fallback (that fallback fn + its 3 existing tests are left untouched/unused in prod — avoided touching a test that encodes its old default-to-0 contract). Tests: TestParseLeadingIntRef (9 cases) in test_course_spatial.py, TestBuildCourseFeatureCollectionCompositeRef (3 cases), TestSampleCourseElevationsCompositeRef (3 cases, mocked fetch_3dep_samples) in test_hole_elevation_ingest.py.",
       "depends_on": [],
       "why": "Found during the 2026-07-17 championship-course ingest op: backend/app/services/elevation.py:448 int(ref) raises on OSM refs like '1 - #2', and course_spatial._ref_to_int returns 0 for the same, collapsing hole numbers. Worked around at runtime with a leading-int normalization wrapper; needs the real repo fix (shared leading-int ref parser) + tests covering composite/dash/hash ref formats."
     },
     {
       "id": "ingest-duplicate-hole-ref-dedupe",
       "title": "Same-boundary duplicate hole refs (e.g. Pine Valley short course) contaminate par merge + polygon grouping",
-      "status": "ready",
+      "status": "done",
       "priority": "p2",
+      "landed": "2026-07-17 on integration/next (bundle #146, SILENT). Added course_spatial._linestring_length_m(coords) (sums _deg_to_m over consecutive vertices). osm_ingest.apply_boundary_hole_selection now dedupes by ref among the inside-the-boundary candidate set BEFORE tagging: when >1 candidate hole shares a ref, only the longest way is tagged with target_course_name; the shorter duplicate(s) are left untouched (as if outside the boundary), so par merge/polygon grouping downstream never sees the collision. Refless holes are exempt (can't collide). Tests: TestDuplicateHoleRefDedupe (5 cases: longest-wins, loser-untagged, non-colliding-refs-unaffected, 3-way collision, refless-never-collide) in test_osm_boundary_selection.py, plus a full apply_boundary_hole_selection->assemble_osm_course integration regression (TestBoundarySelectionDuplicateRefIntegration, wired exactly as scripts/ingest_osm_course.py does) in test_ingest_osm_course.py proving hole 1's par stays 4 (main course), never contaminated to 3 (short course).",
       "depends_on": [],
       "why": "Found 2026-07-17: when a club boundary contains two courses whose holes share refs (Pine Valley main + short course), par merge and polygon grouping mix them (first ingest produced holes 1-10 all par 3; caught by audit). Runtime fix was a longest-way-per-ref dedupe wrapper; needs the repo fix in the ingest path + a regression test with a two-course-one-boundary fixture."
     },
@@ -1247,7 +1249,7 @@
       "status": "ready",
       "priority": "p3",
       "depends_on": [],
-      "why": "Found 2026-07-17 under heavy Overpass throttling: HTTP 429/504 from Overpass is caught and returned as [], indistinguishable from a genuine no-boundary result, sending the ingest down misleading failure paths. Raise/annotate throttle errors distinctly (retry-able) vs true empties, + tests."
+      "why": "Found 2026-07-17 under heavy Overpass throttling: HTTP 429/504 from Overpass is caught and returned as [], indistinguishable from a genuine no-boundary result, sending the ingest down misleading failure paths. Raise/annotate throttle errors distinctly (retry-able) vs true empties, + tests. DEFERRED 2026-07-17 (builder, same pass as the two p2 fixes above): making fetch_golf_course_boundaries distinguish throttle-failure from genuine-empty means changing its on-failure return contract, which directly conflicts with the existing test_osm_boundary_selection.py::test_overpass_failure_returns_empty_list assertion (504 x2 exhausted -> must equal []). That's a real design call (new sibling fn returning a tri-state result? change the test's expectation deliberately? raise a typed exception only some callers catch?) rather than a 'stays small' tweak, so left untouched rather than force a fix that breaks a test encoding the current contract. Needs an eng-lead call on the target shape before a builder should touch this."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

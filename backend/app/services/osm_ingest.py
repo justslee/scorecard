@@ -17,6 +17,7 @@ import math
 from typing import Any, Optional
 
 from app.services.course_spatial import (
+    _linestring_length_m,
     _point_in_ring,
     _ring_bbox,
     _ring_centroid,
@@ -150,16 +151,56 @@ def apply_boundary_hole_selection(
             slightly outside a hand-drawn OSM boundary, or a hole whose ways
             are stitched from more than one OSM segment).
 
+    Duplicate-ref dedupe:
+        Some club boundaries enclose TWO distinct courses that share hole
+        refs — e.g. a championship course plus an executive/short course on
+        the same grounds (Pine Valley's main course + short course both fall
+        inside one club boundary, both with holes ref'd ``"1"``–``"10"``+).
+        Selecting both same-ref holes would collide downstream:
+        ``build_course_feature_collection`` groups polygons by ref alone and
+        ``assemble_osm_course``'s par/handicap merge keys on ref alone, so
+        two same-ref holes silently blend into one contaminated hole (the
+        2026-07-17 incident: holes 1–10 all came out par 3, the short
+        course's par overwriting the championship course's). When more than
+        one inside-the-boundary hole shares a ref, only the LONGEST way
+        (:func:`~app.services.course_spatial._linestring_length_m` — the
+        played-length hole, not the practice one) is tagged with
+        *target_course_name*; the shorter duplicate(s) are left untouched,
+        exactly as if they'd fallen outside the boundary.
+
     Returns:
         A NEW list — same length and order as *holes*.  Selected hole dicts
         are shallow-copied with a replaced ``properties`` dict (so the caller
-        never mutates *holes* in place); non-selected holes are the original
-        dict objects, unmodified.
+        never mutates *holes* in place); non-selected holes (including
+        same-ref losers of the dedupe above) are the original dict objects,
+        unmodified.
     """
-    result: list[dict] = []
-    for hole in holes:
+    # Pass 1: which holes fall inside the boundary, keyed by index, with each
+    # one's LineString length (metres) — used only to break same-ref ties.
+    inside_lengths: dict[int, float] = {}
+    for i, hole in enumerate(holes):
         coords = (hole.get("geometry") or {}).get("coordinates") or []
         if _hole_inside_boundary(coords, boundary, min_fraction):
+            inside_lengths[i] = _linestring_length_m(coords)
+
+    # Pass 2: dedupe by ref among the inside set — keep only the longest way
+    # per ref (see "Duplicate-ref dedupe" above). Holes with no ref can't
+    # collide by ref, so they're always kept.
+    longest_index_by_ref: dict[str, int] = {}
+    kept_indices: set[int] = set()
+    for i, length_m in inside_lengths.items():
+        ref = str((holes[i].get("properties") or {}).get("ref") or "")
+        if not ref:
+            kept_indices.add(i)
+            continue
+        current = longest_index_by_ref.get(ref)
+        if current is None or length_m > inside_lengths[current]:
+            longest_index_by_ref[ref] = i
+    kept_indices |= set(longest_index_by_ref.values())
+
+    result: list[dict] = []
+    for i, hole in enumerate(holes):
+        if i in kept_indices:
             props = dict(hole.get("properties") or {})
             props["course_name"] = target_course_name
             tagged_hole = dict(hole)

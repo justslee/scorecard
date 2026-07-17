@@ -19396,3 +19396,53 @@ backlog.json: flipped `yardage-book-card-wobble-drag-isolation` to `done-on-bund
 recorded in `resolution` (targeted edit, JSON validated: 103 items, single match). SILENT rider (not
 noticeable — pure event-wiring internals, same visual/behavioral surface minus the bug) — no ship ping, no
 release; rides the existing HELD bundle #146 for the owner's next approval.
+
+## 2026-07-17 DONE — 2 ingest-code bug fixes from the championship-course ingest op, SILENT riders on bundle #146
+Backend-only, backend/app/services/{course_spatial,elevation,osm_ingest}.py + 4 test files. Both backlog items
+carried the full diagnosis from the 2026-07-17 championship-course ingest (Pinehurst / Pine Valley), where
+runtime wrappers worked around both bugs; this pass lands the real repo fix for both.
+
+1. `ingest-elevation-ref-parse-fix` (p2): added `course_spatial.parse_leading_int_ref(ref) -> Optional[int]` —
+   the ONE shared honest parser, taking only the leading run of digits at the very START of the (trimmed)
+   ref string: `'7'`->7, `'1 - #2'`->1 (Pinehurst composite format), `'12A'`->12, `'#3'`/junk/None->`None`
+   (never a fake 0). `elevation.py`'s `sample_course_elevations` swapped its crashing bare `int(ref)` for this
+   (skips holes whose ref doesn't parse instead of raising). `course_spatial.build_course_feature_collection`
+   also swapped its `_ref_to_int` call for this and now SKIPS unparseable refs when building the "number" field,
+   instead of the old fallback that minted a fake "hole 0" and silently collapsed real holes together. Left
+   `_ref_to_int` and its 3 existing tests (`_ref_to_int(None)==0`, `_ref_to_int("abc")==0`) completely
+   untouched/unused-in-prod rather than changing its tested 0-default contract — it's genuinely the OLD
+   bug's shape, so route around it instead of editing a test that encodes the old contract.
+2. `ingest-duplicate-hole-ref-dedupe` (p2): added `course_spatial._linestring_length_m(coords)`. Rewired
+   `osm_ingest.apply_boundary_hole_selection` to a 2-pass algorithm: pass 1 finds which holes fall inside the
+   boundary + their LineString length; pass 2 dedupes by ref among that inside set, keeping only the LONGEST
+   way per ref (the played-length hole, not an executive/short-course one sharing the same club boundary) —
+   losers are left untagged, exactly as if they'd fallen outside the boundary, so `build_course_feature_collection`
+   and `assemble_osm_course`'s par/handicap merge (both keyed on ref alone) never see the collision. Refless
+   holes are exempt from the dedupe (nothing to collide on).
+
+Tests (all offline, no DB/network): `TestParseLeadingIntRef` (9 cases) + `TestBuildCourseFeatureCollectionCompositeRef`
+(3 cases, incl. `test_no_hole_zero_ever_emitted`) in `test_course_spatial.py`; `TestSampleCourseElevationsCompositeRef`
+(3 cases, `fetch_3dep_samples` mocked via AsyncMock) in `test_hole_elevation_ingest.py`; `TestDuplicateHoleRefDedupe`
+(5 cases: longest-wins, loser-left-untagged, non-colliding-refs-unaffected, 3-way collision, refless-never-collide)
+in `test_osm_boundary_selection.py`; and a full pipeline regression `TestBoundarySelectionDuplicateRefIntegration`
+in `test_ingest_osm_course.py` that wires `apply_boundary_hole_selection` -> `assemble_osm_course` exactly as
+`scripts/ingest_osm_course.py` does, proving hole 1's par stays 4 (main course) and never contaminates to 3
+(short course) — the literal shape of the 2026-07-17 incident (holes 1-10 all par 3).
+
+Gates: `ruff check .` clean; full offline `pytest tests/` — 2809 passed, 133 skipped (DB-backed, untouched by
+this change), 0 failed. No DB container spun up locally per standing instruction — DB-backed integration tests
+are CI's job.
+
+`ingest-overpass-error-honesty` (p3) DEFERRED, not attempted: making `fetch_golf_course_boundaries` distinguish
+a throttle-failure (429/504 exhausted) from a genuine-empty result requires changing its on-failure return
+contract, which directly conflicts with the existing `test_osm_boundary_selection.py::test_overpass_failure_returns_empty_list`
+assertion (504 x2 exhausted must still equal `[]`). That's a real design call (new sibling fn? typed exception
+some callers catch? deliberately change the test's expectation?), not a "stays small" tweak — left the backlog
+item `ready` with a note flagging the conflict for an eng-lead decision on target shape, rather than force a fix
+that breaks a test encoding the current contract.
+
+Rebased fast-forward onto latest `origin/integration/next` before pushing (bundle head may have moved from a
+parallel lane; expect CI to run on the actual merged head). backlog.json: flipped both p2 items to `done` with
+`landed` fields carrying the fix + test evidence (targeted string edits, `python3 -c "import json; json.load(...)"`
+validated before AND after). Both SILENT riders (backend-only bug fixes in an ingest pipeline no live user hits;
+nothing user-visible on TestFlight) — no ship ping, no release; ride bundle #146 for the owner's next approval.

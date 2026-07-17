@@ -29,6 +29,7 @@ from app.services.course_spatial import (
     _ring_centroid,
     assign_features_to_holes,
     build_course_feature_collection,
+    parse_leading_int_ref,
 )
 
 
@@ -312,6 +313,42 @@ class TestRefToInt:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# parse_leading_int_ref — the honest shared parser (never mints a fake "0")
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestParseLeadingIntRef:
+    def test_plain_numeric(self):
+        assert parse_leading_int_ref("7") == 7
+
+    def test_two_digit_numeric(self):
+        assert parse_leading_int_ref("18") == 18
+
+    def test_composite_dash_hash_format(self):
+        # Pinehurst dual-course convention: "1 - #2" -> hole 1.
+        assert parse_leading_int_ref("1 - #2") == 1
+
+    def test_trailing_letter_suffix(self):
+        # Split-tee ref variant.
+        assert parse_leading_int_ref("12A") == 12
+
+    def test_leading_hash_returns_none(self):
+        # No digit at the START of the string — can't be honestly resolved.
+        assert parse_leading_int_ref("#3") is None
+
+    def test_junk_returns_none(self):
+        assert parse_leading_int_ref("abc") is None
+
+    def test_none_returns_none(self):
+        assert parse_leading_int_ref(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert parse_leading_int_ref("") is None
+
+    def test_leading_whitespace_is_tolerated(self):
+        assert parse_leading_int_ref("  9") == 9
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # assign_features_to_holes — core spatial-join logic
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -561,6 +598,42 @@ class TestBuildCourseFeatureCollection:
 
     def test_empty_holes_returns_empty_list(self):
         result = build_course_feature_collection([], ALL_POLYGONS, "Black")
+        assert result == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Composite hole refs (e.g. Pinehurst's "1 - #2") never collapse to hole 0
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestBuildCourseFeatureCollectionCompositeRef:
+    """A hole whose ref doesn't parse to a plain int must resolve honestly —
+    never silently land on hole 0 (2026-07-17 championship-course incident)."""
+
+    def _composite_holes(self) -> list[dict]:
+        return [
+            _make_hole("1 - #2", "Black", _BH1_TEE_LON, _BH1_TEE_LAT,
+                       _BH1_GREEN_LON, _BH1_GREEN_LAT, _BH1_MID_LON, _BH1_MID_LAT),
+        ]
+
+    def test_composite_ref_resolves_to_leading_int(self):
+        result = build_course_feature_collection(
+            self._composite_holes(), [POLY_GREEN_BH1], "Black"
+        )
+        numbers = {h["number"] for h in result}
+        assert numbers == {1}
+
+    def test_no_hole_zero_ever_emitted(self):
+        result = build_course_feature_collection(
+            self._composite_holes(), [POLY_GREEN_BH1], "Black"
+        )
+        assert 0 not in {h["number"] for h in result}
+
+    def test_unparseable_ref_is_dropped_not_zeroed(self):
+        junk_holes = [
+            _make_hole("#weird", "Black", _BH1_TEE_LON, _BH1_TEE_LAT,
+                       _BH1_GREEN_LON, _BH1_GREEN_LAT, _BH1_MID_LON, _BH1_MID_LAT),
+        ]
+        result = build_course_feature_collection(junk_holes, [POLY_GREEN_BH1], "Black")
         assert result == []
 
 

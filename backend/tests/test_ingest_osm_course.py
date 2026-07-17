@@ -15,7 +15,11 @@ from __future__ import annotations
 import hashlib
 import re
 
-from app.services.osm_ingest import _deterministic_uuid, assemble_osm_course
+from app.services.osm_ingest import (
+    _deterministic_uuid,
+    apply_boundary_hole_selection,
+    assemble_osm_course,
+)
 
 
 # ── Fixture builders (self-contained, no test_course_spatial import) ──────────
@@ -436,3 +440,73 @@ class TestAssembleOsmCourseEdgeCases:
             tee_sets=[],
         )
         assert result["teeSets"] == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Full pipeline: apply_boundary_hole_selection -> assemble_osm_course
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Regression for the 2026-07-17 championship-course ingest incident: a club
+# boundary enclosing BOTH a championship course and an executive/short course
+# (Pine Valley main + short course) selects hole ways from both; when they
+# share refs the par merge (keyed on ref alone) silently blended them — the
+# short course's par-3 "1" overwrote the main course's par-4 "1" (first
+# ingest produced holes 1-10 all par 3). This exercises the two functions
+# wired exactly as scripts/ingest_osm_course.py wires them.
+
+class TestBoundarySelectionDuplicateRefIntegration:
+    _BOUNDARY_RING = [
+        [-121.955, 36.565], [-121.945, 36.565],
+        [-121.945, 36.575], [-121.955, 36.575],
+        [-121.955, 36.565],
+    ]
+    _BOUNDARY = {"type": "Polygon", "coordinates": [_BOUNDARY_RING]}
+
+    @staticmethod
+    def _hole(ref: str, coords: list[list[float]], osm_id: str, par: int, handicap: int) -> dict:
+        return {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {
+                "featureType": "hole",
+                "osm_id": osm_id,
+                "ref": ref,
+                "par": par,
+                "handicap": handicap,
+                "name": f"Hole {ref}",
+                "course_name": None,  # untagged in OSM — selected via boundary only
+            },
+        }
+
+    def test_par_not_contaminated_by_short_course_duplicate_ref(self):
+        main_h1 = self._hole(
+            "1", [[-121.953, 36.566], [-121.947, 36.574]], "way/main1", par=4, handicap=7,
+        )
+        short_h1 = self._hole(
+            "1", [[-121.951, 36.569], [-121.949, 36.570]], "way/short1", par=3, handicap=1,
+        )
+        green_main = _make_polygon("way/green_main1", "green", -121.947, 36.574)
+
+        selected_holes = apply_boundary_hole_selection(
+            [main_h1, short_h1], self._BOUNDARY, target_course_name="Pine Valley",
+        )
+        geometry = {
+            "holes":    selected_holes,
+            "greens":   [green_main],
+            "fairways": [],
+            "tees":     [],
+            "bunkers":  [],
+            "water":    [],
+        }
+        course = assemble_osm_course(
+            geometry=geometry,
+            course_id="pv",
+            course_name="Pine Valley",
+            target_course_name="Pine Valley",
+        )
+        holes_by_number = {h["number"]: h for h in course["holes"]}
+        assert 1 in holes_by_number
+        # Main course's par survives; the short course's never wins the
+        # collision, and no blended/absent value slips through either.
+        assert holes_by_number[1]["par"] == 4
+        assert holes_by_number[1]["handicap"] == 7

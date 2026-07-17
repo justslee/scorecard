@@ -31,6 +31,7 @@ required — only ``math`` from the standard library.
 from __future__ import annotations
 
 import math
+import re
 from typing import Optional
 
 
@@ -103,6 +104,33 @@ def _deg_to_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dx = (lon2 - lon1) * _LAT_M_PER_DEG * math.cos(mid_lat_rad)
     dy = (lat2 - lat1) * _LAT_M_PER_DEG
     return math.hypot(dx, dy)
+
+
+def _linestring_length_m(coords: list[list[float]]) -> float:
+    """Return the total length (metres) of a GeoJSON LineString's coordinates.
+
+    Sums the equirectangular distance (:func:`_deg_to_m`) between each pair
+    of consecutive ``[lon, lat]`` vertices.  Used to break ties between two
+    hole ways that share the same ``ref`` at a single club boundary (e.g. a
+    championship course + an executive/short course) — the played-length
+    way is kept, the short/practice one is dropped.  See
+    ``osm_ingest.apply_boundary_hole_selection``'s "Duplicate-ref dedupe"
+    section.
+
+    Args:
+        coords: ``[[lon, lat], ...]`` vertex list.
+
+    Returns:
+        Total length in metres.  ``0.0`` for fewer than 2 vertices.
+    """
+    if len(coords) < 2:
+        return 0.0
+    total = 0.0
+    for i in range(len(coords) - 1):
+        lon1, lat1 = coords[i][0], coords[i][1]
+        lon2, lat2 = coords[i + 1][0], coords[i + 1][1]
+        total += _deg_to_m(lat1, lon1, lat2, lon2)
+    return total
 
 
 def _point_to_segment_dist_m(
@@ -580,6 +608,47 @@ def _ref_to_int(ref: Optional[str]) -> int:
         return 0
 
 
+def parse_leading_int_ref(ref: Optional[str]) -> Optional[int]:
+    """Parse the leading run of decimal digits from an OSM hole ``ref`` tag.
+
+    Handles the composite / annotated ``ref`` formats seen in the wild —
+    e.g. Pinehurst's dual-course convention ``"1 - #2"`` or a split-tee
+    ``"12A"`` — by taking only the digits at the very START of the
+    (whitespace-trimmed) string.  A ref that doesn't *start* with a digit
+    (e.g. ``"#3"``, where the identifying number comes after a non-digit
+    prefix) can't be honestly resolved to a hole number, so this returns
+    ``None`` rather than guessing.
+
+    This is the shared, honest replacement for two separate bugs found
+    during the 2026-07-17 championship-course ingest: plain ``int(ref)``
+    raising on composite refs, and ``_ref_to_int``'s bare ``except``
+    silently minting a fake ``0`` — which, written out as a hole
+    ``"number"``, collapsed multiple real holes onto a nonexistent hole 0.
+    Callers that need a real hole number MUST treat ``None`` as "skip this
+    ref", never substitute ``0``.
+
+    Examples:
+        ``"7"``       -> ``7``
+        ``"1 - #2"``  -> ``1``    (leading int before the dash)
+        ``"12A"``     -> ``12``   (leading int before the letter)
+        ``"#3"``      -> ``None`` (no digit at the START of the string)
+        ``""`` / ``None`` / other junk -> ``None``
+
+    Args:
+        ref: Raw OSM ``ref`` tag value, or ``None``.
+
+    Returns:
+        The leading integer, or ``None`` if *ref* is falsy or doesn't start
+        with a digit.
+    """
+    if not ref:
+        return None
+    match = re.match(r"\s*(\d+)", ref)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 def build_course_feature_collection(
     holes: list[dict],
     polygons: list[dict],
@@ -700,9 +769,15 @@ def build_course_feature_collection(
 
         hole_features.setdefault(hole_ref, []).append(poly)
 
-    # Emit one hole dict per ref, sorted by numeric hole number.
+    # Emit one hole dict per ref, sorted by numeric hole number.  A ref that
+    # doesn't parse to a real leading int (see parse_leading_int_ref) is
+    # skipped entirely — never minted as a fake "hole 0", which used to
+    # silently collapse several real holes together (2026-07-17 incident).
     result: list[dict] = []
-    for ref, features in sorted(hole_features.items(), key=lambda kv: _ref_to_int(kv[0])):
+    for ref, features in hole_features.items():
+        number = parse_leading_int_ref(ref)
+        if number is None:
+            continue
         feature_list = [
             {
                 "type": "Feature",
@@ -713,11 +788,12 @@ def build_course_feature_collection(
         ]
         result.append(
             {
-                "number": _ref_to_int(ref),
+                "number": number,
                 "par": None,
                 "handicap": None,
                 "yardages": {},
                 "features": {"type": "FeatureCollection", "features": feature_list},
             }
         )
+    result.sort(key=lambda h: h["number"])
     return result
