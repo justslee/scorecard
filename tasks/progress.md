@@ -18261,3 +18261,13 @@ model-change surface (no regression to numbers/decision/language rules); confirm
 QA: full backend gate on the pushed head (CI Postgres). On resume: if both green -> add to PR #144
 (SILENT), done for this item. Filed designed-ready: caddie-smart-strategy-tool (b, big win),
 caddie-advice-sonnet5-flip (a), caddie-vision-visual-read (c). Do NOT ship/ping (SILENT).
+
+## DONE — caddie-advice-model-decoupling @ a323851 (+ b757ba6 allowlist hardening), SILENT, on PR #144
+Reviewer SHIP (grounding-contract pins untouched+green; byte-identical proof walked; fail-safe temp;
+genuine tests; non-blocking note APPLIED — dropped speculative opus-4.5/4.6 allowlist entries).
+QA PASS (ruff clean; 129/129 targeted incl. new env/allowlist pins; full non-DB sweep 2596 passed /
+121 DB-only skips, 0 non-DB failures). Added to PR #144 checklist (SILENT). Pushed head b757ba6;
+CI in-progress on that head (Frontend + Backend gates) — release verifies SUCCESS at ship time.
+FILED designed-ready: caddie-smart-strategy-tool (b, the ChatGPT-parity lever, P1),
+caddie-advice-sonnet5-flip (a, gated on live eval), caddie-vision-visual-read (c). NOT shipping/pinging
+(SILENT; owner's model question answered in the eng-lead report to the main session). Pass complete.
