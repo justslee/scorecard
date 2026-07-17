@@ -18893,3 +18893,22 @@ frontend surfaces, seed. Ships HELD; do NOT ship/ping.
 ## AWAITING — fable Plan a453afe40587ead0c (specs/course-discovery-intel-plan.md)
 On completion: dispatch builder on the no-migration-safe slice + whatever the plan's storage verdict authorizes.
 If I die: reconcile from origin/integration/next; concept+spec landed; plan pending; no feature code yet.
+## ✅ LANDED — caddie-smart-strategy-tool on bundle #145 @4bbe0e3 (NOTICEABLE) — 2026-07-17
+Freeze lifted; landed. get_strategy realtime-only tool → POST /caddie/session/strategy → OpenAI
+gpt-5.6-sol (OWNER DIRECTIVE, not Sonnet 5) via Responses API/raw httpx (reasoning effort low,
+max_output_tokens 1024, no temperature, env CADDIE_STRATEGY_MODEL, same OPENAI_API_KEY as realtime).
+Fail-closed validator (guide_writer hazard/side-flip + shared GUIDE_INJECTION_PATTERN) → deterministic
+engine-numbers degrade on any failure; cached per sha256(ground_truth+model). STRATEGY_TOOL_RULE routing;
+parity-test amended; frontend dispatch+api. Reviewer SHIP + QA PASS; both follow-up nits (route-handler
+tests + regex de-fork) closed. Fable plan specs/caddie-smart-strategy-tool-plan.md.
+LANDING: collapsed my worktree branch to ONE code-only commit (dropped local progress churn to avoid
+5x progress.md conflicts), rebased onto origin/integration/next (auto-merged clean with the tree-span fix
++ caddie-live P0s — guide_writer/routes/caddie/realtime.ts 3-way merged, NOT overwritten), re-verified
+(ruff clean; eval 155; guide/strategy/hazard/parity 354/1), re-rebased over a concurrent d9842fb, pushed
+FF. Landed head integration/next @4bbe0e3. PR #145 checklist updated (NOTICEABLE item added). backlog
+caddie-smart-strategy-tool → done-on-bundle (targeted 2-line edit, JSON validated, 100 items intact).
+CI: pending on the pushed head (Backend + Frontend gates) — release verifies SUCCESS at ship time.
+LATENCY: gated-live, NOT run (no key; guard) → runs at PRE-SHIP verification per the owner's evidence
+ship-bar. Did NOT ship/ping (caller INERT; landing != shipping). Model-snapshot pin needs owner-approved
+on-box /v1/models probe. NEXT levers: caddie-vision-visual-read (c, AFTER this), caddie-advice-sonnet5-flip
+(a, gated on live eval).
