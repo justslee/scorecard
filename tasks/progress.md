@@ -19161,3 +19161,22 @@ Reviewer already SHIP'd the state-lift logic; c338254 is a subtractive revert (n
 ad6ef1e35f3f97e56 (BLOCKING live re-render — confirm drag LIVES + no collision on dogleg + calm). On PASS:
 update PR #146 checklist (this item NOTICEABLE), flip backlog, HOLD ship (owner's next approval; do NOT ship/ping).
 If I die: reconcile from origin/integration/next @fdb06e8; drag known-working+live-verified; only designer sign-off pending.
+
+## 2026-07-17 DONE — draggable yardage-book aim target (owner feature), NOTICEABLE, on bundle #146
+Owner ask: "Can you make the target draggable? The one on the yardage book and map?" Map reticle already
+shipped v1.1.10 (verify-only). NEW book target on HoleIllustration.tsx @c338254 (build b142f40 + pill-lift
+997e318 + React-19 capture revert c338254). Pure geometry module frontend/src/lib/yardage-book-target.ts +16
+tests (ypu=hole.yards/arcLength; round5; free drag; tee origin). Readout = HoleCard's single top-right pill
+(two-line FROM TEE/TO GREEN, DOM × clear); single dashed target->green line; reduced-motion.
+VERDICTS: reviewer SHIP; qa PASS (lint/tsc/build/voice 278/unit 16/map+yardage 349 + live Playwright drive);
+designer PASS after 2 BLOCK->fix rounds — (1) double-pill+dogleg collision fixed by lifting readout to the
+single pill; (2) LIVE-render caught that a capture-phase framer-isolation hack killed the drag in React 19
+(dispatch-abort) -> reverted to bubble onPointerDown+setPointerCapture, builder live-re-verified all 5 behaviors.
+Filed follow-ups: yardage-book-card-wobble-drag-isolation (designer PASS finding — framer drag='x' ancestor
+rubber-bands the card during a reticle drag; never mis-navigates but reads jittery; fix before TestFlight;
+full diagnosis + 3 candidate fixes in backlog). PR #146 checklist updated (item checked). backlog.json:
+added yardage-book-draggable-aim-target (done-on-bundle) + the wobble follow-up (ready); JSON validated (103 items).
+HELD — rides bundle #146 for the owner's next approval; NOT shipped/pinged this cycle (no release, no notify).
+LESSON for next time: co-located onPointerDownCapture{stopPropagation}+onPointerDown on the same node ABORTS
+React 19 dispatch and silently kills the handler; and a code-read reviewer SHIP'd it — only the designer's
+LIVE pointer drive caught it. Live-drive interaction changes; don't trust code-read for event-dispatch bugs.
