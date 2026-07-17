@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useReducedMotion } from "framer-motion";
 import { T } from "./tokens";
 import { shotPointForPath, type PathPoint } from "@/lib/hole-shot-point";
@@ -82,19 +89,41 @@ function fairwayRibbon(pts: Array<[number, number]>, widthStart = 0.18, widthEnd
   );
 }
 
-export default function HoleIllustration({
-  holeNumber = 1,
-  size = 320,
-  shotPoint = null,
-  showDetail = true,
-  accent = "oklch(0.54 0.18 28)",
-}: {
-  holeNumber?: number;
-  size?: number;
-  shotPoint?: [number, number] | null;
-  showDetail?: boolean;
-  accent?: string;
-}) {
+export type AimReadout = { fromTee: number; toGreen: number };
+
+/** Imperative escape hatch for the ONE action a parent needs to trigger on
+ * internal aim state: clearing it. Keeps `aim`/`dragging` fully internal to
+ * this component (minimal prop surface) while still letting HoleCard's DOM
+ * pill own the × control. */
+export type HoleIllustrationHandle = {
+  clearAim: () => void;
+};
+
+const HoleIllustration = forwardRef<
+  HoleIllustrationHandle,
+  {
+    holeNumber?: number;
+    size?: number;
+    shotPoint?: [number, number] | null;
+    showDetail?: boolean;
+    accent?: string;
+    /** Fires whenever the custom-aim readout changes — null when no custom aim
+     * is active (cleared, or hole just changed). HoleCard's top-right pill is
+     * the single readout surface (specs/yardage-target-concept.md §3); this
+     * component owns the drag/aim geometry but never draws its own panel. */
+    onAimChange?: (r: AimReadout | null) => void;
+  }
+>(function HoleIllustration(
+  {
+    holeNumber = 1,
+    size = 320,
+    shotPoint = null,
+    showDetail = true,
+    accent = "oklch(0.54 0.18 28)",
+    onAimChange,
+  },
+  ref,
+) {
   const hole = HOLES[(holeNumber - 1) % HOLES.length];
   const VB = 100;
   const scale = (v: number) => v * VB;
@@ -112,8 +141,6 @@ export default function HoleIllustration({
   const [aim, setAim] = useState<PathPoint | null>(null);
   const [dragging, setDragging] = useState(false);
   const pointerIdRef = useRef<number | null>(null);
-  const movedRef = useRef(false);
-  const startClientRef = useRef<{ x: number; y: number } | null>(null);
   const reduceMotion = useReducedMotion();
 
   // Reset on hole change — adjust state during render (React's documented
@@ -166,8 +193,6 @@ export default function HoleIllustration({
     e.stopPropagation();
     if (pointerIdRef.current !== null) return; // ignore a second finger mid-drag
     pointerIdRef.current = e.pointerId;
-    movedRef.current = false;
-    startClientRef.current = { x: e.clientX, y: e.clientY };
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
     haptic("light"); // once per drag-start, matches the map's feel
@@ -175,10 +200,6 @@ export default function HoleIllustration({
 
   function handlePointerMove(e: ReactPointerEvent<SVGCircleElement>) {
     if (pointerIdRef.current !== e.pointerId) return;
-    const start = startClientRef.current;
-    if (start && !movedRef.current) {
-      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) movedRef.current = true;
-    }
     setAim(clampToDiagram(toSvgPoint(e)));
   }
 
@@ -196,6 +217,23 @@ export default function HoleIllustration({
   const { toTarget, toGreen } = bookTargetDistances(aimPoint, hole.path, hole.yards);
   const reticleColor = dragging ? accent : T.ink;
   const colorTransition = reduceMotion ? "none" : "stroke 0.2s ease, fill 0.2s ease";
+
+  useImperativeHandle(ref, () => ({
+    clearAim: () => setAim(null),
+  }));
+
+  // Surface the readout to HoleCard's real pill (specs/yardage-target-concept.md
+  // §3 — reuse the ONE existing badge, never a second in-SVG panel). Reads via
+  // a ref so a fresh `onAimChange` identity every parent render doesn't retrigger
+  // this effect (and loop) — it should only fire when the readout itself changes,
+  // during AND after a drag (persists until cleared), null when no custom aim.
+  const onAimChangeRef = useRef(onAimChange);
+  useEffect(() => {
+    onAimChangeRef.current = onAimChange;
+  });
+  useEffect(() => {
+    onAimChangeRef.current?.(aim ? { fromTee: toTarget, toGreen } : null);
+  }, [aim, toTarget, toGreen]);
 
   return (
     <svg ref={svgRef} viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
@@ -289,6 +327,13 @@ export default function HoleIllustration({
         r="12"
         fill="transparent"
         style={{ touchAction: "none", cursor: "grab" }}
+        // Capture-phase too: framer-motion 12 registers the round page's
+        // `drag="x"` hole-swipe via native CAPTURE-phase listeners on an
+        // ancestor motion.div (RoundPageClient's HoleCard wrapper), so a
+        // bubble-phase-only stopPropagation fires too late and a horizontal
+        // aim drag can rubber-band into a hole swipe. Mirrors the proven
+        // in-file pattern at RoundPageClient.tsx (~line 1983).
+        onPointerDownCapture={(e) => e.stopPropagation()}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
@@ -296,48 +341,6 @@ export default function HoleIllustration({
         onClick={(e) => e.stopPropagation()}
         aria-label="Drag aim target"
       />
-
-      {/* Live/settled readout — appears once the golfer has placed a custom
-          aim point (drag or settled); the drawn reticle alone is the quiet
-          baseline the rest of the time. In-SVG (state is internal to this
-          component), matching the DOM ink-pill idiom used for HoleCard's
-          {distance}Y badge (dark ink fill, mono, paper text) rather than
-          inventing a new chrome style. */}
-      {aim && (
-        // pointerEvents: none on the pill body — if the reticle is dragged
-        // under this top-left corner, the pill must not shadow the hit
-        // circle underneath it (re-enabled explicitly on the × control).
-        <g style={{ pointerEvents: "none" }}>
-          <rect x="4" y="4" width="46" height="24" rx="3.5" fill={T.ink} />
-          <text x="7" y="17" fontFamily={T.mono} fontSize="3.6" letterSpacing="0.3" fill={T.paperMid} style={{ textTransform: "uppercase" }}>
-            From tee
-          </text>
-          <text x="44" y="17" fontFamily={T.mono} fontSize="5.2" fill={T.paper} textAnchor="end" style={{ fontVariantNumeric: "tabular-nums" }}>
-            {toTarget}Y
-          </text>
-          <text x="7" y="25" fontFamily={T.mono} fontSize="3.6" letterSpacing="0.3" fill={T.paperMid} style={{ textTransform: "uppercase" }}>
-            To green
-          </text>
-          <text x="44" y="25" fontFamily={T.mono} fontSize="5.2" fill={accent} textAnchor="end" style={{ fontVariantNumeric: "tabular-nums" }}>
-            {toGreen}Y
-          </text>
-          <circle
-            cx="45"
-            cy="8.5"
-            r="4"
-            fill="transparent"
-            style={{ cursor: "pointer", pointerEvents: "auto" }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setAim(null);
-            }}
-            aria-label="Clear aim target"
-          />
-          <text x="45" y="10.3" fontFamily={T.mono} fontSize="5" fill={T.paperMid} textAnchor="middle" style={{ pointerEvents: "none" }}>
-            ×
-          </text>
-        </g>
-      )}
 
       {showDetail && (
         <>
@@ -347,4 +350,6 @@ export default function HoleIllustration({
       )}
     </svg>
   );
-}
+});
+
+export default HoleIllustration;
