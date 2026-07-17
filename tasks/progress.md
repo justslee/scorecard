@@ -19446,3 +19446,41 @@ parallel lane; expect CI to run on the actual merged head). backlog.json: flippe
 `landed` fields carrying the fix + test evidence (targeted string edits, `python3 -c "import json; json.load(...)"`
 validated before AND after). Both SILENT riders (backend-only bug fixes in an ingest pipeline no live user hits;
 nothing user-visible on TestFlight) — no ship ping, no release; ride bundle #146 for the owner's next approval.
+## SHIPPED 2026-07-17: Bundle #146 (v1.1.13, build 202607171810) — caddie omnipotent intent router + course discovery intel + draggable yardage-book aim target
+Owner approved in-session, verbatim "Ship it", bound to pinned head f7640c7 (unmoved through every gate
+and through merge — verified via `gh pr view 146 --json headRefOid` immediately before merge). Sequence:
+1. Gates on f7640c7: Backend/Frontend/E2E all SUCCESS (E2E was IN_PROGRESS at approval time, polled to
+   SUCCESS). 2. VERSION bumped 1.1.12->1.1.13 in worktree `.claude/worktrees/ship-146`, pushed as 6261afc;
+   gates re-verified green (Frontend/Backend/E2E all SUCCESS) on the bump head. 3. Merged PR #146 -> main
+   at 97a0e0312e0806f6ec92efaba08a4fefc92e10d5 (`gh pr merge --merge`). 4. Post-merge main CI green;
+   backend deploy (SSM, auto-triggered) SUCCESS. Confirms (all key-free, via SSM Run-Command on-box):
+   `/health` {"status":"ok"}; `alembic current` = 015_course_intel (head); `courses.course_intel` jsonb
+   column present (information_schema check); APP_ACCESS_MODE unset (dark); zero TWILIO_* keys (caller
+   inert); CADDIE_STRATEGY_MODEL unset -> resolves to default gpt-5.6-sol.
+5. OWNER-APPROVED course-intel seed backfill ("Approve migration + seed") run on-box: looked up the 3
+   real mapped-course UUIDs (Bethpage Black 2b8caab5, Bethpage Red 269e1f2e, Pebble Beach Golf Links
+   f8d6b570 — disambiguated from 6 name-matching rows by holes-count=18, since several are unmapped
+   POI stubs) via read-only SQL, then ran `run_course_intel_backfill()` with
+   COURSE_INTEL_BACKFILL_COURSES/MAX_COURSES=3. Result: Bethpage Black SUCCESS (provenance "enriched",
+   model claude-sonnet-5, real grounded landscape+facts prose); Bethpage Red + Pebble Beach Golf Links
+   honest-empty (fail-closed validator REJECTED both, attempted_at marker set/negative-cached) — by
+   design, not forced, not retried further this cycle (same discipline as the guide-writer negative-cache
+   pattern; [[no-fake-data-fallbacks]]).
+6. TestFlight: built from a fresh worktree at the merge SHA (`.claude/worktrees/ship-146-main`, `npm ci`
+   first, never touched primary checkout) via `ops/ios/ship.sh` — uploaded v1.1.13 build 202607171810 on
+   first try (no exit-70/SPM cache retry needed). Confirmed build number sorts above the prior latest
+   upload (202607171440, the v1.1.12/#144 era) before building. Polled the App Store Connect API (JWT
+   ES256, key QG927KHTXR, app_id 6784470752) for processing state — see follow-up line below for result.
+7. Notion board card 'Bundle #146' created (no prior card existed) -> Shipped, content posted with
+   headline items + post-deploy confirms + backfill results + how-to-test + TestFlight build number.
+8. Records: backlog.json top-level note prepended (targeted string edit, JSON validated after); this
+   progress.md entry. Individual item statuses left as `done-on-bundle` per the established pattern (the
+   note is the terminal event; items archive on the next grooming pass).
+Headline (NOTICEABLE): caddie omnipotent intent router (structural advice/fact/score routing, kills the
+10th-recurrence wrong-side-advice bug) + course discovery (Augusta-styled descriptions + real stars/stats
++ map slide-up detail card) + draggable aim target on the yardage-book hole illustration (book surface
+completes the map surface from #143). Data (already live): 9 championship courses incl. Augusta w/ 16
+guides. Silent: ingest-code fixes (composite hole-ref parsing, duplicate-hole-ref dedupe) + records.
+Worktrees used: `.claude/worktrees/ship-146` (VERSION bump branch, merged) and
+`.claude/worktrees/ship-146-main` (TestFlight build source) — both cleaned up after this ship.
+Fresh integration/next cut from the merge SHA, pushed, next.
