@@ -61,6 +61,48 @@ gates + AUTH_BYPASS negative + caddie-experience) on f4eda94, in parallel. On re
 re-dispatch builder then re-review; both green → open fresh bundle PR (SILENT/dark), update
 progress+backlog (slice 3 done, note slice 4 multiuser-p0-keychain-token readiness). Do NOT
 ship/ping (dark slice). Reconcile from branch (git log origin/integration/next) if resumed.
+## 2026-07-16 AWAITING Plan(fable) — caddie-hazard-side + drive-zone-reach (NOTICEABLE, P0 field bugs, Red-1/Red-2, v1.1.10)
+Isolated worktree agent-afd3de02e2f7430e6, based on origin/integration/next @ f4d55c5 (reset off a
+stale orb-lane progress-only commit d901688). Parallel orb lane active on a different surface — REBASE
+onto latest origin/integration/next before pushing; add to bundle PR #144 checklist (NOTICEABLE,
+caddie-correctness, owner field-reported). NEVER main; never force-push.
+
+TWO owner field bugs, SAME surface (backend/app/caddie hazard/drive-zone evidence):
+  (P0) Red-1 side "inversion": caddie says "favor left, miss right" but the dominant forest is LEFT.
+  (P0b) Red-2 reach: caddie names a GREENSIDE bunker (dfg=19y, needs 374y carry from back tee) as a
+        tee-shot hazard ("bunker at 360").
+
+ROOT-CAUSE EVIDENCE (real live-OSM Bethpage Red geometry, proven this cycle — scripts in scratchpad):
+  - hazards.py base per-observation side math is CORRECT and bearing-INVARIANT (proved: synthetic
+    N/NE/E/SE/S/SW/W/NW all classify woods-on-golfers-left as "left"). NOT a raw sign flip in
+    extract_hole_hazards (rules out candidate 1/2 at the base layer).
+  - Red-1 has NO mapped golf=hole LineString -> CHORD fallback (tee->green straight). 3 tee features at
+    347/441/467y all bearing ~17deg. _derive_tee_green picks the FIRST tee (347y FORWARD tee), not the
+    player's back tee (467y, card 466) -> ALL carries ~120y short (FRAME/ORIGIN bug, Finding A;
+    bearing-invariant so it doesn't flip sides, but it shifts which hazards fall in the drive window).
+  - Real Red-1 trees are on BOTH sides of the chord; _extract_tree_line_hazards collapses each side to
+    near(min-carry)+far(max-carry) ONLY. The LEFT line's two survivors (145 & 360) BOTH fall OUTSIDE the
+    drive-zone window [advance-50, advance+30] (~[235,315]); the RIGHT line's near entry (270) lands
+    INSIDE. So compute_positioning_miss_side sees only right -> confident "favor left, miss right." The
+    dense left landing-zone woods (carry ~269, lateral +173y) are DISCARDED by the two-entry aggregation
+    (Finding B — representation loss is the real inversion mechanism, candidate 3).
+  - Red-2: 1 bunker, GREENSIDE (dfg=19y), lateral +15y (left). Carry 330y from forward tee / 374y from
+    back tee. drive_zone_hazards windows only by [advance-50, advance+30] with NO player-reach ceiling,
+    so a greenside/unreachable feature can leak into tee-shot advice (Finding C — reach cap missing).
+
+FIX DIRECTION (for Plan/fable to finalize): (A) select the player's tee-set / back tee in
+_derive_tee_green so carries are honest; (B) represent each tree line by a landing-zone-relevant entry
+(not just min/max extremes) so a bracketing line isn't windowed away, OR have miss-side score per-side
+minimum-lateral in-zone; (C) bound drive_zone_hazards by the player's actual one-solve carry/total reach
+(reuse the one-solve numbers; greenside features -> approach, not tee). Consolidate to ONE canonical
+side-of-line path. Tests: Red-1 fixture (dominant-left classified/spoken left, or honest both-sides —
+never confident right); 8-bearing invariant; Red-2 reach fixture (greenside bunker EXCLUDED from tee
+payload; bomber total 350 -> included); existing miss-side/corridor tests stay green (or corrected if
+they encoded the flip — document). Frontend cross-check bunker letter/legend side source.
+
+Plan -> specs/caddie-hazard-side-reach-plan.md. Outcomes: Plan returns -> dispatch builder on the plan;
+then reviewer (adversarial, construct a still-misclassifying layout) + qa (gates SUCCESS on pushed head +
+caddie-experience green). On usage/spend error: checkpoint + STOP. Do NOT ship/ping (owner brief).
 
 ## 2026-07-16 DONE — GPS/on-course readiness verification (isolated worktree) [audit record below; RESOLVED block follows]
 Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
