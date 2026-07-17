@@ -19151,3 +19151,13 @@ src/lib/map + src/components/yardage 349/349 (no regressions).
 STATE: fix committed @c338254 on this worktree branch (maps to integration/next), NOT pushed per brief (builder
 does not push/PR). Rides bundle #146 alongside course-discovery-intel — coordinator/eng-lead to push +
 designer to do a final live re-render pass before the bundle is offered to the owner for "ship it".
+
+## AWAITING — designer FINAL live re-render @fdb06e8 (draggable target)
+Builder re-fix c338254 (reverted React-19 capture regression; restored bubble onPointerDown+setPointerCapture),
+LIVE-verified by builder via Playwright (drag follows, two-line pill, × clears, no swipe/zoom, hole reset) +
+gates green (lint/tsc/build, voice 278/278, unit 16/16, map+yardage 349/349). I confirmed the mid-drag proof
+screenshot myself (single "FROM TEE 335Y/TO GREEN 95Y" pill, accent reticle, dashed line, no collision).
+Reviewer already SHIP'd the state-lift logic; c338254 is a subtractive revert (no new logic). AWAITING designer
+ad6ef1e35f3f97e56 (BLOCKING live re-render — confirm drag LIVES + no collision on dogleg + calm). On PASS:
+update PR #146 checklist (this item NOTICEABLE), flip backlog, HOLD ship (owner's next approval; do NOT ship/ping).
+If I die: reconcile from origin/integration/next @fdb06e8; drag known-working+live-verified; only designer sign-off pending.
