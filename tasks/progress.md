@@ -18547,3 +18547,46 @@ if not, re-dispatch builder per the spec. Builder commits to the worktree branch
 eng-lead reviews (reviewer fresh + qa gates) then lands on integration/next as NOTICEABLE on PR #144.
 Latency/eval are gated-live (no OPENAI/ANTHROPIC key locally) → honest note, not fabricated numbers.
 Do NOT ship/ping (caller INERT).
+
+## SHIPPED 2026-07-17 — Bundle #144: tap-to-talk + caddie spatial-trust fixes + multi-user foundation complete (dark)
+Owner approval (verbatim, main session, standing process): presented the bundle (tap-to-talk +
+hazard-side/reach fixes + multi-user foundation + intelligence groundwork) and he replied "Ship it."
+Approval bound to pinned head `0805faeb55d919119b3953ca944a59fa5adbf357`.
+
+MID-SHIP HEAD MOVEMENT (verified, not a violation): the smart-strategy lane pushed twice more while
+gates were running — `5145fea` (`specs/caddie-smart-strategy-tool-plan.md`, new file) and `424e41f`
+(`tasks/progress.md` update). Both independently confirmed docs/records-only via
+`git diff --name-only bc87d0c..424e41f` (zero product code touched) — same records-rider class the
+owner's approval already covered. The lane was explicitly frozen by the coordinator before the final
+merge to stop further drift. Merged at the frozen head `424e41f` after both required gates (Frontend,
+Backend, E2E advisory) went SUCCESS on it.
+
+**VERSION bump:** 1.1.10 -> 1.1.11 (`bc87d0c`), sorts above the last upload (v1.1.10).
+
+**Merge:** PR #144 retitled "Bundle #144: tap-to-talk + caddie spatial-trust fixes + multi-user
+foundation complete (dark)", `integration/next` -> `main`, merge commit
+`a84782599a641b7a81314ec3940abde2a448f245`.
+
+**Post-merge main CI:** green on `a847825` (Frontend + Backend both SUCCESS).
+
+**Backend deploy + confirms** (key-free SSM probe, instance `i-0826ae70df62d9fe8`):
+- `Deploy backend (SSM)` GH Actions workflow auto-triggered on merge, SUCCESS.
+- `/health` -> `{"status":"ok"}` both on-box and external (`https://api.looperapp.org/health`).
+- `APP_ACCESS_MODE` confirmed fully dark: absent from on-box `backend/.env` AND the live uvicorn
+  process's `/proc/<pid>/environ` (never set, not unset-and-defaulting).
+- Caller inert: zero `TWILIO_*` keys in the on-box `.env`.
+
+**TestFlight:** `bash ops/ios/ship.sh` from the worktree, ARCHIVE SUCCEEDED, EXPORT SUCCEEDED —
+"Uploaded v1.1.11 (build 202607170941) to TestFlight". Polled App Store Connect
+(`poll_build.py 1.1.11 202607170941`): `processingState=VALID` on first poll.
+
+**Fresh integration/next:** cut from new main and pushed as a fast-forward (`424e41f..a847825`).
+The frozen smart-strategy lane resumes and lands its next commit on the fresh branch — expected.
+
+**Records:** Notion board card created (`Bundle #144`, Status=Shipped) —
+https://app.notion.com/p/3a01c52592e08187a507cd39688f199b . `backlog.json` top-level `note` ledger
+updated with the full terminal SHIPPED entry (targeted edit, validated JSON after, `items` count
+unchanged at 97 — no data loss).
+
+Primary checkout (`/Users/justinlee/projects/scorecard`) was never touched; all work done in the
+dedicated worktree `/Users/justinlee/projects/.scorecard-ship-v1111`, now being removed.
