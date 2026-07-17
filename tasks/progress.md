@@ -18912,3 +18912,28 @@ LATENCY: gated-live, NOT run (no key; guard) → runs at PRE-SHIP verification p
 ship-bar. Did NOT ship/ping (caller INERT; landing != shipping). Model-snapshot pin needs owner-approved
 on-box /v1/models probe. NEXT levers: caddie-vision-visual-read (c, AFTER this), caddie-advice-sonnet5-flip
 (a, gated on live eval).
+
+## 2026-07-17 PLAN(fable) DONE — specs/course-discovery-intel-plan.md; AWAITING builder
+Fable verdict (evidence-based): STORAGE = OPTION A, additive Alembic migration 0012_015_course_intel.py
+(courses.course_intel jsonb). Clincher = VERIFIED code: courses_mapped.upsert_course HARD-DELETES all
+hole_features on every re-map (courses_mapped.py:436-439), so Option B (park description on a green's
+properties) would silently destroy paid-for LLM output + its negative-cache marker on any course edit; and
+write-through OSM rows have NO holes/features to write to. Alembic already alters public.courses
+(0008_011_courses_trgm_index). BUILD-NOW = EVERYTHING (migration file + conftest column-add applied to
+dev/CI DBs only, writer+pure validator+service+route+types+both frontend surfaces+full test suite),
+end-to-end verified against local/CI Postgres with REAL Bethpage Black prose captured as PR evidence.
+STOP for owner approval = (1) apply migration to PROD, (2) run 3-course seed backfill against PROD
+(spend pre-authorized ~$0.10 total, but writes through the unapplied-until-approved column).
+Corrections the plan caught: CaddiePanel.tsx does NOT exist -> use LooperSheetShell (LooperSheet.tsx);
+naming collision with existing app/caddie/course_intel.py + POST /api/caddie/course-intel -> docstring
+cross-refs, never import; stats via DIRECT SQL not get_course (its 18-hole default-fill fabricates par 72).
+Writer = course_intel_writer.py, COURSE_INTEL_MODEL default claude-sonnet-5, NO web_search; validator PURE
+(fail-closed: injection/leak/confidence-gate/par-check) with a 10-case offline matrix (the QA crux).
+NOTE: consolidated this lane onto the ISOLATED worktree (Edit/Write are worktree-sandboxed; builder must
+work here too). Concept commit already on origin/integration/next; worktree ff'd to bundle head dc8e165.
+
+## AWAITING — builder (specs/course-discovery-intel-plan.md, in THIS worktree, on integration/next)
+Builder implements the full plan EXCEPT the two STOP items (prod migration apply + prod seed). Commits in
+the worktree; I rebase+push HEAD:integration/next. On builder DONE: reviewer (fresh) + qa (gates+offline
+validator matrix) + designer (BLOCKING on rendered card+page). Ships HELD; do NOT ship/ping.
+If I die: reconcile from origin/integration/next + the builder's worktree commits; do NOT re-run a finished builder.
