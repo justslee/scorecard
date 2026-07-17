@@ -357,6 +357,19 @@ _HAZARD_PATTERNS: dict[str, "re.Pattern[str]"] = {
 _MAX_FIELD_CHARS = 240
 _MAX_MISTAKES = 3
 
+# Defense-in-depth (security review): researched/synthesized text is DATA — a
+# field that reads like an instruction, meta-prompt, or link is not golf
+# advice. Hazard grounding alone wouldn't catch "ignore previous
+# instructions". Compiled once at module load, shared by `validate_guide`
+# below AND `app.caddie.strategy.validate_strategy_text` (same anti-injection
+# bar for the strategy-tool narrative — see specs/caddie-smart-strategy-tool-
+# plan.md) so the two validators can never drift out of a byte-copy fork.
+GUIDE_INJECTION_PATTERN = re.compile(
+    r"(?:\bignore\b|\binstructions?\b|\byou are\b|\bsystem prompt\b|"
+    r"https?://|\bwww\.|<[a-z/!]|\bdisregard\b)",
+    re.IGNORECASE,
+)
+
 
 # ── Side-flip validation (hazard-side-flip incident, 2026-07-08) ────────────
 #
@@ -954,13 +967,8 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
     # Defense-in-depth (security review): researched text is DATA — a field
     # that reads like an instruction, meta-prompt, or link is not golf advice.
     # Hazard grounding alone wouldn't catch "ignore previous instructions".
-    injection_pattern = re.compile(
-        r"(?:\bignore\b|\binstructions?\b|\byou are\b|\bsystem prompt\b|"
-        r"https?://|\bwww\.|<[a-z/!]|\bdisregard\b)",
-        re.IGNORECASE,
-    )
     for field_text in text_fields:
-        if injection_pattern.search(field_text or ""):
+        if GUIDE_INJECTION_PATTERN.search(field_text or ""):
             return None
 
     # A field carrying an internal newline (or carriage return) breaks the

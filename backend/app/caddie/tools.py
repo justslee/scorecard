@@ -6,9 +6,14 @@ D1/D2), rendered two ways so the two mouths can never drift:
   - ``realtime_tools()``  → OpenAI Realtime shape
     ``{"type": "function", "name", "description", "parameters"}`` — consumed by
     ``app.services.realtime_relay.DEFAULT_TOOLS`` (the orb's mint payload).
+    Renders ``CADDIE_TOOLS + REALTIME_ONLY_TOOLS`` (specs/caddie-smart-
+    strategy-tool-plan.md), name-sorted — the realtime mouth gets extra,
+    realtime-only tools (e.g. ``get_strategy``) the text mouth never sees.
   - ``anthropic_tools()`` → Anthropic shape ``{"name", "description",
     "input_schema"}`` — the module-level constant ``TEXT_TOOLS`` passed on every
-    text-mouth model call (``app.caddie.tool_loop``).
+    text-mouth model call (``app.caddie.tool_loop``). Renders ``CADDIE_TOOLS``
+    ONLY — realtime-only tools are never added, so the cached prompt prefix
+    (D7) stays byte-identical.
 
 The ``*_payload`` helpers below are the single implementation behind BOTH the
 HTTP session endpoints in ``app.routes.caddie`` (the orb dispatches its tool
@@ -217,9 +222,47 @@ CADDIE_TOOLS: list[dict] = [
 ]
 
 
+# ── Realtime-only tools (specs/caddie-smart-strategy-tool-plan.md) ──────────
+# NOT in TEXT_TOOLS: the text mouth is already Claude — a nested-LLM tool
+# there is circular, and a frontier synthesis call inside the tool loop's 6s
+# _TOOL_RESOLVE_TIMEOUT_S (app/caddie/tool_loop.py) would routinely time out.
+# Keeping TEXT_TOOLS byte-identical also preserves the text path's cached
+# prompt prefix (plan D7).
+REALTIME_ONLY_TOOLS: list[dict] = [
+    {
+        "name": "get_strategy",
+        "description": (
+            "A full tee-to-green strategy for a hole, reasoned by the caddie "
+            "brain from the real engine numbers (recommendation, plays-like, "
+            "carries, hazards, green read, player profile). Call this for "
+            "strategy and planning questions — 'how should I play this hole', "
+            "'what's the play here', 'talk me through it', club-vs-club "
+            "comparisons, risk/reward decisions. SPEAK the returned strategy "
+            "text to the player as given — do not re-derive numbers or "
+            "re-decide the club. For a single quick number (a club, a carry, "
+            "a distance, a green read) use the specific tool instead — it is "
+            "faster. If the reply marks data unavailable, say so plainly — "
+            "never invent a strategy for an unmapped hole."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hole_number": {
+                    "type": "integer",
+                    "description": "Hole to plan (1-18). Omit for the current hole.",
+                },
+            },
+        },
+    },
+]
+
+
 def realtime_tools() -> list[dict]:
-    """OpenAI Realtime rendering — exactly the relay's historical DEFAULT_TOOLS
-    shape: ``{"type": "function", "name", "description", "parameters"}``."""
+    """OpenAI Realtime rendering — the relay's historical DEFAULT_TOOLS shape
+    (``{"type": "function", "name", "description", "parameters"}``), PLUS the
+    realtime-only extras above. Name-sorted, order-stable at import — TEXT_
+    TOOLS = CADDIE_TOOLS only; realtime = CADDIE_TOOLS + REALTIME_ONLY_TOOLS,
+    both order-stable (plan D7)."""
     return [
         {
             "type": "function",
@@ -227,7 +270,7 @@ def realtime_tools() -> list[dict]:
             "description": t["description"],
             "parameters": t["input_schema"],
         }
-        for t in CADDIE_TOOLS
+        for t in sorted(CADDIE_TOOLS + REALTIME_ONLY_TOOLS, key=lambda t: t["name"])
     ]
 
 
@@ -851,6 +894,11 @@ class ToolContext:
     current_yardage_basis: Optional[str] = None
 
 
+# Deliberately CADDIE_TOOLS only — REALTIME_ONLY_TOOLS (e.g. get_strategy) are
+# excluded from the text loop's resolvable set on purpose (specs/caddie-smart
+# -strategy-tool-plan.md §1.3): the orb dispatches those via a dedicated HTTP
+# endpoint, never resolve_tool. A non-compliant caller still hits the honest
+# unknown-tool guard below.
 _TOOL_NAMES = {t["name"] for t in CADDIE_TOOLS}
 
 # Honest stateless answer — the model says it can't pull live numbers.

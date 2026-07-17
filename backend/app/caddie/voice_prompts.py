@@ -194,6 +194,22 @@ DECISION_GROUNDING_RULE = (
     "and stay consistent with what you already told them this hole."
 )
 
+# Realtime-only routing + faithful-delivery rule for the get_strategy tool
+# (specs/caddie-smart-strategy-tool-plan.md). Never appended to the text
+# mouths' prompts — the tool exists only in the realtime schema.
+STRATEGY_TOOL_RULE = (
+    "For strategy and planning questions — 'how should I play this hole', "
+    "'what's the play', 'walk me through it', comparing clubs or lines, "
+    "risk-reward calls — call get_strategy and DELIVER its strategy text to "
+    "the player faithfully, as given: you may trim a word for flow, but never "
+    "change a number, club, side, or the call itself, and never blend in your "
+    "own analysis. Re-writing it reintroduces the guesswork it exists to "
+    "remove. For a single quick lookup — what club, how far, a carry, wind, "
+    "a green read — use the specific engine tool instead; it is faster. If "
+    "get_strategy reports data unavailable or a degraded line, speak what it "
+    "gives you and say plainly what isn't known."
+)
+
 # Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
 # caddie now carries the same six tools the Realtime orb has (canonical
 # registry in app/caddie/tools.py). Appended to BOTH text builders'
@@ -245,6 +261,7 @@ def build_realtime_instructions(
         + "\n" + NUMBERS_COHERENCE_RULE
         + "\n" + MISS_SIDE_GROUNDING_RULE
         + "\n" + DECISION_GROUNDING_RULE
+        + "\n" + STRATEGY_TOOL_RULE
     )
 
     return "\n\n".join(parts)

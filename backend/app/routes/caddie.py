@@ -16,6 +16,7 @@ from app.caddie.types import (
     VoiceCaddieResponse,
     PlayerStatsRequest,
     HoleIntelligence,
+    TeeShotNumbers,
 )
 from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
@@ -46,6 +47,7 @@ from app.caddie.voice_prompts import (
     output_language_rule,
 )
 from app.caddie import tools as caddie_tools
+from app.caddie import strategy as strategy_mod
 from app.caddie.tool_loop import run_caddie_turn
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -677,6 +679,151 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
         )
         _log_caddie_reco_context(request.hole_number, hazards_line, result.get("tee_shot_numbers"))
     return result
+
+
+# ── Realtime-only: get_strategy (specs/caddie-smart-strategy-tool-plan.md) ──
+
+
+class SessionStrategyRequest(BaseModel):
+    round_id: str
+    hole_number: Optional[int] = None  # None -> session.current_hole (conditions_payload convention)
+    # This turn's resolved yardage ride-along — same trio /session/voice
+    # carries (specs/caddie-yardage-gps-selected-tee-plan.md §2.4); honest
+    # None allowed.
+    distance_to_green_yards: Optional[int] = None
+    hole_yards: Optional[int] = None
+    yardage_basis: Optional[str] = None
+
+
+class SessionStrategyResponse(BaseModel):
+    available: bool = True
+    hole_number: int
+    strategy: Optional[str] = None  # spoken narrative (verbatim delivery)
+    degraded: bool = False          # True = deterministic fallback line, not the model
+    reason: Optional[str] = None    # honest-empty reason when available=False
+    numbers: dict = {}              # engine echoes: tee_shot_numbers, plays_like, carries,
+                                     # green_read side, hazards_line
+
+
+@router.post("/session/strategy", response_model=SessionStrategyResponse)
+async def session_strategy(
+    request: SessionStrategyRequest, user_id: str = Depends(caddie_rate_limited_user)
+):
+    """Frontier-reasoned tee-to-green strategy for the realtime-only
+    `get_strategy` voice tool (specs/caddie-smart-strategy-tool-plan.md).
+
+    Caller must own the round. Assembles the same grounded engine payloads
+    every other tool reads (app/caddie/tools.py, app/caddie/strategy.py),
+    frames them as a deterministic GROUND TRUTH block, and makes ONE OpenAI
+    `gpt-5.6-sol` call (Responses API) to synthesize an ~80-word spoken
+    strategy. The reply is fail-closed validated (hazard-type + side-flip +
+    injection + length, reusing guide_writer's machinery) before it is ever
+    returned; on any reject, API error, timeout, or missing OPENAI_API_KEY,
+    this degrades to a deterministic engine-numbers line composed purely from
+    the recommendation — never a fabricated strategy, never a mid-round 500,
+    when a recommendation exists. Internals go to `log.exception`/`log.
+    warning`; the client only ever sees the honest degraded/available:false
+    response ([[no-fake-data-fallbacks]]).
+    """
+    session = await get_owned_session(request.round_id, user_id)
+    hole = request.hole_number or session.current_hole
+
+    payload = await strategy_mod.build_strategy_payload(
+        session,
+        request.round_id,
+        user_id,
+        hole,
+        distance_to_green_yards=request.distance_to_green_yards,
+        hole_yards=request.hole_yards,
+        yardage_basis=request.yardage_basis,
+    )
+
+    rec = payload.get("recommendation") or {}
+    conditions = payload.get("conditions") or {}
+    carries = payload.get("carries") or {}
+    green_read = payload.get("green_read") or {}
+
+    numbers = {
+        "tee_shot_numbers": rec.get("tee_shot_numbers"),
+        "plays_like": conditions.get("plays_like"),
+        "hazards_line": conditions.get("hazards_line"),
+        "carries": [
+            {"type": c.get("type"), "side": c.get("side"), "carry_yards": c.get("carry_yards")}
+            for c in (carries.get("carries") or [])
+        ],
+        "green_read": {
+            "uphill_leave_side": green_read.get("uphill_leave_side"),
+            "available": bool(green_read.get("available", False)),
+        },
+    }
+
+    if rec.get("error"):
+        # No recommendation available at all (e.g. no yardage known yet) —
+        # honest empty, same discipline as every other tool's unmapped-hole
+        # answer. Never a fabricated strategy.
+        return SessionStrategyResponse(
+            available=False, hole_number=hole, reason=rec["error"], numbers=numbers,
+        )
+
+    def _degraded_line() -> str:
+        """Deterministic line composed purely from engine data — the honest
+        fallback on any reject/error/missing-key (plan §2.6)."""
+        tee_numbers = rec.get("tee_shot_numbers")
+        aim = (rec.get("aim_point") or {}).get("description") or "the center of the green"
+        miss = (rec.get("miss_side") or {}).get("preferred") or "unknown"
+        club = rec.get("club") or "unknown"
+        if tee_numbers:
+            line = (
+                f"{club}. {format_tee_numbers_line(TeeShotNumbers.model_validate(tee_numbers))} "
+                f"Aim: {aim}. Miss: {miss}."
+            )
+        else:
+            line = f"{club}. Aim: {aim}. Miss: {miss}."
+        gr_side = green_read.get("uphill_leave_side")
+        if green_read.get("available") and gr_side:
+            line += f" Green: the uphill putt leaves from the {gr_side}."
+        return line
+
+    model = strategy_mod._strategy_model()
+    ground_truth = strategy_mod.format_strategy_ground_truth(payload)
+    key = strategy_mod.cache_key(ground_truth, model)
+    cached = strategy_mod.cache_lookup(key)
+    if cached is not None:
+        return SessionStrategyResponse(
+            available=True,
+            hole_number=hole,
+            strategy=cached["strategy"],
+            degraded=cached["degraded"],
+            numbers=numbers,
+        )
+
+    try:
+        raw_text, _usage = await strategy_mod.synthesize_strategy(ground_truth, model=model)
+        validated = strategy_mod.validate_strategy_text(raw_text, conditions.get("hazards") or [])
+        if validated is None:
+            log.warning("session_strategy: validator rejected narrative for hole=%s", hole)
+            strategy_text = _degraded_line()
+            degraded = True
+        else:
+            strategy_text = validated
+            degraded = False
+    except Exception:
+        # Missing key / network / API error / bad model id — never surfaced
+        # to the client, and never a fabricated strategy. A recommendation
+        # exists here (the honest-empty branch above already returned), so
+        # the degraded line is always groundable.
+        log.exception("session_strategy: synthesis failed for hole=%s", hole)
+        strategy_text = _degraded_line()
+        degraded = True
+
+    if not degraded:
+        # Only successful, validated syntheses are cached — a transient
+        # failure must never calcify a degraded line for the full TTL.
+        strategy_mod.cache_store(key, {"strategy": strategy_text, "degraded": degraded})
+
+    return SessionStrategyResponse(
+        available=True, hole_number=hole, strategy=strategy_text, degraded=degraded, numbers=numbers,
+    )
 
 
 # ── Session-aware voice ──

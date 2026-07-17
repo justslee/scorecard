@@ -304,3 +304,19 @@ def test_run_consistency_filename_does_not_match_pytest_test_glob():
         "it is invoked explicitly via `uv run python -m tests.eval.run_consistency`"
     )
     assert not hasattr(run_consistency_mod, "test_main"), "no function named like a pytest test in run_consistency"
+
+
+def test_run_strategy_latency_filename_does_not_match_pytest_test_glob():
+    """specs/caddie-smart-strategy-tool-plan.md §5 — the new gated strategy-
+    synthesis latency probe follows the same never-collected-by-pytest
+    contract as run_consistency.py/run_latency.py above."""
+    import tests.eval.run_strategy_latency as run_strategy_latency_mod
+
+    filename = pathlib.Path(run_strategy_latency_mod.__file__).name
+    assert not filename.startswith("test_"), (
+        "run_strategy_latency.py must never match pytest's test_*.py collection glob — "
+        "it is invoked explicitly via `uv run python -m tests.eval.run_strategy_latency`"
+    )
+    assert not hasattr(run_strategy_latency_mod, "test_main"), (
+        "no function named like a pytest test in run_strategy_latency"
+    )

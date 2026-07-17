@@ -23,6 +23,7 @@ import {
   getSessionPlayerProfile,
   getSessionShotDistance,
   getSessionGreenRead,
+  sessionStrategy,
   type RealtimeSessionToken,
 } from '@/lib/caddie/api';
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
@@ -195,6 +196,20 @@ export async function dispatchTool(
       return await getSessionGreenRead({
         round_id: ctx.roundId,
         hole_number: liveHole ?? (args.hole_number != null ? Number(args.hole_number) : undefined),
+      });
+    }
+    case 'get_strategy': {
+      // Frontier-reasoned tee-to-green strategy, synthesized server-side by the
+      // caddie brain (OpenAI gpt-5.6-sol) from the same engine payloads the other
+      // tools read. The holeYards/basis ride-along mirrors get_recommendation:
+      // the server's recommendation solve must use THIS turn's resolved yardage,
+      // never a stale cached number (no-fake-data). The persona speaks `strategy`
+      // faithfully (STRATEGY_TOOL_RULE) — never re-synthesizes.
+      return await sessionStrategy({
+        round_id: ctx.roundId,
+        hole_number: args.hole_number != null ? Number(args.hole_number) : undefined,
+        hole_yards: ctx.holeYards ?? undefined,
+        yardage_basis: ctx.yardageBasis ?? undefined,
       });
     }
     case 'set_round_setup': {

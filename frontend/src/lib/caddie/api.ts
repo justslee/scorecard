@@ -242,6 +242,33 @@ export async function sessionRecommend(params: {
   return rec;
 }
 
+/** Frontier-reasoned tee-to-green strategy (the realtime-only `get_strategy`
+ *  voice tool — specs/caddie-smart-strategy-tool-plan.md). Mirrors backend
+ *  `SessionStrategyResponse` (app/routes/caddie.py) field-for-field. `strategy`
+ *  is the ONLY narrative the persona may speak for this tool — never
+ *  re-derived or re-synthesized client-side (STRATEGY_TOOL_RULE). `degraded`
+ *  marks a deterministic engine-numbers fallback line (not the model);
+ *  `available: false` means no recommendation could be built at all — never a
+ *  fabricated plan. */
+export interface SessionStrategy {
+  available: boolean;
+  hole_number: number;
+  strategy: string | null;
+  degraded: boolean;
+  reason: string | null;
+  numbers: Record<string, unknown>;
+}
+
+export async function sessionStrategy(params: {
+  round_id: string;
+  hole_number?: number;
+  distance_to_green_yards?: number;
+  hole_yards?: number;
+  yardage_basis?: string;
+}): Promise<SessionStrategy> {
+  return post('/caddie/session/strategy', params);
+}
+
 // ── Session tool reads (Realtime tool surface v1) ──
 
 export interface SessionConditions {
