@@ -18180,3 +18180,24 @@ NOT shipping/pinging — SILENT (dark, APP_ACCESS_MODE stays owner-default, zero
 owner; webhook is fully inert since CLERK_WEBHOOK_SECRET is unset in prod). Next slice per the epic:
 multiuser-p0-client-identity already landed (bundle #143); multiuser-p0-keychain-token depends on this
 slice + multiuser-p0-authz-flip, both now satisfied — ready to pick up next cycle.
+
+## AWAITING — slice 4 multiuser-p0-keychain-token (builder dispatched, cycle 2026-07-16)
+Owner feedback checked FIRST: board polled (no new Bethpage field-feedback card; #143 v1.1.10 comment
+is our own ship notice). Sync: origin/main (533ac44) already ancestor of HEAD (820dd50) — integration/next
+clean+current, no merge needed. No pending approval bundle. Bundle PR #144 open, SILENT/dark.
+
+WORK: multiuser-p0-keychain-token (slice 4, FINAL ready P0 slice; deps authz-flip[#142]+migrations[#144]
+satisfied). Per epic plan §3.4 "Native token → Keychain". Seam VERIFIED = clean one-file swap:
+frontend/src/lib/native-token-store.ts funnels all read/write/clear through Preferences (3 fns). Swap the
+backend to @aparajita/capacitor-secure-storage (kSecAttrAccessibleWhenUnlockedThisDeviceOnly) + one-time
+migrate-then-delete of the plaintext Preferences value + cap sync. SILENT/dark-adjacent (security
+hardening, no owner-visible behavior change).
+
+AWAITING builder on integration/next. Outcomes:
+- builder pushes head -> dispatch /security-review (mandatory, credential storage) + fresh reviewer
+  (plaintext-residue/purge, accessibility-class, signout-clear, downgrade path) + qa (gates SUCCESS on
+  pushed head + caddie-experience green; sim sign-in/resume if feasible).
+- BLOCKING findings -> re-dispatch builder, re-review. GREEN+clean -> add to PR #144 checklist (SILENT),
+  progress + backlog (slice4->done, P0-COMPLETE note), do NOT ship/ping (no noticeable change).
+On resume, reconcile from origin/integration/next log + builder's actual commits — do NOT re-run a
+finished child.
