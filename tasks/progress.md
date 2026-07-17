@@ -3,6 +3,26 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-16 DONE — caddie-advice-model-decoupling, SILENT, committed @ a323851 (on worktree branch tracking integration/next, NOT pushed — eng-lead rebases+pushes)
+Implemented specs/caddie-advice-model-plan.md Steps 1-3 exactly (no re-plan). `_advice_model()`
+helper added in backend/app/routes/caddie.py (CADDIE_ADVICE_MODEL -> ANTHROPIC_MODEL ->
+claude-sonnet-4-5-20250929 fallback chain), replacing the three identical `os.getenv("ANTHROPIC_MODEL", ...)`
+reads in session_voice (~L908), _sse_reply (~L988), voice_caddie (~L1592) — confirmed exactly 3 matches,
+all caddie-advice mouths, nothing else touched. `_accepts_temperature()` + conservative
+`_TEMPERATURE_OK_PREFIXES` allowlist added in backend/app/caddie/tool_loop.py; `temperature=0.7` is now
+conditional (built into stream_kwargs only if the model is on the allowlist) — unknown/future model ids
+fail safe by omitting temperature rather than 400ing. Byte-identical on current prod (still sonnet-4-5 +
+temp 0.7). Tests: existing test_sse_reply_uses_identical_model_params passes UNCHANGED; added
+test_sse_reply_advice_model_env_outranks_anthropic_model + test_sse_reply_advice_model_off_allowlist_omits_temperature
+in test_voice_stream.py, and test_accepts_temperature_allowlist_pins in test_caddie_tool_loop.py. Gates:
+`ruff check .` clean; the 8 targeted pytest files all green — 72 passed (test_voice_stream.py 22 incl. the
+2 new, test_caddie_tool_loop.py 12 incl. the 1 new, plus the 6 grounding-prompt suites + eval/test_tool_parity.py).
+No DB tests run locally (none in this targeted set — full backend CI Postgres gate runs on the PR).
+Left backlog.json untouched/unstaged — it showed unrelated concurrent edits from another lane's process
+mid-session; not part of this item's scope, not committed by this builder. NEXT: eng-lead reviews/QAs
+@ a323851, folds into bundle PR (this cycle's `caddie-advice-sonnet5-flip` follow-up is gated on a live
+before/after eval per the plan — NOT done here, correctly deferred).
+
 ## 2026-07-16 DONE — multiuser-p0-migrations-revocation (slice 3), SILENT/dark, landed @ f4eda94 (bundle PR opened fresh)
 Reviewer SHIP (no HIGH/MED — forge/replay/revocation-bypass/owner-drift/injection/endpoint-exposure/
 AUTH_BYPASS-guard all attacked & safe; /security-review no findings). qa PASS (10 gates + AUTH_BYPASS
