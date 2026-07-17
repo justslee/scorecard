@@ -26,13 +26,24 @@ ARCHITECTURE MAP DONE (direct read + Explore). Confirmed gaps to close:
    brain isn't fed live GPS distance though /session/strategy accepts it (caddie.py:693).
 Fixture for Red-1 acceptance: backend/tests/fixtures/bethpage_red_trees.json (holes 1/5/6).
 
-## AWAITING — Plan(fable): specs/caddie-two-tier-routing-plan.md (THE crux design)
-Dispatched Fable Plan agent for the routing design + context-strip + read-time guide gate + verdict-pin
-+ tendencies payload + text-path decision + routing matrix + test contract (Red-1 acceptance, routing
-matrix, structural strip, consistency). On DONE -> builder implements the plan on this worktree; then
-reviewer(fresh) + qa(gates+acceptance+matrix) + designer(thinking-bridge). Ships HELD; do NOT ship/ping.
-If I die: reconcile from origin/integration/next + worktree commits; re-dispatch Fable only if no plan
-file exists.
+## PLAN(fable) DONE @6fe9cea — specs/caddie-two-tier-routing-plan.md
+Fable decisions: (1) STRIP hazards/bend/guide/green-slope from _situation_block + text prompt; KEEP
+tee-numbers/aim/miss/par-sanity (they ARE the engine verdict). (2) TEXT PATH = intercept ADVICE BEFORE
+the Claude loop via classify_intent -> same run_strategy_turn brain (avoids 10s-in-6s nesting + preserves
+TEXT_TOOLS cache prefix). (3) new routing.py::classify_intent (ADVICE/FACT/SCORE/OTHER), pure+extensible,
+20-row matrix test. (4) new verdict.py read-time guide gate: extract_favor_side + guide_agrees_with_verdict
+(center-verdict + lateral-favor -> DROP = the Red-1 poison). (5) validate_strategy_text gains favor-side +
+reachability + club pins. (6) live-GPS fix in realtime.ts. (7) honest tendencies payload. (8) strengthened
+STRATEGY_TOOL_RULE with spoken thinking-bridge. (9) SCORE = record_scores realtime-only tool -> existing
+parse-scores + existing handleSetScore write; DIRECT write + light in-flow ack, NO confirm ceremony
+(owner refinement folded into spec §9). Red-1 fixture = RECONSTRUCTED poisoned guide (no prod/staging DB).
+
+## AWAITING — builder (specs/caddie-two-tier-routing-plan.md, in THIS worktree, on integration/next)
+Builder implements the full plan in build order §13; commits in the worktree; I rebase+push HEAD.
+On builder DONE: reviewer(fresh, adversarial: can any advice-class ask slip un-brained? strip breaks
+chit-chat? guide-gate false-rejects? latency?) + qa(gates + Red-1 acceptance + routing matrix + strip +
+score-entry) + designer(thinking-bridge phrasing + "reading the hole" copy). Ships HELD; do NOT ship/ping.
+If I die: reconcile from origin/integration/next + worktree commits; do NOT re-run a finished builder.
 SCOPE EXTENSION (owner, mid-plan): router generalizes to a FULL INTENT ROUTER on the one live session —
 class 3 = SCOREKEEPING (recognize "put me down for a 5"/"par for me, double for Mike" -> write scorecard
 directly + spoken confirm, NEVER silent; REUSE the existing frontend/src/lib/voice/* parser + games
