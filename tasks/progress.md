@@ -19044,3 +19044,42 @@ regress). On both PASS/SHIP: open bundle PR (NOTICEABLE), update backlog, HOLD s
 Any BLOCK -> re-dispatch builder. If I die: reconcile from origin/integration/next @997e318; reviewers read-only.
 Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
 origin/integration/next + worktree commits; do NOT re-run a finished child.
+## AWAITING — builder (specs/course-discovery-intel-plan.md, in THIS worktree, on integration/next)
+Builder implements the full plan EXCEPT the two STOP items (prod migration apply + prod seed). Commits in
+the worktree; I rebase+push HEAD:integration/next. On builder DONE: reviewer (fresh) + qa (gates+offline
+validator matrix) + designer (BLOCKING on rendered card+page). Ships HELD; do NOT ship/ping.
+If I die: reconcile from origin/integration/next + the builder's worktree commits; do NOT re-run a finished builder.
+
+## 2026-07-17 BUILD DONE + REVIEWED GREEN — course-discovery-intel (HELD on worktree, PUSH FREEZE)
+Builder implemented the full plan (19 files, 2412+ ins): course_intel_writer (grounded writer + PURE
+fail-closed validator), services/course_intel (idempotent negative-cached precompute + get_course_intel_payload
+direct-SQL aggregation + env-gated backfill), routes/course_intel GET /api/courses/{id}/intel, migration
+0012_015_course_intel (additive, down_revision 014, IF NOT EXISTS), conftest column-add, CourseIntel
+Pydantic+TS, CourseIntelSheet (floating-inset LooperSheet idiom) + intel-bits (InkStars/ClampedProse) +
+CourseScoutMap tap-card replacement + CourseDetailClient rating row + About section. STOP items NOT run
+(no prod migration apply, no prod seed, no LLM call).
+Commits on worktree branch (on top of shipped bundle head c034ee0): 9de3ef8 (feature), bf6a15e (progress),
+58f987e (designer flexWrap fix).
+GATES: QA PASS all 7 (ruff, 29/29 offline validator+service matrix [assertions verified non-vacuous], tsc,
+lint, next build, voice-tests 278/278, budget grep clean). DB integration test CI-only (no local Postgres).
+REVIEWER: SHIP (full manual security pass — validator genuinely fail-closed, no external calls, aggregation
+honest [avg null iff count 0, avgScore complete-round-only, direct-SQL not get_course], negative-cache correct,
+migration safe, no regression, no naming collision). 3 non-blocking nits filed as follow-ups: (1) par-claim
+regex misses hyphenated "par-72"; (2) leak scan wouldn't catch "built"+bare-proper-noun (documented residual);
+(3) avgScore/roundsPlayed not owner-filtered — for the multi-user isolation slice, NOT this PR.
+DESIGNER: BLOCK -> FIXED. Only block = sheet stats row lacked flexWrap (4 stats clip at 375px); fixed @58f987e
+(tsc/lint/build re-verified green). Everything else APPROVED (ink stars never colored, no shimmer, floating
+paper card not docked SaaS sheet, tokens, 44pt targets, testid preserved). Non-blocking polish follow-ups:
+pin-swap remount vs crossfade (lift key to AnimatePresence call site), content pop-in height jump (on-device
+check next TestFlight), grabber borderRadius 99-vs-2, actions-row 2-line wrap on 375px.
+
+STATE: item is GREEN and COMPLETE, HELD on the worktree branch under the PUSH FREEZE (v1.1.12 shipping pinned
+at c034ee0; this BUILD rides the NEXT bundle). Do NOT push. When the freeze lifts + a fresh integration/next is
+cut from the shipped main: rebase this worktree branch (9de3ef8..58f987e) onto the new head, resolve the
+backlog.json/progress.md append conflicts (keep all), push HEAD:integration/next, add to the bundle PR
+checklist (NOTICEABLE). STOP items (prod migration apply + 3-course seed) await owner approval — surface with
+the designer's Bethpage Black exemplar for the taste-test. Ships still HELD pending tree-distance verification.
+
+## AWAITING — push freeze to lift + fresh integration/next cut (post v1.1.12 ship)
+On resume: reconcile from origin/integration/next (fresh), rebase worktree 9de3ef8..58f987e, push, PR checklist.
+Do NOT re-run builder/reviewer/qa/designer — all done & green. Follow-up nits above are next-cycle, non-blocking.
