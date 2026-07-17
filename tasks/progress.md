@@ -43,6 +43,35 @@ verification is QA's job, not this commit's).
 - Ready for the designer's blocking visual pass (reticle form, readout placement/rounding) per
   the plan's §4 implementation order, and an on-device pass covering the map's §1 verification
   checklist (separate, unstarted — not part of this commit).
+## 2026-07-17 BUILD DONE — course-discovery-intel, in worktree agent-a1cf848b762f30fae @9de3ef8; AWAITING review/QA/designer + eng-lead rebase+push
+Implemented specs/course-discovery-intel-plan.md in full EXCEPT the two owner-gated
+STOP items (apply migration 015_course_intel to prod/staging; run the Bethpage
+Black/Red + Pebble Beach seed backfill against prod) — neither was executed; no
+LLM call was made anywhere in this pass (no ANTHROPIC_API_KEY needed/used).
+19 files per the plan's §9 manifest exactly (backend: course_intel_writer.py +
+course_intel.py service/route + migration + models.py + courses_mapped.py
+service/route wiring + main.py registration + caddie/course_intel.py docstring
+cross-ref + 3 test files + conftest ALTER; frontend: CourseIntelSheet.tsx +
+intel-bits.tsx + CourseScoutMap.tsx swap-in + CourseDetailClient.tsx About/rating
++ types.ts/api.ts). Validator is the 10-case offline matrix from plan §6, all
+green; fact-leak/injection/confidence-gate/par-check/newline/length all fail-closed
+reject-all except the per-fact confidence gate (drop-only, never reject-all).
+Gates: backend ruff clean; 29/29 new offline unit tests (writer+service, zero
+network/DB); `alembic history` resolves cleanly, 015_course_intel is head off the
+verified 014_tournament_round_courses; frontend tsc/lint/build all clean;
+voice-tests smoke 278/278; §7.6 grep sweep (fetchAPI/searchAll/searchNearby/places)
+returns nothing (one false-positive from the English word "Replaces" in a comment,
+fixed). DB-backed tests/integration/test_course_intel_route.py is CI-verified only
+— no local Postgres was started (per the standing no-local-DB-container rule).
+No deviations from the plan worth flagging; two minor sound completions the plan
+left to the builder: the ground-truth aggregate hazard/terrain text format, and
+the CourseIntelSheet pin-swap re-mount behavior (React key-based remount on pin.id
+change rather than a coordinated cross-fade — satisfies the "no stacked sheets, no
+stale flash" acceptance criterion, just not a smooth crossfade).
+If I die: this worktree's commit 9de3ef8 is the full implementation, ready for
+reviewer + qa + designer, then eng-lead rebase+push onto origin/integration/next.
+Ships still HELD (unrelated tree-distance verification per the plan header) — do
+NOT ship/ping regardless of review outcome until that hold lifts.
 
 ## 2026-07-17 DONE — caddie live P0s A (connect-stall UX) + B (live-hole answers), BOTH NOTICEABLE, LANDED on origin/integration/next @ fbd2061 (rebased onto eba80ca, pushed); added to bundle PR #145
 Two owner v1.1.11 field P0s, one eng-lead pass (worktree agent-a23cf368966ee80ce). Fable plan
