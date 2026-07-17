@@ -159,7 +159,21 @@ positioning sites). Tests: TestTeeSelection, red1 bracketing e2e, 8-bearing brac
 real-gap-not-interpolated, greenside-bunker-excluded + reach e2e + legacy-default. T1/T12 counts 2->3
 (min/max collapse was the root cause; formatted lines unchanged). No shared-type changes.
 
-## AWAITING reviewer + qa on 8dfb701 (parallel, this cycle)
+## 2026-07-16 DONE — caddie-hazard-side-inversion + drive-zone-reach LANDED on integration/next (NOTICEABLE, P0 field bug)
+Reviewer (fresh, adversarial): SHIP — empty findings (sign convention untouched; _gap_bounded_tree_chain
+terminates + always preserves near/far endpoints; reach cap only tightens the long edge so no reachable
+hazard newly excluded; all drive_zone_hazards/decade_landing_advice callers back-compat via Optional=None;
+format_hazards_line group-cap unaffected; /code-review folded). QA: PASS — ruff clean, backend 2614 non-DB
+(post-rebase, orb lane added ~19), frontend lint/tsc/build clean, voice 278/278, caddie-experience 241/241;
+3 P0 acceptance tests green (test_red1_bracketing_left_tree_line_never_confident_right; 8-bearing bracketing
+invariant x8; test_greenside_bunker_beyond_reach_excluded). Rebased twice onto origin/integration/next
+(orb lane raced f4d55c5->9b27438->07dfcc0; union merge driver auto-resolved progress.md; NO code conflict —
+disjoint surfaces) and pushed: integration/next now b605781. Added to bundle PR #144 checklist as the SECOND
+NOTICEABLE item. CI on push: Backend gate PASS, Frontend gate in progress (backend-only change; frontend
+gates green locally). Did NOT ship or ping owner (per brief) — ship/approval + final all-gates-SUCCESS
+verification handled by the release cycle. Superseded AWAITING record below.
+
+## AWAITING(superseded) reviewer + qa on 8dfb701 (parallel, this cycle)
 Worktree branch @8dfb701; base merge-base 533ac44; origin/integration/next now a135ef7 (orb lane advanced
 f4d55c5->a135ef7 — rebase there at push time). Reviewer: adversarial correctness (construct a layout the
 fix still misclassifies; verify NO sign-flip/double-flip masking; scrutinize gap-chain + tee-selection
