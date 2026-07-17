@@ -28,6 +28,8 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.services.course_spatial import parse_leading_int_ref
+
 # DB imports are lazy (inside fetch_elevation_cached) so that the pure
 # functions in this module — compute_hole_elevation_profile,
 # sample_course_elevations, fetch_elevation, fetch_3dep_samples — are all
@@ -437,7 +439,12 @@ async def sample_course_elevations(
         if (props.get("course_name") or "").lower() != target_lower:
             continue
         ref = props.get("ref")
-        if ref is None:
+        # Honest leading-int parse — handles composite OSM ref formats (e.g.
+        # Pinehurst's "1 - #2") that a bare int(ref) raised on.  A ref that
+        # doesn't parse is skipped rather than crashing or minting a fake
+        # hole number (see parse_leading_int_ref).
+        number = parse_leading_int_ref(ref)
+        if number is None:
             continue
         coords = (hole.get("geometry") or {}).get("coordinates") or []
         if len(coords) < 2:
@@ -445,7 +452,7 @@ async def sample_course_elevations(
         tee_coord   = coords[0]   # [lng, lat]
         green_coord = coords[-1]  # [lng, lat]
         target_holes.append({
-            "number":    int(ref),
+            "number":    number,
             "tee":   (tee_coord[1],   tee_coord[0]),    # (lat, lng)
             "green": (green_coord[1], green_coord[0]),  # (lat, lng)
         })

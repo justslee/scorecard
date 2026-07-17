@@ -1,8 +1,13 @@
-"""T-G — strategy-guide consumption regression (specs/caddie-numbers-coherence
--plan.md §4.2, §7). Wiring verified present at plan time (§1.5): both mouths
-already render `format_guide_line(intel.strategy_guide)` into their situation
-context. This locks the wiring so a future refactor can't silently drop it
-from either mouth without a red test.
+"""T-G — strategy-guide consumption (specs/caddie-numbers-coherence-plan.md
+§4.2, §7; UPDATED by specs/caddie-two-tier-routing-plan.md §3, §5). Originally
+pinned that both mouths render `format_guide_line(intel.strategy_guide)`
+straight into their baked situation context. The structural context strip
+(§3) removes that injection site entirely — the cached guide now reaches
+ONLY the get_strategy brain payload (strategy.py::build_strategy_payload),
+gated at read time against the engine's own verdict (§5, app.caddie.verdict).
+This file now locks the INVERSE: neither mouth's baked prompt context ever
+carries guide text again, so a future regression can't silently re-open the
+freelancing channel that caused the wrong-side-advice incidents.
 
 No network, no real database — mirrors `test_golden_tier1.py`'s DB-dependency
 monkeypatch pattern for the text mouth; `_situation_block` is pure for the
@@ -40,12 +45,15 @@ def _session(guide) -> RoundSession:
 # ── Realtime mouth: _situation_block ────────────────────────────────────────
 
 
-def test_realtime_situation_block_includes_guide_when_cached():
+def test_realtime_situation_block_never_includes_guide_even_when_cached():
+    """UPDATED (§3): the guide is a brain-payload-only ingredient now — was
+    `test_realtime_situation_block_includes_guide_when_cached`."""
     from app.caddie.guide_writer import format_guide_line
 
     session = _session(_guide())
     block = _situation_block(session)
-    assert format_guide_line(_guide()) in block
+    assert format_guide_line(_guide()) not in block
+    assert "Local knowledge" not in block
 
 
 def test_realtime_situation_block_omits_guide_when_none():
@@ -91,7 +99,11 @@ def _patch_session_builder_deps(monkeypatch, session):
     monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _no_memories)
 
 
-async def test_text_mouth_context_includes_guide_when_cached(monkeypatch):
+async def test_text_mouth_context_never_includes_guide_even_when_cached(monkeypatch):
+    """UPDATED (§3): ADVICE turns are intercepted server-side before Claude
+    ever runs (§5) — the text mouth's baked prompt never needs the guide,
+    and never gets it. Was `test_text_mouth_context_includes_guide_when_
+    cached`."""
     from app.caddie.guide_writer import format_guide_line
 
     session = _session(_guide())
@@ -104,7 +116,8 @@ async def test_text_mouth_context_includes_guide_when_cached(monkeypatch):
     system_blocks, _messages, _persona_id = await caddie_routes._build_session_voice_prompt(request, "u1")
     situation_text = system_blocks[1]["text"]
 
-    assert format_guide_line(_guide()) in situation_text
+    assert format_guide_line(_guide()) not in situation_text
+    assert "Local knowledge" not in situation_text
 
 
 async def test_text_mouth_context_omits_guide_when_none(monkeypatch):

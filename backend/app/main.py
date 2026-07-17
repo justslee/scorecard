@@ -54,6 +54,7 @@ from app.routes import players, rounds, tournaments, courses, voice  # noqa: E40
 from app.routes import golf, course_search, courses_mapped, voice_advanced, caddie, memory, realtime, shots, pins  # noqa: E402
 from app.routes import profile  # noqa: E402
 from app.routes import course_reviews  # noqa: E402
+from app.routes import course_intel  # noqa: E402
 from app.routes import scorecard  # noqa: E402
 from app.routes import tee_times  # noqa: E402
 
@@ -81,6 +82,8 @@ app.include_router(courses_mapped.router, dependencies=_member)
 # Two-segment /api/courses/{course_key}/reviews sub-resource — MUST precede catch-all.
 app.include_router(course_reviews.router, dependencies=_member)
 app.include_router(course_reviews.reviews_router, dependencies=_member)  # B3 — /api/reviews/mine
+# Two-segment /api/courses/{course_id}/intel sub-resource — MUST precede catch-all.
+app.include_router(course_intel.router, dependencies=_member)
 app.include_router(courses.router, dependencies=_member)
 app.include_router(voice.router, dependencies=_member)
 # Migrated from Next.js + new caddie system

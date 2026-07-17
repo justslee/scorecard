@@ -13,8 +13,7 @@ from app.caddie.types import CaddiePersonality, TeeShotNumbers
 from app.caddie.session import RoundSession
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.green_geometry import GREEN_GROUNDING_RULE
-from app.caddie.hazards import BEND_GROUNDING_RULE, HAZARD_GROUNDING_RULE, format_bend_line, format_hazards_line
-from app.caddie.guide_writer import format_guide_line
+from app.caddie.hazards import BEND_GROUNDING_RULE, HAZARD_GROUNDING_RULE
 from app.caddie.language import desired_language
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.db.models import CaddieMemory
@@ -195,19 +194,27 @@ DECISION_GROUNDING_RULE = (
 )
 
 # Realtime-only routing + faithful-delivery rule for the get_strategy tool
-# (specs/caddie-smart-strategy-tool-plan.md). Never appended to the text
-# mouths' prompts — the tool exists only in the realtime schema.
+# (specs/caddie-smart-strategy-tool-plan.md, strengthened by specs/caddie-
+# two-tier-routing-plan.md §8 — the mandatory routing contract now that the
+# context strip (§3) leaves this tool as the mouth's ONLY source of hazard-
+# side/bend/guide/green-slope judgment). Never appended to the text mouths'
+# prompts — the tool exists only in the realtime schema. The spoken
+# thinking-bridge phrasing (§8) fills the ~3-4s brain call with a natural
+# acknowledgment instead of dead air or a freelanced guess — the bridge
+# phrase list lives ONLY in this constant (designer reviews this one diff).
 STRATEGY_TOOL_RULE = (
-    "For strategy and planning questions — 'how should I play this hole', "
-    "'what's the play', 'walk me through it', comparing clubs or lines, "
-    "risk-reward calls — call get_strategy and DELIVER its strategy text to "
-    "the player faithfully, as given: you may trim a word for flow, but never "
-    "change a number, club, side, or the call itself, and never blend in your "
-    "own analysis. Re-writing it reintroduces the guesswork it exists to "
-    "remove. For a single quick lookup — what club, how far, a carry, wind, "
-    "a green read — use the specific engine tool instead; it is faster. If "
-    "get_strategy reports data unavailable or a degraded line, speak what it "
-    "gives you and say plainly what isn't known."
+    "For EVERY advice question — what club to hit, how to play the hole, where to aim or "
+    "miss, club-vs-club, layup or go, any risk call — you MUST call get_strategy and "
+    "deliver its strategy text faithfully, as given: never change a number, club, side, or "
+    "the call, and never blend in your own analysis. You do not carry this hole's trouble "
+    "map; any advice you compose yourself will be ungrounded and wrong. Before the call, "
+    "say ONE short natural acknowledgment in your own voice — like 'Let me look at this "
+    "one.' or 'Give me a second to read this hole.' — then call the tool and wait; never "
+    "fill the wait with numbers or guesses, and never leave dead air without the "
+    "acknowledgment. For a single quick number — a distance, a carry, wind, a green "
+    "read — use the specific engine tool instead; it is faster. If get_strategy reports "
+    "data unavailable or a degraded line, speak what it gives you and say plainly what "
+    "isn't known."
 )
 
 # Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
@@ -380,21 +387,14 @@ def _situation_block(session: Optional[RoundSession]) -> str:
     lines.append(f"Current hole: #{session.current_hole}")
     intel = session.hole_intel.get(session.current_hole)
     if intel:
+        # Structural context strip (specs/caddie-two-tier-routing-plan.md §3):
+        # hazard sides, bend, the cached guide, and green slope are STRATEGY
+        # INGREDIENTS — they live server-side in the get_strategy brain payload
+        # ONLY. Baking them here is what let the weak realtime model freelance
+        # wrong-side advice (10 recurrences). Only the par-sanity note remains.
         par_sanity_note = format_par_sanity_note(intel.par, intel.yards)
         if par_sanity_note:
             lines.append(f"Hole {session.current_hole}, par {intel.par} {par_sanity_note}")
-        if intel.hazards:
-            hazards_line = format_hazards_line(session.current_hole, intel.hazards)
-            if hazards_line:
-                lines.append(hazards_line)
-        bend_line = format_bend_line(session.current_hole, intel.bend)
-        if bend_line:
-            lines.append(bend_line)
-        guide_line = format_guide_line(intel.strategy_guide)
-        if guide_line:
-            lines.append(guide_line)
-        if intel.green_slope:
-            lines.append(f"Green slope: {intel.green_slope.description}")
     if session.last_recommendation:
         rec = session.last_recommendation
         if rec.tee_shot_numbers is not None:

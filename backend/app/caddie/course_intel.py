@@ -1,4 +1,12 @@
-"""Course intelligence engine - builds per-hole analysis from data sources."""
+"""Course intelligence engine - builds per-hole analysis from data sources.
+
+NOT `app.caddie.course_intel_writer` (course-discovery-intel) — that module
+writes a course-level, precomputed Augusta-styled DESCRIPTION for course
+DISCOVERY (the map tap-sheet + course detail page), a distinct, unrelated
+system built later. See that module's docstring for the reciprocal note.
+This module (the live per-hole caddie intelligence builder) is never
+imported by `course_intel_writer.py`.
+"""
 
 import logging
 from typing import Optional

@@ -300,6 +300,36 @@ export interface CourseReviewCreate {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Course intel (course-discovery-intel) — kept in sync with backend
+// app/models.py CourseIntel. One shape feeds BOTH the map tap-sheet and the
+// course detail page. Pure-DB read; description is a precomputed cache.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CourseIntelDescription {
+  text: string | null;               // composed prose; null = not yet seeded
+  provenance: "landscape" | "enriched" | null;
+  factsUsed: string[];               // subset of ["architect","yearBuilt","styleNotes","notableHistory"]
+  generatedAt: string | null;        // ISO datetime
+  model: string | null;
+}
+
+export interface CourseIntel {
+  courseId: string;                  // public.courses.id
+  description: CourseIntelDescription;
+  stars: {
+    avg: number | null;              // null iff count === 0 — never a fabricated 0.0
+    count: number;
+  };
+  stats: {
+    parTotal: number | null;         // null if not mapped
+    yardageByTee: Record<string, number> | null;
+    holesMapped: number | null;      // count of REAL public.holes rows, null if 0
+    roundsPlayed: number;            // honest count, 0 is real
+    avgScore: number | null;         // null unless ≥1 COMPLETE round exists
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Scorecard OCR scan — kept in sync with backend/app/routes/scorecard.py
 // ─────────────────────────────────────────────────────────────────────────────
 

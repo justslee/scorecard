@@ -19,12 +19,15 @@ from app.services import realtime_relay  # noqa: E402
 
 
 def test_text_tools_are_a_schema_equal_subset_of_realtime():
-    """Amended contract (specs/caddie-smart-strategy-tool-plan.md §6.1): the
-    realtime mouth now carries realtime-only extras (get_strategy) the text
-    mouth never sees (nested-LLM circularity + the 6s tool-resolve timeout +
-    prompt-cache stability — plan §1.1/§7). Every TEXT_TOOLS entry must still
-    be a byte-identical subset of the realtime rendering, and any new extra
-    must be a CONSCIOUS, enumerated edit here — never a silent drift."""
+    """Amended contract (specs/caddie-smart-strategy-tool-plan.md §6.1,
+    extended by specs/caddie-two-tier-routing-plan.md §9 for record_scores):
+    the realtime mouth now carries realtime-only extras (get_strategy,
+    record_scores) the text mouth never sees (nested-LLM circularity + the 6s
+    tool-resolve timeout + prompt-cache stability — plan §1.1/§7; record_
+    scores is dispatched client-side only, the server text loop can't reach
+    it). Every TEXT_TOOLS entry must still be a byte-identical subset of the
+    realtime rendering, and any new extra must be a CONSCIOUS, enumerated
+    edit here — never a silent drift."""
     realtime_by_name = {t["name"]: t for t in realtime_relay.DEFAULT_TOOLS}
     text_by_name = {t["name"]: t for t in tools_mod.TEXT_TOOLS}
 
@@ -36,7 +39,7 @@ def test_text_tools_are_a_schema_equal_subset_of_realtime():
         assert rt["parameters"] == tx["input_schema"], f"schema drift on {name!r}"
 
     # Realtime EXTRAS explicitly enumerated — a new extra must be added here consciously.
-    assert set(realtime_by_name) - set(text_by_name) == {"get_strategy"}
+    assert set(realtime_by_name) - set(text_by_name) == {"get_strategy", "record_scores"}
     assert len(realtime_relay.DEFAULT_TOOLS) == len(tools_mod.CADDIE_TOOLS) + len(tools_mod.REALTIME_ONLY_TOOLS)
 
     # A hand-edit of the relay's DEFAULT_TOOLS (bypassing the registry) fails

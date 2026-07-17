@@ -1,9 +1,10 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T } from "./tokens";
 import HoleIllustration from "./HoleIllustration";
-import type { HoleSpec } from "./HoleIllustration";
+import type { AimReadout, HoleIllustrationHandle, HoleSpec } from "./HoleIllustration";
 
 export default function HoleCard({
   holeNumber,
@@ -33,6 +34,14 @@ export default function HoleCard({
   density: "spacious" | "dense";
 }) {
   const pad = density === "dense" ? 14 : 18;
+  // Draggable aim target (owner ask 2026-07-17): geometry/drag state lives
+  // inside HoleIllustration; this is just the derived readout, surfaced via
+  // callback so the existing top-right pill (below) becomes the ONE readout
+  // surface instead of a second in-SVG panel (specs/yardage-target-concept.md
+  // §3, designer BLOCK). Non-null persists through AND after a drag, until
+  // cleared or the hole changes.
+  const illustrationRef = useRef<HoleIllustrationHandle>(null);
+  const [aimReadout, setAimReadout] = useState<AimReadout | null>(null);
   return (
     <motion.div
       layout
@@ -74,7 +83,15 @@ export default function HoleCard({
           style={{ width: expanded ? 340 : 190, height: expanded ? 340 : 190, position: "relative" }}
           onClick={expanded ? onZoom : onExpand}
         >
-          <HoleIllustration holeNumber={holeNumber} size={expanded ? 340 : 190} shotPoint={shotPoint} showDetail={expanded} accent={accent} />
+          <HoleIllustration
+            ref={illustrationRef}
+            holeNumber={holeNumber}
+            size={expanded ? 340 : 190}
+            shotPoint={shotPoint}
+            showDetail={expanded}
+            accent={accent}
+            onAimChange={setAimReadout}
+          />
           {expanded && (
             <motion.button
               initial={{ opacity: 0 }}
@@ -109,7 +126,13 @@ export default function HoleCard({
               Zoom
             </motion.button>
           )}
-          {distance != null && (
+          {/* Top-right ink pill — the ONE distance readout on the card. When
+              a custom aim is active (during AND after a drag, so the
+              readout + clear stay reachable), it grows to two mono lines;
+              otherwise it's the default single "###Y" hole distance, exactly
+              as before. Never a second panel (specs/yardage-target-concept.md
+              §3/§5). */}
+          {aimReadout ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -117,21 +140,100 @@ export default function HoleCard({
                 position: "absolute",
                 top: 8,
                 right: 8,
-                padding: "4px 8px",
-                borderRadius: 99,
+                padding: "5px 9px",
+                borderRadius: 10,
                 background: T.ink,
                 color: T.paper,
                 fontFamily: T.mono,
                 fontSize: 10,
-                letterSpacing: 1.2,
                 display: "flex",
-                alignItems: "center",
-                gap: 4,
+                flexDirection: "column",
+                gap: 2,
               }}
             >
-              <span style={{ width: 5, height: 5, borderRadius: 99, background: accent }} />
-              {distance}Y
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 8, letterSpacing: 1, color: T.paperMid, textTransform: "uppercase" }}>From tee</span>
+                <span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{aimReadout.fromTee}Y</span>
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 8, letterSpacing: 1, color: T.paperMid, textTransform: "uppercase" }}>To green</span>
+                <span style={{ marginLeft: "auto", color: accent, fontVariantNumeric: "tabular-nums" }}>{aimReadout.toGreen}Y</span>
+              </span>
+              <button
+                type="button"
+                aria-label="Clear aim target"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  illustrationRef.current?.clearAim();
+                }}
+                // Bubble-phase only (never capture): in React 19,
+                // stopPropagation() inside an onXCapture handler aborts the
+                // whole synthetic dispatch for that event on this node,
+                // including a same-node bubble onClick — that killed the
+                // drag on the reticle's sibling handler (regression, fixed).
+                // A tap on this 44px × button won't move far enough to hit
+                // framer's swipe threshold, so bubble stopPropagation is
+                // enough belt-and-suspenders against a stray drag starting here.
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  position: "absolute",
+                  top: -12,
+                  right: -12,
+                  width: 44,
+                  height: 44,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  margin: 0,
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    width: 15,
+                    height: 15,
+                    borderRadius: 99,
+                    background: T.ink,
+                    border: `1px solid ${T.paperFaint}`,
+                    color: T.paper,
+                    fontFamily: T.mono,
+                    fontSize: 10,
+                    lineHeight: "14px",
+                    textAlign: "center",
+                  }}
+                >
+                  ×
+                </span>
+              </button>
             </motion.div>
+          ) : (
+            distance != null && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  padding: "4px 8px",
+                  borderRadius: 99,
+                  background: T.ink,
+                  color: T.paper,
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.2,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <span style={{ width: 5, height: 5, borderRadius: 99, background: accent }} />
+                {distance}Y
+              </motion.div>
+            )
           )}
         </motion.div>
       </div>

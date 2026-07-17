@@ -45,6 +45,7 @@ import {
 } from "@/hooks/useCaddieLiveSession";
 import { getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
 import type { OpeningShot } from "@/lib/caddie/opening-turn";
+import type { ScoreEntryResult } from "@/lib/voice/realtime";
 
 export interface UseDetachedCaddieLiveOptions {
   roundId: string;
@@ -55,6 +56,9 @@ export interface UseDetachedCaddieLiveOptions {
   yardageBasis?: "gps" | "tee-card" | "tee-geom" | "card" | null;
   teeName?: string | null;
   resolveOpeningShot?: () => Promise<OpeningShot | null>;
+  /** Explicit spoken score-entry routing (specs/caddie-two-tier-routing-plan
+   *  .md §9) — passed straight through to `useCaddieLiveSession`. */
+  enterScores?: (utterance: string, holeNumber?: number) => Promise<ScoreEntryResult>;
   /** Whether the caddie sheet UI is currently open. Read ONLY by the
    *  fallback-auto-release effect below — eligibility itself does not
    *  depend on sheet-open state (that's the whole point of detaching). */
@@ -102,6 +106,7 @@ export function useDetachedCaddieLive({
   yardageBasis = null,
   teeName = null,
   resolveOpeningShot,
+  enterScores,
   sheetOpen,
   eligible,
 }: UseDetachedCaddieLiveOptions): DetachedCaddieLive {
@@ -119,6 +124,7 @@ export function useDetachedCaddieLive({
     yardageBasis,
     teeName,
     resolveOpeningShot,
+    enterScores,
   });
 
   const start = useCallback(() => {

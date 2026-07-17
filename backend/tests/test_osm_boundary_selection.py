@@ -65,6 +65,7 @@ def _hole(
     ref: str,
     coords: list[list[float]],
     course_name: str | None = None,
+    osm_id: str | None = None,
 ) -> dict:
     """GeoJSON LineString hole Feature, matching osm.py's output shape."""
     return {
@@ -72,7 +73,7 @@ def _hole(
         "geometry": {"type": "LineString", "coordinates": coords},
         "properties": {
             "featureType": "hole",
-            "osm_id": f"way/h{ref}",
+            "osm_id": osm_id or f"way/h{ref}",
             "ref": ref,
             "par": 4,
             "handicap": 9,
@@ -406,6 +407,77 @@ class TestApplyBoundaryHoleSelection:
             if h["properties"]["course_name"] == "Combined Course"
         }
         assert selected_refs == {"1", "2"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Duplicate-ref dedupe — two-course-one-boundary fixture (Pine Valley shape)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Regression coverage for the 2026-07-17 championship-course ingest incident:
+# a club boundary enclosing BOTH a championship course and an executive/short
+# course (Pine Valley main + short course) selects hole ways from both, and
+# when they share refs (both have a "1", "2", ...) the par merge + polygon
+# grouping downstream key on ref alone and silently blend them (first ingest
+# produced holes 1-10 all par 3, from the short course overwriting the main
+# course). Fix: keep only the longest way per ref among the inside-boundary
+# set.
+
+class TestDuplicateHoleRefDedupe:
+    def test_longest_way_wins_when_refs_collide(self):
+        # Both fully inside the square boundary, both ref "1" — main-course
+        # hole (~1 km) vs. short-course hole (~200 m).
+        main_hole  = _hole("1", [[-121.953, 36.566], [-121.947, 36.574]], osm_id="way/main1")
+        short_hole = _hole("1", [[-121.951, 36.569], [-121.949, 36.570]], osm_id="way/short1")
+        result = apply_boundary_hole_selection(
+            [main_hole, short_hole], _SQUARE_POLYGON, "Pine Valley"
+        )
+        tagged = [h for h in result if h["properties"]["course_name"] == "Pine Valley"]
+        assert len(tagged) == 1
+        assert tagged[0]["properties"]["osm_id"] == "way/main1"
+
+    def test_short_course_loser_is_left_untagged(self):
+        main_hole  = _hole("1", [[-121.953, 36.566], [-121.947, 36.574]], osm_id="way/main1")
+        short_hole = _hole("1", [[-121.951, 36.569], [-121.949, 36.570]], osm_id="way/short1")
+        result = apply_boundary_hole_selection(
+            [main_hole, short_hole], _SQUARE_POLYGON, "Pine Valley"
+        )
+        loser = next(h for h in result if h["properties"]["osm_id"] == "way/short1")
+        assert loser["properties"]["course_name"] is None
+        assert loser is short_hole  # untouched original object, same as "outside" holes
+
+    def test_non_colliding_refs_are_unaffected(self):
+        # Two different refs, no collision — both should be selected as before.
+        hole1 = _hole("1", [[-121.953, 36.567], [-121.947, 36.573]], osm_id="way/h1")
+        hole2 = _hole("2", [[-121.952, 36.566], [-121.946, 36.572]], osm_id="way/h2")
+        result = apply_boundary_hole_selection([hole1, hole2], _SQUARE_POLYGON, "Pine Valley")
+        tagged_ids = {
+            h["properties"]["osm_id"] for h in result
+            if h["properties"]["course_name"] == "Pine Valley"
+        }
+        assert tagged_ids == {"way/h1", "way/h2"}
+
+    def test_three_way_collision_keeps_only_longest(self):
+        refs_and_ids = [
+            ("way/short_a", [[-121.951, 36.5690], [-121.950, 36.5695]]),   # shortest
+            ("way/short_b", [[-121.951, 36.5680], [-121.950, 36.5690]]),   # middle
+            ("way/main",    [[-121.953, 36.566], [-121.947, 36.574]]),    # longest
+        ]
+        holes = [_hole("7", coords, osm_id=osm_id) for osm_id, coords in refs_and_ids]
+        result = apply_boundary_hole_selection(holes, _SQUARE_POLYGON, "Pine Valley")
+        tagged = [h for h in result if h["properties"]["course_name"] == "Pine Valley"]
+        assert len(tagged) == 1
+        assert tagged[0]["properties"]["osm_id"] == "way/main"
+
+    def test_refless_holes_never_collide(self):
+        # No ref tag at all — should not be deduped against each other.
+        h_a = _hole("", [[-121.953, 36.567], [-121.947, 36.573]], osm_id="way/a")
+        h_b = _hole("", [[-121.952, 36.566], [-121.946, 36.572]], osm_id="way/b")
+        result = apply_boundary_hole_selection([h_a, h_b], _SQUARE_POLYGON, "Pine Valley")
+        tagged_ids = {
+            h["properties"]["osm_id"] for h in result
+            if h["properties"]["course_name"] == "Pine Valley"
+        }
+        assert tagged_ids == {"way/a", "way/b"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

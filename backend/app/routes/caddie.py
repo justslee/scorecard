@@ -16,7 +16,6 @@ from app.caddie.types import (
     VoiceCaddieResponse,
     PlayerStatsRequest,
     HoleIntelligence,
-    TeeShotNumbers,
 )
 from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
@@ -28,11 +27,10 @@ from app.caddie.hazards import (
     extract_corridor_profile,
     extract_hole_bend,
     extract_hole_hazards,
-    format_bend_line,
     format_hazards_line,
 )
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
-from app.caddie.guide_writer import format_guide_line, validate_guide
+from app.caddie.guide_writer import validate_guide
 from app.caddie.voice_prompts import (
     DECISION_GROUNDING_RULE,
     INPUT_GROUNDING_RULE,
@@ -47,8 +45,9 @@ from app.caddie.voice_prompts import (
     output_language_rule,
 )
 from app.caddie import tools as caddie_tools
-from app.caddie import strategy as strategy_mod
-from app.caddie.tool_loop import run_caddie_turn
+from app.caddie.routing import Intent, classify_intent
+from app.caddie.strategy_turn import run_strategy_turn
+from app.caddie.tool_loop import READING_THE_HOLE_STATUS_LABEL, run_caddie_turn
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.caddie.personalities import (
@@ -59,7 +58,7 @@ from app.caddie.personalities import (
     DEFAULT_PERSONALITY_ID,
 )
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
-from app.caddie.session import sessions, get_owned_session
+from app.caddie.session import RoundSession, sessions, get_owned_session
 from app.db.engine import async_session
 from app.db.models import PlayerProfile
 from app.caddie import memory as memory_mod
@@ -712,23 +711,19 @@ async def session_strategy(
     """Frontier-reasoned tee-to-green strategy for the realtime-only
     `get_strategy` voice tool (specs/caddie-smart-strategy-tool-plan.md).
 
-    Caller must own the round. Assembles the same grounded engine payloads
-    every other tool reads (app/caddie/tools.py, app/caddie/strategy.py),
-    frames them as a deterministic GROUND TRUTH block, and makes ONE OpenAI
-    `gpt-5.6-sol` call (Responses API) to synthesize an ~80-word spoken
-    strategy. The reply is fail-closed validated (hazard-type + side-flip +
-    injection + length, reusing guide_writer's machinery) before it is ever
-    returned; on any reject, API error, timeout, or missing OPENAI_API_KEY,
-    this degrades to a deterministic engine-numbers line composed purely from
-    the recommendation — never a fabricated strategy, never a mid-round 500,
-    when a recommendation exists. Internals go to `log.exception`/`log.
-    warning`; the client only ever sees the honest degraded/available:false
-    response ([[no-fake-data-fallbacks]]).
+    Caller must own the round. A thin wrapper (auth + Pydantic in/out) —
+    ownership stays here via `get_owned_session`; the actual payload/ground-
+    truth/synthesis/validation/cache/degrade machinery lives in
+    `app.caddie.strategy_turn.run_strategy_turn` (specs/caddie-two-tier-
+    routing-plan.md §2), the ONE implementation this endpoint shares with the
+    text mouth's ADVICE-class interception (`session_voice`) — one cache key,
+    one answer, never two mouths disagreeing mid-round. Internals go to
+    `log.exception`/`log.warning`; the client only ever sees the honest
+    degraded/available:false response ([[no-fake-data-fallbacks]]).
     """
     session = await get_owned_session(request.round_id, user_id)
     hole = request.hole_number or session.current_hole
-
-    payload = await strategy_mod.build_strategy_payload(
+    result = await run_strategy_turn(
         session,
         request.round_id,
         user_id,
@@ -737,93 +732,7 @@ async def session_strategy(
         hole_yards=request.hole_yards,
         yardage_basis=request.yardage_basis,
     )
-
-    rec = payload.get("recommendation") or {}
-    conditions = payload.get("conditions") or {}
-    carries = payload.get("carries") or {}
-    green_read = payload.get("green_read") or {}
-
-    numbers = {
-        "tee_shot_numbers": rec.get("tee_shot_numbers"),
-        "plays_like": conditions.get("plays_like"),
-        "hazards_line": conditions.get("hazards_line"),
-        "carries": [
-            {"type": c.get("type"), "side": c.get("side"), "carry_yards": c.get("carry_yards")}
-            for c in (carries.get("carries") or [])
-        ],
-        "green_read": {
-            "uphill_leave_side": green_read.get("uphill_leave_side"),
-            "available": bool(green_read.get("available", False)),
-        },
-    }
-
-    if rec.get("error"):
-        # No recommendation available at all (e.g. no yardage known yet) —
-        # honest empty, same discipline as every other tool's unmapped-hole
-        # answer. Never a fabricated strategy.
-        return SessionStrategyResponse(
-            available=False, hole_number=hole, reason=rec["error"], numbers=numbers,
-        )
-
-    def _degraded_line() -> str:
-        """Deterministic line composed purely from engine data — the honest
-        fallback on any reject/error/missing-key (plan §2.6)."""
-        tee_numbers = rec.get("tee_shot_numbers")
-        aim = (rec.get("aim_point") or {}).get("description") or "the center of the green"
-        miss = (rec.get("miss_side") or {}).get("preferred") or "unknown"
-        club = rec.get("club") or "unknown"
-        if tee_numbers:
-            line = (
-                f"{club}. {format_tee_numbers_line(TeeShotNumbers.model_validate(tee_numbers))} "
-                f"Aim: {aim}. Miss: {miss}."
-            )
-        else:
-            line = f"{club}. Aim: {aim}. Miss: {miss}."
-        gr_side = green_read.get("uphill_leave_side")
-        if green_read.get("available") and gr_side:
-            line += f" Green: the uphill putt leaves from the {gr_side}."
-        return line
-
-    model = strategy_mod._strategy_model()
-    ground_truth = strategy_mod.format_strategy_ground_truth(payload)
-    key = strategy_mod.cache_key(ground_truth, model)
-    cached = strategy_mod.cache_lookup(key)
-    if cached is not None:
-        return SessionStrategyResponse(
-            available=True,
-            hole_number=hole,
-            strategy=cached["strategy"],
-            degraded=cached["degraded"],
-            numbers=numbers,
-        )
-
-    try:
-        raw_text, _usage = await strategy_mod.synthesize_strategy(ground_truth, model=model)
-        validated = strategy_mod.validate_strategy_text(raw_text, conditions.get("hazards") or [])
-        if validated is None:
-            log.warning("session_strategy: validator rejected narrative for hole=%s", hole)
-            strategy_text = _degraded_line()
-            degraded = True
-        else:
-            strategy_text = validated
-            degraded = False
-    except Exception:
-        # Missing key / network / API error / bad model id — never surfaced
-        # to the client, and never a fabricated strategy. A recommendation
-        # exists here (the honest-empty branch above already returned), so
-        # the degraded line is always groundable.
-        log.exception("session_strategy: synthesis failed for hole=%s", hole)
-        strategy_text = _degraded_line()
-        degraded = True
-
-    if not degraded:
-        # Only successful, validated syntheses are cached — a transient
-        # failure must never calcify a degraded line for the full TTL.
-        strategy_mod.cache_store(key, {"strategy": strategy_text, "degraded": degraded})
-
-    return SessionStrategyResponse(
-        available=True, hole_number=hole, strategy=strategy_text, degraded=degraded, numbers=numbers,
-    )
+    return SessionStrategyResponse(**result)
 
 
 # ── Session-aware voice ──
@@ -951,6 +860,15 @@ async def _build_session_voice_prompt(
         # owned by the yardage line above); the effective/plays-like figure
         # is still stated concretely, as an elevation-adjusted DELTA on top
         # of that ground truth, not a rival claim about the base yardage.
+        #
+        # Structural context strip (specs/caddie-two-tier-routing-plan.md
+        # §3): hazards/bend/the cached guide/green-slope are STRATEGY
+        # INGREDIENTS — they live in the brain-composer's payload ONLY now
+        # (app/caddie/strategy.py). ADVICE-class turns never reach this
+        # prompt (intercepted server-side before the Claude loop runs, §5);
+        # Claude only ever answers FACT/OTHER turns, which resolve hazard
+        # facts honestly through the get_conditions/get_carries tool
+        # results, never a baked line here.
         elev = hole_intel.elevation_change_ft
         if elev and abs(elev) >= 5 and hole_intel.effective_yards is not None:
             direction = "uphill" if elev > 0 else "downhill"
@@ -958,18 +876,6 @@ async def _build_session_voice_prompt(
                 f"Elevation: plays {direction} {abs(round(elev))}ft — treat it as "
                 f"{hole_intel.effective_yards} yards for club selection."
             )
-        if hole_intel.hazards:
-            hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
-            if hazards_line:
-                context_parts.append(hazards_line)
-        bend_line = format_bend_line(request.hole_number, hole_intel.bend)
-        if bend_line:
-            context_parts.append(bend_line)
-        guide_line = format_guide_line(hole_intel.strategy_guide)
-        if guide_line:
-            context_parts.append(guide_line)
-        if hole_intel.green_slope:
-            context_parts.append(f"Green slope: {hole_intel.green_slope.description}")
 
     if session.weather:
         w = session.weather
@@ -1069,15 +975,64 @@ or known tendencies when relevant.
     return system_blocks, messages, persona_id
 
 
+# SCORE intent — text-mouth v1 honest handoff (specs/caddie-two-tier-routing
+# -plan.md §9): the live realtime session owns record_scores (the existing
+# parser + the existing score write path, wired client-side); the text path
+# has no live tool-context (players/handleSetScore) to route a write through
+# yet. A constant, never model-generated — the seam accepts a future
+# server-side write without rearchitecting this interception. First-person,
+# spoken-style wording (designer fold-in, 2026-07-17) — this line is TTS'd,
+# not read as app copy.
+_SCORE_TEXT_HANDOFF_LINE = "Scores go through the live caddie or your scorecard for now."
+
+
 @router.post("/session/voice", response_model=VoiceCaddieResponse)
 async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Voice caddie using session state — remembers entire round conversation.
 
-    Caller must own the round.
+    Caller must own the round. Intent routing (specs/caddie-two-tier-routing
+    -plan.md §1, §2, §9) runs BEFORE the Claude loop: an ADVICE-class ask
+    never reaches Claude — it routes straight to the one brain (`run_
+    strategy_turn`, the SAME implementation `/session/strategy` uses); a
+    SCORE-class ask gets the honest text-path handoff line. Both persist the
+    user/assistant pair to the message ledger exactly like a normal turn.
+    FACT/OTHER stays on the Claude tool loop, unchanged.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    intent = classify_intent(request.transcript)
+    if intent is Intent.ADVICE:
+        session = await get_owned_session(request.round_id, user_id)
+        hole = request.hole_number or session.current_hole
+        result = await run_strategy_turn(
+            session, request.round_id, user_id, hole,
+            distance_to_green_yards=request.distance_to_green_yards,
+            hole_yards=request.hole_yards,
+            yardage_basis=request.yardage_basis,
+        )
+        response_text = (
+            result.get("strategy")
+            or result.get("reason")
+            or "Say that once more? I want to get this right."
+        )
+        await sessions.append_message_pair(
+            request.round_id,
+            user_content=request.transcript,
+            assistant_content=response_text,
+            hole_number=request.hole_number,
+        )
+        return VoiceCaddieResponse(response=response_text)
+
+    if intent is Intent.SCORE:
+        await sessions.append_message_pair(
+            request.round_id,
+            user_content=request.transcript,
+            assistant_content=_SCORE_TEXT_HANDOFF_LINE,
+            hole_number=request.hole_number,
+        )
+        return VoiceCaddieResponse(response=_SCORE_TEXT_HANDOFF_LINE)
 
     system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
     # The tool loop resolves against the live session (same object the orb's
@@ -1227,6 +1182,48 @@ async def _sse_reply(
     yield "event: done\ndata: {}\n\n"
 
 
+async def _intercepted_reply_stream(
+    session: RoundSession,
+    request: SessionVoiceRequest,
+    user_id: str,
+    hole: int,
+    intent: Intent,
+) -> AsyncIterator[str]:
+    """SSE twin of the text-path ADVICE/SCORE interception in `session_voice`
+    (specs/caddie-two-tier-routing-plan.md §2, §9) — same framing contract as
+    `_sse_reply` (token/status/done/error) but without the Claude tool loop:
+    ADVICE routes straight to `run_strategy_turn` (one calm 'reading the
+    hole' status frame while the ~3-4s brain call is in flight, then the
+    strategy text as a single token frame); SCORE returns the honest
+    text-path handoff line instantly. Both persist the message pair exactly
+    like the normal streamed turn.
+    """
+    if intent is Intent.ADVICE:
+        yield f"event: status\ndata: {json.dumps(READING_THE_HOLE_STATUS_LABEL)}\n\n"
+        result = await run_strategy_turn(
+            session, request.round_id, user_id, hole,
+            distance_to_green_yards=request.distance_to_green_yards,
+            hole_yards=request.hole_yards,
+            yardage_basis=request.yardage_basis,
+        )
+        response_text = (
+            result.get("strategy")
+            or result.get("reason")
+            or "Say that once more? I want to get this right."
+        )
+    else:
+        response_text = _SCORE_TEXT_HANDOFF_LINE
+
+    yield f"event: token\ndata: {json.dumps(response_text)}\n\n"
+    await sessions.append_message_pair(
+        request.round_id,
+        user_content=request.transcript,
+        assistant_content=response_text,
+        hole_number=request.hole_number,
+    )
+    yield "event: done\ndata: {}\n\n"
+
+
 @router.post("/session/voice/stream")
 async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Streaming twin of /session/voice — same auth/gates/prompt assembly,
@@ -1237,10 +1234,23 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
     (missing API key, round not owned, etc.) is still a normal JSON
     HTTPException with headers not yet sent, identical to /session/voice.
     Only the Anthropic call itself runs inside the generator, after 200 OK.
+
+    Intent routing (specs/caddie-two-tier-routing-plan.md §2, §9) runs here
+    too, before prompt assembly: ADVICE/SCORE never build the Claude prompt
+    at all — they stream from `_intercepted_reply_stream` instead.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    intent = classify_intent(request.transcript)
+    if intent in (Intent.ADVICE, Intent.SCORE):
+        session = await get_owned_session(request.round_id, user_id)
+        hole = request.hole_number or session.current_hole
+        return StreamingResponse(
+            _intercepted_reply_stream(session, request, user_id, hole, intent),
+            media_type="text/event-stream",
+        )
 
     system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
     # Tool-resolution context — same live session the orb's HTTP tool

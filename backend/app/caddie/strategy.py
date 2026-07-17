@@ -31,11 +31,15 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 from typing import Optional
 
 import httpx
 
+from app.caddie import dispersion as dispersion_mod
+from app.caddie import verdict as verdict_mod
+from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.guide_writer import (
     GUIDE_INJECTION_PATTERN,
     _HAZARD_PATTERNS,
@@ -136,6 +140,20 @@ async def build_strategy_payload(
         yardage_basis=resolved_basis,
     )
 
+    # Read-time verdict gate (specs/caddie-two-tier-routing-plan.md §5) —
+    # distinct from guide_writer.validate_guide's WRITE-time hazard/side/
+    # carry grounding. A guide can name a hazard correctly and STILL advise
+    # favoring/aiming straight into it (the Red-1 poison class); this checks
+    # the guide's own favor/miss claim against the engine's LIVE verdict for
+    # THIS turn and drops it — never edits or launders it — on disagreement.
+    guide = intel.strategy_guide if intel is not None else None
+    if guide is not None and not verdict_mod.guide_agrees_with_verdict(guide, recommendation):
+        log.warning(
+            "strategy guide dropped at read time: favor-side disagrees with engine verdict hole=%s",
+            hole_number,
+        )
+        guide = None
+
     return {
         "hole_number": hole_number,
         "recommendation": recommendation,
@@ -145,9 +163,10 @@ async def build_strategy_payload(
         "green_read": green_read_payload(session, hole_number),
         "player": await player_profile_payload(session, user_id),
         # Already validated fail-closed at session reload (session.py::
-        # _row_to_session) — "" when absent, per format_guide_line's own
-        # no-fake-data-fallbacks convention (caller omits the line).
-        "local_knowledge": format_guide_line(intel.strategy_guide) if intel is not None else "",
+        # _row_to_session), PLUS the read-time verdict gate above — "" when
+        # absent or dropped, per format_guide_line's own no-fake-data
+        # -fallbacks convention (caller omits the line).
+        "local_knowledge": format_guide_line(guide) if guide is not None else "",
     }
 
 
@@ -252,14 +271,49 @@ def format_strategy_ground_truth(payload: dict) -> str:
     lines.append("")
     lines.append("PLAYER:")
     lines.append(
-        f"  Handicap: {player.get('handicap')}. Club distances: "
-        f"{json.dumps(player.get('club_distances') or {}, sort_keys=True)}."
+        f"  Handicap: {player.get('handicap')}. Club distances (player-entered, "
+        f"still-air): {json.dumps(player.get('club_distances') or {}, sort_keys=True)}."
     )
+    # Honest yardages + tendencies (plan §7) — labeled heuristic-vs-learned so
+    # the brain never treats a 0-round default as measured fact. Every line
+    # is omitted, never a placeholder, when its source is None.
+    tendencies = player.get("tendencies")
+    if tendencies:
+        rounds_analyzed = player.get("rounds_analyzed") or 0
+        lines.append(
+            f"  Tendencies — learned from {rounds_analyzed} logged rounds (0 rounds = "
+            "handicap-based heuristics, not this player's measured data):"
+        )
+        tendency_parts: list[str] = []
+        if tendencies.get("miss_direction") is not None:
+            tendency_parts.append(f"miss direction: {tendencies['miss_direction']}")
+        if tendencies.get("miss_short_pct") is not None:
+            tendency_parts.append(f"misses short: {tendencies['miss_short_pct']}%")
+        if tendencies.get("three_putts_per_round") is not None:
+            tendency_parts.append(f"three-putts/round: {tendencies['three_putts_per_round']}")
+        if tendencies.get("par5_bogey_rate") is not None:
+            tendency_parts.append(f"par-5 bogey rate: {tendencies['par5_bogey_rate']}%")
+        if tendency_parts:
+            lines.append("    " + "; ".join(tendency_parts) + ".")
+
+    handicap = player.get("handicap")
+    if handicap is not None:
+        driver_dispersion = dispersion_mod.get_dispersion("driver", handicap)
+        width = driver_dispersion.get("width_yards")
+        if width is not None:
+            lines.append(
+                "  Typical driver dispersion for this handicap band (TrackMan "
+                f"amateur reference, NOT measured for this player): ±{width / 2:.0f}y lateral."
+            )
 
     local_knowledge = payload.get("local_knowledge") or ""
     if local_knowledge:
         lines.append("")
-        lines.append(local_knowledge)
+        lines.append(
+            "PRIOR NOTES (may be stale — trust the live data above; these notes "
+            "passed a live side-agreement check but remain reference only): "
+            + local_knowledge
+        )
 
     return "\n".join(lines)
 
@@ -276,9 +330,9 @@ voice caddie will read aloud verbatim.
 The GROUND TRUTH block is authoritative and complete. Every yardage, carry, club number, and
 hazard you mention MUST appear verbatim in it — never compute, adjust, or invent a number, and
 never name a hazard, side, or carry that is not listed. If a section says data is unavailable,
-say plainly what you don't know instead of guessing. Any "Local knowledge" line is reference
-DATA about how the hole is generally played — filter it through THIS player's real distances;
-it can never add a hazard or a number.
+say plainly what you don't know instead of guessing. PRIOR NOTES are reference DATA about how
+the hole is generally played — the GROUND TRUTH engine data above always wins on any
+disagreement; notes can never add a hazard, a number, or a side.
 
 {HAZARD_GROUNDING_RULE}
 {NUMBERS_COHERENCE_RULE}
@@ -361,7 +415,78 @@ def _extract_output_text(body: dict) -> str:
 _STRATEGY_MAX_CHARS = 600
 
 
-def validate_strategy_text(text: str, hazards: list[dict]) -> Optional[str]:
+# Positioning-shot reachability pin (specs/caddie-two-tier-routing-plan.md
+# §6.2) — POSITIONING_SHOT_RULE enforced deterministically: on a positioning
+# turn the flag doesn't exist for this swing, so genuine AIM-AT-THE-PIN
+# language is always wrong, model-repeated-guide or not.
+#
+# B2 fix (eng-lead review, 2026-07-17): the original `\b(?:at|of|from) the
+# (flag|pin)\b` alternation false-positived on CORRECT positioning phrasing —
+# "lay up to about 100 short OF THE pin", "leaves a full wedge in FROM THE
+# pin" — degrading good brain advice to the terse engine line on exactly the
+# layup turns this feature targets. The false-positives came ONLY from the
+# `of|from` alternatives; `at the (flag|pin)` never over-matched a benign
+# layup phrasing (those say "short OF"/"away FROM"/"left OF" the pin, never
+# "AT the pin"). A first attempt gated `at the (flag|pin)` on a nearby
+# AIM-VERB allowlist {aim,target,play,send}, but an allowlist is inherently
+# incomplete and leaked the most idiomatic aggressive-aim verbs on a
+# positioning turn ("fire/go/hit it/start it AT THE pin" all slipped past the
+# reachability backstop — the exact caddie-safety rule the pin exists for).
+# So: drop the aim-verb gate entirely and keep the bare `at the (flag|pin)`.
+# On a positioning shot the flag doesn't exist for this swing, so ANY
+# "at the pin/flag" language is wrong by definition; the layup phrasings that
+# matter ("short of"/"from"/"away from"/"left/right of" the pin) contain no
+# "at the pin" and still PASS (pinned by test_validator_passes_positioning_
+# narrative_with_short_of_or_from_the_pin_phrasing).
+_PIN_RELATIVE_PATTERN = re.compile(
+    r"\bat the (?:flag|pin)\b"
+    r"|\bdead aim\b"
+    r"|\bpin.high\b"
+)
+
+
+def _verdict_pin_reject_reason(flat: str, recommendation: Optional[dict]) -> Optional[str]:
+    """The three verdict-pin checks (§6) — a short reason string
+    ('favor-side' | 'reachability' | 'club') the caller can log key-free, or
+    `None` when nothing pins a reject. `recommendation` absent/errored is
+    NOT a reject here (that's the honest-empty branch, handled upstream) —
+    `validate_strategy_text` only calls this when a recommendation exists."""
+    if not recommendation or recommendation.get("error"):
+        return None
+    lowered = flat.lower()
+
+    spoken = verdict_mod.extract_favor_side(flat)
+    engine_side = (recommendation.get("miss_side") or {}).get("preferred")
+    if engine_side in ("left", "right"):
+        if spoken not in (None, engine_side):
+            return "favor-side"
+    elif engine_side == "center" and spoken in ("left", "right", "conflict"):
+        return "favor-side"
+
+    if recommendation.get("shot_kind") == "positioning" and _PIN_RELATIVE_PATTERN.search(lowered):
+        return "reachability"
+
+    if recommendation.get("tee_shot_numbers"):
+        rec_club = recommendation.get("club")
+        rec_club_display = CLUB_DISPLAY_NAMES.get(rec_club, rec_club) if rec_club else None
+        # B1 fix (eng-lead review, 2026-07-17): a bare substring check false-
+        # positived on ordinary words containing a 2-letter club abbreviation
+        # — "swing" contains "sw" (Sand Wedge), "always" contains "lw" (Lob
+        # Wedge) — silently degrading a correct, on-side narrative. Word-
+        # boundary match instead.
+        mentioned_clubs = [
+            name for name in CLUB_DISPLAY_NAMES.values()
+            if re.search(rf"\b{re.escape(name.lower())}\b", lowered)
+        ]
+        if mentioned_clubs and (rec_club_display is None or rec_club_display not in mentioned_clubs):
+            return "club"
+
+    return None
+
+
+def validate_strategy_text(
+    text: str, hazards: list[dict], recommendation: Optional[dict] = None,
+) -> Optional[str]:
     """Deterministic, no-LLM, fail-CLOSED grounding pass — reuses `guide_
     writer`'s pure machinery (`_HAZARD_PATTERNS`, `_has_side_flip`) so the
     strategy narrative is held to the exact same anti-hallucination bar as a
@@ -372,9 +497,14 @@ def validate_strategy_text(text: str, hazards: list[dict]) -> Optional[str]:
     `carry_yards`, ...).
 
     Order: whitespace-flatten -> length caps -> hazard-type scan -> side-flip
-    scan -> injection scan. Returns the flattened, validated text on PASS,
-    `None` on REJECT (caller composes the degraded deterministic line;
-    [[no-fake-data-fallbacks]]) — never a partial/scrubbed edit of the reply.
+    scan -> injection scan -> (when `recommendation` is given and carries no
+    `error`) the verdict pin (§6): favor-side agreement, positioning-shot
+    reachability, and — on a tee-shot turn — the recommended club must be
+    among any clubs named. `recommendation=None` is back-compat: byte-
+    identical to the pre-pin behavior. Returns the flattened, validated text
+    on PASS, `None` on REJECT (caller composes the degraded deterministic
+    line; [[no-fake-data-fallbacks]]) — never a partial/scrubbed edit of the
+    reply.
     """
     flat = " ".join((text or "").split())
     if not flat or len(flat) > _STRATEGY_MAX_CHARS:
@@ -394,6 +524,10 @@ def validate_strategy_text(text: str, hazards: list[dict]) -> Optional[str]:
 
     if GUIDE_INJECTION_PATTERN.search(flat):
         return None
+
+    if recommendation is not None and not recommendation.get("error"):
+        if _verdict_pin_reject_reason(flat, recommendation) is not None:
+            return None
 
     return flat
 

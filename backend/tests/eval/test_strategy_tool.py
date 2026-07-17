@@ -385,6 +385,156 @@ def test_validator_flattens_internal_whitespace_and_newlines():
     assert result == "Hit driver. Aim center, commit."
 
 
+# ── Verdict-pinned validator (specs/caddie-two-tier-routing-plan.md §6) ──────
+
+
+def test_validator_rejects_favor_side_disagreeing_with_engine():
+    """Real geometry: bunker LEFT, water RIGHT (grounded, passes hazard/side
+    checks) — but the engine's own verdict says favor RIGHT, and the
+    narrative favors LEFT. The verdict pin catches what hazard-grounding
+    alone cannot (the Red-1 class: a correctly-named hazard, wrongly played)."""
+    rec = {"miss_side": {"preferred": "right"}}
+    text = "Hit driver. Favor the left side off the tee. Bunker left. Water right."
+    assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
+
+
+def test_validator_rejects_lateral_favor_when_engine_says_center():
+    rec = {"miss_side": {"preferred": "center"}}
+    text = "Hit driver. Favor the left side off the tee. Bunker left. Water right."
+    assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hit driver. Take dead aim at the pin. Commit to the shot.",
+        # B2 delta (2026-07-17): a first fix gated "at the (flag|pin)" on an
+        # aim-verb allowlist {aim,target,play,send}, which LEAKED the most
+        # idiomatic aggressive-aim verbs on a positioning turn. Each of these
+        # tells an unreachable layup to aim at the flag and MUST reject.
+        "Hit driver and fire at the pin.",
+        "Go at the pin off the tee.",
+        "Just hit it at the pin.",
+        "Start it at the pin and let it ride.",
+        "Go right at the pin here.",
+    ],
+)
+def test_validator_rejects_pin_relative_language_on_positioning_shot(text):
+    """B2 (eng-lead review, 2026-07-17): genuine AIM-AT-THE-PIN language —
+    the flag doesn't exist for an unreachable positioning swing — still
+    rejects. The old text here used 'left OF THE flag', which the B2 fix
+    deliberately un-flags (see the pass-on-good regression right below).
+    Bare `at the (flag|pin)` on a positioning shot is wrong by definition,
+    so no aim-verb whitelist is used — every aggressive-aim verb rejects."""
+    rec = {"miss_side": {"preferred": "center"}, "shot_kind": "positioning"}
+    assert strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec) is None
+
+
+def test_validator_passes_positioning_narrative_with_short_of_or_from_the_pin_phrasing():
+    """B2 regression (eng-lead review): natural, CORRECT positioning-shot
+    phrasing — 'short of the pin', 'wedge in from the pin' — must never trip
+    the reachability pin. Only genuine aim-AT-the-pin language should; the
+    original `\\b(at|of|from) the (flag|pin)\\b` alternation was silently
+    degrading exactly the layup/positioning advice this feature targets."""
+    rec = {"miss_side": {"preferred": "center"}, "shot_kind": "positioning"}
+    text = (
+        "Lay up to about 100 short of the pin, that leaves a full wedge in "
+        "from the pin. Commit to the number."
+    )
+    result = strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec)
+    assert result == text
+
+
+def test_validator_requires_recommended_club_on_tee_shot_narrative():
+    rec = {
+        "miss_side": {"preferred": "center"},
+        "club": "driver",
+        "tee_shot_numbers": {"club": "driver"},
+    }
+    text = "Hit the 3 Wood here, safe play. Bunker left. Water right."
+    assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
+
+
+def test_validator_passes_tee_shot_narrative_containing_swing_and_always_substrings():
+    """B1 regression (eng-lead review): 'swing' contains 'sw' (Sand Wedge
+    display 'SW') and 'always' contains 'lw' (Lob Wedge 'LW') as BARE
+    SUBSTRINGS — the club pin must use word-boundary matching, never a
+    substring `in` check, or these ordinary words silently degrade a
+    correct, on-side tee-shot narrative to the terse engine line."""
+    rec = {
+        "miss_side": {"preferred": "right"},
+        "club": "driver",
+        "tee_shot_numbers": {"club": "driver"},
+    }
+    text = "Hit driver. Commit to a confident swing and always favor the right side off this tee."
+    result = strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec)
+    assert result == text
+
+
+def test_validator_without_recommendation_behaves_exactly_as_before():
+    """Back-compat pin: `recommendation=None` (the default) reproduces the
+    exact pre-pin behavior — clean text passes byte-identical, existing
+    hazard/side/injection rejects are untouched."""
+    clean_text = (
+        "Hit driver. Bunker left. Water right. Commit to the shot, take a smooth "
+        "two-putt read from mid green, stay calm and confident all day."
+    )
+    assert strategy_mod.validate_strategy_text(clean_text, _REAL_HAZARDS) == clean_text
+    assert strategy_mod.validate_strategy_text(clean_text, _REAL_HAZARDS, recommendation=None) == clean_text
+
+    flipped_text = "Hit driver toward the bunker on the right. Water right."
+    assert strategy_mod.validate_strategy_text(flipped_text, _REAL_HAZARDS) is None
+
+
+# ── Ground-truth: player block + prior-notes demotion (§5, §7) ─────────────
+
+
+def test_ground_truth_player_block_labels_heuristic_vs_learned():
+    payload = {
+        "recommendation": {
+            "club": "driver", "target_yards": 150, "raw_yards": 150,
+            "aim_point": {"description": "center"}, "miss_side": {"preferred": "center"},
+        },
+        "conditions": {}, "carries": {}, "bend": {}, "green_read": {},
+        "player": {
+            "handicap": 12.0,
+            "club_distances": {"Driver": 260},
+            "tendencies": {
+                "miss_direction": "left", "miss_short_pct": 55.0,
+                "three_putts_per_round": 1.8, "par5_bogey_rate": 18.0,
+            },
+            "rounds_analyzed": 12,
+        },
+        "local_knowledge": "",
+    }
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Tendencies — learned from 12 logged rounds" in block
+    assert "handicap-based heuristics, not this player's measured data" in block
+    assert "miss direction: left" in block
+    assert "±" in block  # driver-dispersion line present once handicap is known
+
+    # 0-round / no-profile case: honest omission, never a placeholder.
+    payload["player"]["tendencies"] = None
+    payload["player"]["rounds_analyzed"] = 0
+    block_no_profile = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Tendencies" not in block_no_profile
+
+
+def test_ground_truth_renders_prior_notes_demotion_label():
+    payload = {
+        "recommendation": {"error": "no data"},
+        "conditions": {}, "carries": {}, "bend": {}, "green_read": {},
+        "player": {"handicap": None, "club_distances": {}},
+        "local_knowledge": "Local knowledge: aim center, miss right.",
+    }
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert (
+        "PRIOR NOTES (may be stale — trust the live data above; these notes passed a "
+        "live side-agreement check but remain reference only): Local knowledge: aim "
+        "center, miss right."
+    ) in block
+
+
 # ── Cache ─────────────────────────────────────────────────────────────────
 
 

@@ -24,6 +24,7 @@ from app.services import courses_mapped as store
 from app.services.clerk_auth import require_owner
 from app.services.course_elevation import _precompute_course_elevations
 from app.services.course_guides import _precompute_course_guides
+from app.services.course_intel import _precompute_course_intel
 from app.services.golfapi_cache import FileCacheStore
 
 router = APIRouter(prefix="/api/courses/mapped", tags=["courses-mapped"])
@@ -94,15 +95,21 @@ async def create_mapped(body: CourseIn, background_tasks: BackgroundTasks = None
     if not body.id or not body.name:
         raise HTTPException(400, "Missing id or name")
     course = await store.upsert_course(body.model_dump())
-    # PRIMARY elevation + strategy-guide precompute triggers — fire AFTER the
-    # response is sent, never block course creation. Best-effort + idempotent.
-    # Elevation MUST run before guides: `_precompute_course_guides` reads
-    # `delta_ft`/`green_slope` off the green props for research context, and
-    # BackgroundTasks run in the order they're added.
+    # PRIMARY elevation + strategy-guide + course-intel precompute triggers —
+    # fire AFTER the response is sent, never block course creation.
+    # Best-effort + idempotent. Elevation MUST run before guides:
+    # `_precompute_course_guides` reads `delta_ft`/`green_slope` off the green
+    # props for research context, and BackgroundTasks run in the order
+    # they're added. Course-intel (course-discovery-intel) runs AFTER guides
+    # — it's a course-level, not per-hole, description and has no ordering
+    # dependency on the guide precompute, but keeping it last mirrors the
+    # ingest-time ordering convention (cheapest-first is not a requirement
+    # here; this is just consistent placement).
     if course:
         bg = background_tasks if background_tasks is not None else BackgroundTasks()
         bg.add_task(_precompute_course_elevations, course["id"])
         bg.add_task(_precompute_course_guides, course["id"])
+        bg.add_task(_precompute_course_intel, course["id"])
     return {"course": course}
 
 
@@ -139,15 +146,19 @@ async def put_mapped(course_id: str, body: CourseIn, background_tasks: Backgroun
     data = body.model_dump()
     data["id"] = course_id  # path id wins, mirroring the old route
     course = await store.upsert_course(data)
-    # PRIMARY elevation + strategy-guide precompute triggers (re-map case).
-    # Elevation is content-addressed (`elevation_coords_key`) — a moved green
-    # is resampled, an unmoved one is a cheap all-skip pass with ZERO 3DEP
-    # calls. Guides are idempotent on their own persisted-guide check. Order
+    # PRIMARY elevation + strategy-guide + course-intel precompute triggers
+    # (re-map case). Elevation is content-addressed (`elevation_coords_key`)
+    # — a moved green is resampled, an unmoved one is a cheap all-skip pass
+    # with ZERO 3DEP calls. Guides are idempotent on their own
+    # persisted-guide check. Course-intel is idempotent on its own
+    # `description`/`attempted_at` check (a re-map keeps its existing
+    # description — see the plan's "stale intel on re-map" risk note). Order
     # matters: elevation before guides (guides read delta_ft/green_slope).
     if course:
         bg = background_tasks if background_tasks is not None else BackgroundTasks()
         bg.add_task(_precompute_course_elevations, course["id"])
         bg.add_task(_precompute_course_guides, course["id"])
+        bg.add_task(_precompute_course_intel, course["id"])
     return {"course": course}
 
 

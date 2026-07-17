@@ -24,6 +24,7 @@ from app.caddie.types import (  # noqa: E402
 )
 from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
 from app.caddie.voice_prompts import build_realtime_instructions, _situation_block  # noqa: E402
+from app.caddie import tools as tools_mod  # noqa: E402
 from app.services.realtime_relay import DEFAULT_TOOLS, build_session_payload  # noqa: E402
 import app.routes.realtime as realtime_routes  # noqa: E402
 
@@ -39,6 +40,7 @@ EXPECTED_TOOL_NAMES = {
     "get_green_read",  # green-slope rotation (specs/caddie-green-slope-spatial-plan.md)
     "get_bend",  # dogleg geometry (specs/caddie-bend-distance-plan.md)
     "get_strategy",  # realtime-only frontier synthesis (specs/caddie-smart-strategy-tool-plan.md)
+    "record_scores",  # realtime-only score-entry routing (specs/caddie-two-tier-routing-plan.md §9)
 }
 
 
@@ -111,9 +113,13 @@ def test_instructions_include_hazard_grounding_rule():
     assert HAZARD_GROUNDING_RULE in text
 
 
-def test_situation_block_includes_the_exact_compact_hazards_line():
-    """Seeded hole_intel hazards render via the shared format_hazards_line —
-    the model sees the compact line, not a hand-rolled string."""
+def test_situation_block_never_includes_the_compact_hazards_line():
+    """UPDATED specs/caddie-two-tier-routing-plan.md §3 (the structural pin):
+    seeded hole_intel hazards no longer reach the realtime mouth's baked
+    instructions at all — hazard SIDE detail is a strategy ingredient now,
+    reachable only via the get_strategy brain payload or the get_conditions/
+    get_carries FACT tools. Was `test_situation_block_includes_the_exact_
+    compact_hazards_line`."""
     session = RoundSession(
         round_id="r1",
         user_id="u1",
@@ -132,7 +138,7 @@ def test_situation_block_includes_the_exact_compact_hazards_line():
         },
     )
     text = build_realtime_instructions(_persona(), session=session)
-    assert "Hole 4 hazards: bunker L 245y, water R 190-230y" in text
+    assert "Hole 4 hazards: bunker L 245y, water R 190-230y" not in text
 
 
 def test_situation_block_no_hazard_hole_has_directive_but_no_fabricated_feature():
@@ -158,9 +164,12 @@ def test_situation_block_no_hazard_hole_has_directive_but_no_fabricated_feature(
 # ── Strategy guide: both-mouth injection (caddie-hole-strategy-guides Slice 1) ──
 
 
-def test_situation_block_includes_the_guide_line_when_present():
-    """A seeded strategy_guide reaches the realtime situation block via the
-    shared format_guide_line renderer, labeled as reference data."""
+def test_situation_block_never_includes_the_guide_line_even_when_present():
+    """UPDATED specs/caddie-two-tier-routing-plan.md §3: a seeded
+    strategy_guide is a STRATEGY ingredient now — it never reaches the
+    realtime situation block, only the get_strategy brain payload (gated at
+    read time against the engine's verdict, §5). Was `test_situation_block_
+    includes_the_guide_line_when_present`."""
     session = RoundSession(
         round_id="r1",
         user_id="u1",
@@ -178,9 +187,9 @@ def test_situation_block_includes_the_guide_line_when_present():
         },
     )
     block = _situation_block(session)
-    assert "Local knowledge: Favor the left side off the tee." in block
+    assert "Local knowledge: Favor the left side off the tee." not in block
     text = build_realtime_instructions(_persona(), session=session)
-    assert "Local knowledge: Favor the left side off the tee." in text
+    assert "Local knowledge: Favor the left side off the tee." not in text
 
 
 def test_situation_block_omits_the_guide_line_when_absent():
@@ -320,3 +329,25 @@ async def test_in_round_mint_rejects_non_owner(monkeypatch):
             user_id="intruder",
         )
     assert ei.value.status_code == 404
+
+
+# ── record_scores — realtime-only (specs/caddie-two-tier-routing-plan.md §9) ─
+
+
+def test_record_scores_present_in_realtime_tools_absent_from_text_tools():
+    """Same discipline as get_strategy (D7/plan §9): record_scores is a
+    realtime-only tool, never in TEXT_TOOLS (which would bust the text
+    mouth's cached prompt prefix mid-round)."""
+    assert "record_scores" in {t["name"] for t in tools_mod.REALTIME_ONLY_TOOLS}
+    assert "record_scores" not in {t["name"] for t in tools_mod.TEXT_TOOLS}
+    assert "record_scores" in {t["name"] for t in tools_mod.realtime_tools()}
+
+
+async def test_resolve_tool_record_scores_is_honest_unknown():
+    """The server-side text tool loop can't reach record_scores (it's
+    dispatched client-side, realtime.ts) — `resolve_tool` answers the same
+    honest unknown-tool error it would for any other realtime-only name."""
+    session = RoundSession(round_id="r1", user_id="u1", current_hole=1)
+    ctx = tools_mod.ToolContext(session=session, round_id="r1", user_id="u1", default_hole=1)
+    result = await tools_mod.resolve_tool("record_scores", {"utterance": "I made a 5"}, ctx)
+    assert result == {"error": "Unknown tool: record_scores"}

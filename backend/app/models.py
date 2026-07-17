@@ -273,6 +273,46 @@ class CourseReviewCreate(BaseModel):
     playedAt: Optional[date] = None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Course intel (course-discovery-intel) — kept in sync with frontend
+# types.ts CourseIntel. One shape feeds BOTH the map tap-sheet and the course
+# detail page. Pure-DB read; description is a precomputed cache — see
+# app/services/course_intel.py and app/routes/course_intel.py. NOT
+# app.caddie.course_intel (the live per-hole caddie intelligence builder,
+# distinct module — see that module's docstring).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class CourseIntelDescription(BaseModel):
+    text: Optional[str] = None                # composed prose; null = not yet seeded
+    provenance: Optional[str] = None           # "landscape" | "enriched" | None
+    factsUsed: list[str] = Field(default_factory=list)
+    generatedAt: Optional[str] = None          # ISO datetime
+    model: Optional[str] = None
+
+
+class CourseIntelStars(BaseModel):
+    avg: Optional[float] = None                # null iff count == 0 — never a fabricated 0.0
+    count: int = 0
+
+
+class CourseIntelStats(BaseModel):
+    parTotal: Optional[int] = None             # null if not mapped
+    yardageByTee: Optional[dict[str, int]] = None
+    holesMapped: Optional[int] = None          # count of REAL public.holes rows, null if 0
+    roundsPlayed: int = 0                      # honest count, 0 is real
+    avgScore: Optional[float] = None           # null unless >=1 COMPLETE round exists
+
+
+class CourseIntel(BaseModel):
+    """Response contract (camelCase) — mirrors frontend types.ts CourseIntel."""
+
+    courseId: str                              # public.courses.id
+    description: CourseIntelDescription
+    stars: CourseIntelStars
+    stats: CourseIntelStats
+
+
 # ============ Game Settlement ============
 
 class SettlementTransfer(BaseModel):

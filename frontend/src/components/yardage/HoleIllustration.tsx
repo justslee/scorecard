@@ -1,5 +1,18 @@
 "use client";
 
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { useReducedMotion } from "framer-motion";
+import { T } from "./tokens";
+import { shotPointForPath, type PathPoint } from "@/lib/hole-shot-point";
+import { bookTargetDistances, clampToDiagram } from "@/lib/yardage-book-target";
+import { haptic } from "@/lib/haptics";
+
 // Abstract top-down hole diagram — ported from the prototype.
 
 export type HoleSpec = {
@@ -75,19 +88,41 @@ function fairwayRibbon(pts: Array<[number, number]>, widthStart = 0.18, widthEnd
   );
 }
 
-export default function HoleIllustration({
-  holeNumber = 1,
-  size = 320,
-  shotPoint = null,
-  showDetail = true,
-  accent = "oklch(0.54 0.18 28)",
-}: {
-  holeNumber?: number;
-  size?: number;
-  shotPoint?: [number, number] | null;
-  showDetail?: boolean;
-  accent?: string;
-}) {
+export type AimReadout = { fromTee: number; toGreen: number };
+
+/** Imperative escape hatch for the ONE action a parent needs to trigger on
+ * internal aim state: clearing it. Keeps `aim`/`dragging` fully internal to
+ * this component (minimal prop surface) while still letting HoleCard's DOM
+ * pill own the × control. */
+export type HoleIllustrationHandle = {
+  clearAim: () => void;
+};
+
+const HoleIllustration = forwardRef<
+  HoleIllustrationHandle,
+  {
+    holeNumber?: number;
+    size?: number;
+    shotPoint?: [number, number] | null;
+    showDetail?: boolean;
+    accent?: string;
+    /** Fires whenever the custom-aim readout changes — null when no custom aim
+     * is active (cleared, or hole just changed). HoleCard's top-right pill is
+     * the single readout surface (specs/yardage-target-concept.md §3); this
+     * component owns the drag/aim geometry but never draws its own panel. */
+    onAimChange?: (r: AimReadout | null) => void;
+  }
+>(function HoleIllustration(
+  {
+    holeNumber = 1,
+    size = 320,
+    shotPoint = null,
+    showDetail = true,
+    accent = "oklch(0.54 0.18 28)",
+    onAimChange,
+  },
+  ref,
+) {
   const hole = HOLES[(holeNumber - 1) % HOLES.length];
   const VB = 100;
   const scale = (v: number) => v * VB;
@@ -96,8 +131,159 @@ export default function HoleIllustration({
   const tee = hole.path[0];
   const green = hole.path[hole.path.length - 1];
 
+  // ── Draggable aim target (owner ask 2026-07-17) ──────────────────────────
+  // Aim state lives INSIDE this component — no lift to HoleCard, `shotPoint`
+  // prop contract stays untouched. `aim` is the user's drag override; when
+  // null the reticle is seeded from `shotPoint` (or the path midpoint) so
+  // there is ALWAYS something to grab. See specs/draggable-target-plan.md §2.4.
+  const svgRef = useRef<SVGSVGElement>(null);
+  const hitRef = useRef<SVGCircleElement>(null);
+  const [aim, setAim] = useState<PathPoint | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const pointerIdRef = useRef<number | null>(null);
+  const reduceMotion = useReducedMotion();
+
+  // Reset on hole change — adjust state during render (React's documented
+  // pattern for "derived from a changed prop"), not in an effect, so there's
+  // no extra render pass / flash of the old hole's aim point. Don't rely on
+  // the consumer remounting via a keyed AnimatePresence — reset locally too,
+  // per the plan's edge-case guard.
+  const [lastHoleNumber, setLastHoleNumber] = useState(holeNumber);
+  if (holeNumber !== lastHoleNumber) {
+    setLastHoleNumber(holeNumber);
+    setAim(null);
+    setDragging(false);
+  }
+  // Refs aren't rendering state — React's rules disallow touching them
+  // during render, so the in-flight-pointer-id reset happens in an effect
+  // instead (still fires on the same hole-change, just a tick later; the
+  // state reset above already zeroed `dragging`/`aim` synchronously).
+  useEffect(() => {
+    pointerIdRef.current = null;
+  }, [holeNumber]);
+
+  const seed = shotPoint ?? shotPointForPath(hole.path) ?? tee;
+  const aimPoint = aim ?? seed;
+
+  // Screen→viewBox conversion via getScreenCTM().inverse() (canonical path,
+  // plan §2.5) — keeps the reticle exactly under the finger regardless of the
+  // card's rendered size (190 collapsed / 340 expanded). Falls back to a
+  // bounding-rect ratio if the CTM isn't available yet; equivalent here
+  // because the viewBox is a uniform square (width === height).
+  function toSvgPoint(e: { clientX: number; clientY: number }): PathPoint {
+    const svg = svgRef.current;
+    if (svg) {
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        const pt = svg.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const loc = pt.matrixTransform(ctm.inverse());
+        return [loc.x / VB, loc.y / VB];
+      }
+      const rect = svg.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
+      }
+    }
+    return aimPoint;
+  }
+
+  // Ref mirror of the latest `toSvgPoint` closure (same pattern as
+  // `onAimChangeRef` below) — the native listeners wired up in the effect
+  // further down are attached ONCE (empty deps), so they must read fresh
+  // state through refs rather than closing over a stale render's values.
+  const toSvgPointRef = useRef(toSvgPoint);
+  useEffect(() => {
+    toSvgPointRef.current = toSvgPoint;
+  });
+
+  function handlePointerDown(e: PointerEvent) {
+    e.stopPropagation();
+    if (pointerIdRef.current !== null) return; // ignore a second finger mid-drag
+    pointerIdRef.current = e.pointerId;
+    (e.currentTarget as SVGCircleElement).setPointerCapture(e.pointerId);
+    setDragging(true);
+    haptic("light"); // once per drag-start, matches the map's feel
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    if (pointerIdRef.current !== e.pointerId) return;
+    e.stopPropagation();
+    setAim(clampToDiagram(toSvgPointRef.current(e)));
+  }
+
+  function endDrag(e: PointerEvent) {
+    if (pointerIdRef.current !== e.pointerId) return;
+    e.stopPropagation();
+    pointerIdRef.current = null;
+    setDragging(false);
+    try {
+      (e.currentTarget as SVGCircleElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // already released (e.g. pointercancel) — fine to ignore
+    }
+  }
+
+  // Wire the drag via NATIVE addEventListener rather than React's
+  // onPointerDown/Move/Up JSX props. Root cause of the card-wobble bug
+  // (backlog: yardage-book-card-wobble-drag-isolation): the round page's
+  // ancestor framer-motion `drag="x"` hole-swipe wrapper installs its OWN
+  // native pointerdown listener directly on its DOM node. That listener
+  // fires during REAL native event bubbling — which completes in full
+  // before React's synthetic system (delegated from the root in React 17+)
+  // ever dispatches to this component's handlers. So a React
+  // SyntheticEvent.stopPropagation() call here always runs too late to stop
+  // framer's PanSession from starting, and the card visibly rubber-banded a
+  // few px on every reticle drag. A capture-phase React handler co-located
+  // with this node's bubble handler was tried and REJECTED — in React 19 it
+  // aborts the WHOLE synthetic dispatch for the node (capture + bubble share
+  // one ordered list; calling stopPropagation mid-list skips the rest),
+  // silently killing the drag entirely. A plain native listener attached to
+  // THIS element runs at the true DOM "target" phase: stopPropagation()
+  // there prevents the event from ever reaching the ancestor, and there's no
+  // React synthetic dispatch in the mix to poison.
+  useEffect(() => {
+    const el = hitRef.current;
+    if (!el) return;
+    el.addEventListener("pointerdown", handlePointerDown);
+    el.addEventListener("pointermove", handlePointerMove);
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+    return () => {
+      el.removeEventListener("pointerdown", handlePointerDown);
+      el.removeEventListener("pointermove", handlePointerMove);
+      el.removeEventListener("pointerup", endDrag);
+      el.removeEventListener("pointercancel", endDrag);
+    };
+    // Intentionally empty deps: the handlers above only close over stable
+    // refs/setters (or read through toSvgPointRef), so they never go stale;
+    // re-registering per render would be pointless churn.
+  }, []);
+
+  const { toTarget, toGreen } = bookTargetDistances(aimPoint, hole.path, hole.yards);
+  const reticleColor = dragging ? accent : T.ink;
+  const colorTransition = reduceMotion ? "none" : "stroke 0.2s ease, fill 0.2s ease";
+
+  useImperativeHandle(ref, () => ({
+    clearAim: () => setAim(null),
+  }));
+
+  // Surface the readout to HoleCard's real pill (specs/yardage-target-concept.md
+  // §3 — reuse the ONE existing badge, never a second in-SVG panel). Reads via
+  // a ref so a fresh `onAimChange` identity every parent render doesn't retrigger
+  // this effect (and loop) — it should only fire when the readout itself changes,
+  // during AND after a drag (persists until cleared), null when no custom aim.
+  const onAimChangeRef = useRef(onAimChange);
+  useEffect(() => {
+    onAimChangeRef.current = onAimChange;
+  });
+  useEffect(() => {
+    onAimChangeRef.current?.(aim ? { fromTee: toTarget, toGreen } : null);
+  }, [aim, toTarget, toGreen]);
+
   return (
-    <svg viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
+    <svg ref={svgRef} viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
       <defs>
         <pattern id={`rough-${holeNumber}`} width="2" height="2" patternUnits="userSpaceOnUse">
           <rect width="2" height="2" fill="#cfc9b7" />
@@ -135,15 +321,74 @@ export default function HoleIllustration({
         <circle r="0.6" fill="#f4f1ea" />
       </g>
 
-      {shotPoint && (
-        <g transform={`translate(${scale(shotPoint[0])}, ${scale(shotPoint[1])})`}>
-          <circle r="2.5" fill={accent} opacity="0.2">
-            <animate attributeName="r" values="2.5;4;2.5" dur="2.4s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.2;0;0.2" dur="2.4s" repeatCount="indefinite" />
-          </circle>
-          <circle r="1.2" fill={accent} stroke="#f4f1ea" strokeWidth="0.3" />
+      {/* Draggable aim reticle — supersedes the old passive shotPoint pulse
+          (never both: two markers would be noise). One dashed thread while
+          dragging, echoing the map's "what's left" leg, but restrained —
+          no permanent tee→target leg on this smaller, calmer surface. */}
+      <line
+        x1={scale(aimPoint[0])}
+        y1={scale(aimPoint[1])}
+        x2={scale(green[0])}
+        y2={scale(green[1])}
+        stroke={T.pencil}
+        strokeWidth="0.3"
+        strokeDasharray="1 1.5"
+        style={{
+          opacity: dragging ? 0.35 : 0,
+          transition: reduceMotion ? "none" : "opacity 0.3s ease",
+        }}
+      />
+
+      {/* Translate via the XML attribute (position tracks the pointer
+          glued, every render, no CSS transition — no lag). Scale-on-grab
+          lives on a NESTED <g> as a separate CSS transform, so the grab
+          bounce can spring/ease independently of position. (A CSS
+          `transform` style completely overrides the XML `transform`
+          attribute on the same element per SVG2/CSS Transforms — mixing
+          both on ONE <g> would silently drop the translate, so they're
+          split across parent/child instead.) */}
+      <g transform={`translate(${scale(aimPoint[0])}, ${scale(aimPoint[1])})`}>
+        <g
+          style={{
+            transform: `scale(${dragging ? 1.15 : 1})`,
+            transformOrigin: "0px 0px",
+            transition: reduceMotion ? "none" : "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          }}
+        >
+          <circle r="3.2" fill="none" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="0" y1="-3.6" x2="0" y2="-4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="0" y1="3.6" x2="0" y2="4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="3.6" y1="0" x2="4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="-3.6" y1="0" x2="-4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <circle r="0.9" fill={reticleColor} stroke={T.paper} strokeWidth="0.3" style={{ transition: colorTransition }} />
         </g>
-      )}
+      </g>
+
+      {/* Invisible hit target, ≥44pt physical touch target at both card
+          sizes (r=12 viewBox units ⇒ ~45.6px diameter at the 190px
+          collapsed card). Sits last so it's on top for hit-testing; the
+          visible glyph above is purely decorative. */}
+      <circle
+        ref={hitRef}
+        cx={scale(aimPoint[0])}
+        cy={scale(aimPoint[1])}
+        r="12"
+        fill="transparent"
+        style={{ touchAction: "none", cursor: "grab" }}
+        // Pointer handlers are wired imperatively via native addEventListener
+        // (see the effect above) rather than JSX onPointerDown/Move/Up props
+        // — that's what lets stopPropagation() actually isolate the drag from
+        // the round page's framer-motion `drag="x"` hole-swipe wrapper (see
+        // the effect's comment for why). setPointerCapture (inside
+        // handlePointerDown) still reroutes all subsequent pointermove/up to
+        // this element regardless of finger movement; touch-action:none
+        // blocks native browser pan gestures too. Do NOT add an
+        // onPointerDownCapture alongside a co-located bubble onPointerDown on
+        // this node: in React 19 that aborts the whole synthetic dispatch,
+        // silently killing the drag (regression, fixed — see git history).
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Drag aim target"
+      />
 
       {showDetail && (
         <>
@@ -153,4 +398,6 @@ export default function HoleIllustration({
       )}
     </svg>
   );
-}
+});
+
+export default HoleIllustration;

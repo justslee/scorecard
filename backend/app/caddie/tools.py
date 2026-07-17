@@ -254,6 +254,28 @@ REALTIME_ONLY_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "name": "record_scores",
+        "description": (
+            "Enter hole SCORES on the scorecard (strokes — distinct from record_shot, which "
+            "logs a single swing). Call this the moment the player states a score for "
+            "themselves or anyone in the group: 'I made a 5', 'put me down for a 5', 'par for "
+            "me, double for Mike'. Pass the player's words verbatim in utterance; the score is "
+            "written directly. The result lists exactly what was recorded — give a brief, "
+            "natural acknowledgment in the flow of conversation (like 'Got it, 5') and move "
+            "on; do NOT read every score back by name and number, and never ask the player to "
+            "confirm before writing. Only if the result reports an error or an unmatched name "
+            "should you say so and ask them to repeat."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "utterance": {"type": "string", "description": "The player's words, verbatim."},
+                "hole_number": {"type": "integer", "description": "Hole scored (1-18). Omit for the current hole."},
+            },
+            "required": ["utterance"],
+        },
+    },
 ]
 
 

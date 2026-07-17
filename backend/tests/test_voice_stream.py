@@ -480,7 +480,12 @@ async def _no_memories(user_id):
 
 
 @pytest.mark.asyncio
-async def test_build_session_voice_prompt_includes_guide_line_when_present(monkeypatch):
+async def test_build_session_voice_prompt_never_includes_guide_line_even_when_present(monkeypatch):
+    """UPDATED specs/caddie-two-tier-routing-plan.md §3: the cached guide is
+    a brain-payload-only ingredient now (gated at read time against the
+    engine's verdict, §5) — ADVICE turns are intercepted before Claude ever
+    runs (§5), so the text mouth's baked prompt never needs it. Was
+    `test_build_session_voice_prompt_includes_guide_line_when_present`."""
     session = RoundSession(
         round_id="round-1",
         user_id="user-1",
@@ -512,7 +517,7 @@ async def test_build_session_voice_prompt_includes_guide_line_when_present(monke
     )
     system, _, _ = await caddie_routes._build_session_voice_prompt(request, "user-1")
 
-    assert "Local knowledge: Favor the left side off the tee." in _flat_system(system)
+    assert "Local knowledge: Favor the left side off the tee." not in _flat_system(system)
 
 
 @pytest.mark.asyncio
