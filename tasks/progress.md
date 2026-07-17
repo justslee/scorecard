@@ -18765,3 +18765,23 @@ sections; description slot empty-safe until seeded) -> land on integration/next 
 ## AWAITING — Explore(frontend map/detail/types), then PM + designer concept (parallel)
 Next: dispatch product-manager (spec) + designer (concept + Bethpage Black exemplar) in parallel; then fable Plan;
 then builder on the no-migration slice. If I die: reconcile from origin/integration/next; no code landed yet.
+
+## 2026-07-17 DONE — caddie-tree-span-gap LANDED on integration/next @ 6feb8a4 (P0, NOTICEABLE) — SHIP-BAR CLEARED, ships HELD
+reviewer SHIP + qa PASS. MEASUREMENT LAYER PROVEN CORRECT BY TWO INDEPENDENT METHODS:
+  1. eng-lead independent geodesic polyline ground truth: engine carries within ±5y on Red 1/5/6 incl 83y dogleg.
+  2. reviewer wrote its OWN from-scratch equirectangular + point-to-polyline projection and reproduced Red 6's
+     dogleg chain [40,135,195,225,255,310] EXACTLY + confirmed Red 1 open drive zones (65-264L / 85-387R) are REAL.
+Root cause was purely representational: format_hazards_line min-max collapse hid the real gaps the gap-bounded
+chain preserved. Fix = trees-only run-split @ TREE_RUN_SPLIT_GAP_YDS=120 + near-tee suppression (<=100y first run
+when a farther run exists). Red 1 now "trees L 265-480y, trees R 385-475y" (drive zone clear). Red 5/6 byte-identical.
+Geometry funcs byte-identical (diff-verified, both eng-lead + reviewer). guide_writer validator tightened
+None->120 (was accepting hallucinated open-zone tree carries; test assertion correctly inverted, not weakened).
+Observability added (hole_hazards_intel + caddie_reco_context, no PII/GPS/keys, never-raise). qa: ruff clean;
+321/321 targeted + 592/592 broad (+24 CI-deferred Postgres skips); tsc clean; voice-tests 278/278; functional
+check reproduces corrected lines + unchanged carries on the real Red fixture.
+NON-BLOCKING debt (filed backlog): tests/eval/checks.py:322 finditer only matches the FIRST trees run on a split
+line — no production impact, no current golden scenario splits; fix = match "trees SIDE" once then scan all
+"\d+(-\d+)?y" segments to the next side letter.
+SHIPS HELD per brief — did NOT ping owner. Bundle PR opened (integration/next -> main), item on checklist as
+NOTICEABLE. The combined ship (with the smart-brain lane) is the coordinator's/owner's call; this pass only
+clears the measurement ship-bar gate.
