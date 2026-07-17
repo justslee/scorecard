@@ -11,6 +11,14 @@ export interface LooperOpenDetail {
   context: LooperContext;
   /** true = long-press: the sheet should open already listening. */
   listening: boolean;
+  /**
+   * "docked" = no sheet chrome — the host publishes orb state/caption and the
+   * golfer talks straight into the orb; "full" = today's sheet. Optional;
+   * omitted means "full" (back-compat with every pre-inversion summon site —
+   * e.g. the courses list page's own "courses" summon, which reads only
+   * `context`/`listening` and never sets this field).
+   */
+  presentation?: "docked" | "full";
 }
 
 const EVENT = "looper:open";
@@ -43,4 +51,30 @@ export function onLooperOpen(cb: (detail: LooperOpenDetail) => void): () => void
   const handler = (e: Event) => cb((e as CustomEvent<LooperOpenDetail>).detail);
   window.addEventListener(EVENT, handler);
   return () => window.removeEventListener(EVENT, handler);
+}
+
+// ── Docked-gesture channel (orb → host, one-way) ────────────────────────────
+// While the general orb is in `presentation: "docked"` (talking straight into
+// the orb, no sheet chrome), the orb's OWN tap/hold gestures mean something
+// different than they do idle ("send" / "cancel" instead of "open the
+// sheet") — this is a second, narrower event so the docked host doesn't have
+// to reinterpret `looper:open` payloads it never sent itself. Mirrors
+// `openLooper`/`onLooperOpen` verbatim: SSR-safe no-ops, plain CustomEvent.
+
+export type LooperDockedGesture = "send" | "cancel";
+
+const DOCKED_GESTURE_EVENT = "looper:docked-gesture";
+
+/** Fire a docked-presentation gesture (called by the orb). SSR-safe no-op. */
+export function sendLooperDockedGesture(gesture: LooperDockedGesture): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<LooperDockedGesture>(DOCKED_GESTURE_EVENT, { detail: gesture }));
+}
+
+/** Subscribe to docked gestures. Returns the unsubscribe. SSR-safe no-op. */
+export function onLooperDockedGesture(cb: (gesture: LooperDockedGesture) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = (e: Event) => cb((e as CustomEvent<LooperDockedGesture>).detail);
+  window.addEventListener(DOCKED_GESTURE_EVENT, handler);
+  return () => window.removeEventListener(DOCKED_GESTURE_EVENT, handler);
 }

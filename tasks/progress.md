@@ -3,6 +3,184 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-16 DONE — caddie-advice-model-decoupling, SILENT, committed @ a323851 (on worktree branch tracking integration/next, NOT pushed — eng-lead rebases+pushes)
+Implemented specs/caddie-advice-model-plan.md Steps 1-3 exactly (no re-plan). `_advice_model()`
+helper added in backend/app/routes/caddie.py (CADDIE_ADVICE_MODEL -> ANTHROPIC_MODEL ->
+claude-sonnet-4-5-20250929 fallback chain), replacing the three identical `os.getenv("ANTHROPIC_MODEL", ...)`
+reads in session_voice (~L908), _sse_reply (~L988), voice_caddie (~L1592) — confirmed exactly 3 matches,
+all caddie-advice mouths, nothing else touched. `_accepts_temperature()` + conservative
+`_TEMPERATURE_OK_PREFIXES` allowlist added in backend/app/caddie/tool_loop.py; `temperature=0.7` is now
+conditional (built into stream_kwargs only if the model is on the allowlist) — unknown/future model ids
+fail safe by omitting temperature rather than 400ing. Byte-identical on current prod (still sonnet-4-5 +
+temp 0.7). Tests: existing test_sse_reply_uses_identical_model_params passes UNCHANGED; added
+test_sse_reply_advice_model_env_outranks_anthropic_model + test_sse_reply_advice_model_off_allowlist_omits_temperature
+in test_voice_stream.py, and test_accepts_temperature_allowlist_pins in test_caddie_tool_loop.py. Gates:
+`ruff check .` clean; the 8 targeted pytest files all green — 72 passed (test_voice_stream.py 22 incl. the
+2 new, test_caddie_tool_loop.py 12 incl. the 1 new, plus the 6 grounding-prompt suites + eval/test_tool_parity.py).
+No DB tests run locally (none in this targeted set — full backend CI Postgres gate runs on the PR).
+Left backlog.json untouched/unstaged — it showed unrelated concurrent edits from another lane's process
+mid-session; not part of this item's scope, not committed by this builder. NEXT: eng-lead reviews/QAs
+@ a323851, folds into bundle PR (this cycle's `caddie-advice-sonnet5-flip` follow-up is gated on a live
+before/after eval per the plan — NOT done here, correctly deferred).
+
+## 2026-07-16 DONE — multiuser-p0-migrations-revocation (slice 3), SILENT/dark, landed @ f4eda94 (bundle PR opened fresh)
+Reviewer SHIP (no HIGH/MED — forge/replay/revocation-bypass/owner-drift/injection/endpoint-exposure/
+AUTH_BYPASS-guard all attacked & safe; /security-review no findings). qa PASS (10 gates + AUTH_BYPASS
+negative correct; 2593 backend non-DB + 33 clerk/webhook tests + frontend lint/tsc/build/voice-278 +
+caddie-experience-241 green on f4eda94; DB-backed integration tests -> CI backend gate). NO designer
+(dark backend). Migrations DESIGNED not written (guarded) — backfill A / tighten B / revoked_users
+CREATE all deferred to the open-mode flip PR (present for owner approval then; NO STOP now, revocation
+inert in owner mode). Durable revoked_users table REQUIRED before APP_ACCESS_MODE=open (interim store
+is in-process). Fresh bundle PR (integration/next -> main) opened this cycle = SILENT-only, no owner
+ping (dark). NEXT: slice 4 multiuser-p0-keychain-token — deps (slice 1 #142 + slice 3 now) satisfied,
+READY to pick up next cycle. Backlog: slice 3 -> done-on-bundle (targeted edit, JSON validated, count
+94 unchanged). ORIGINAL AWAITING record below (superseded):
+
+## 2026-07-16 AWAITING(superseded) — multiuser-p0-migrations-revocation (slice 3), SILENT/dark, on integration/next @ bb2b9ec base
+Owner feedback checked FIRST: no cards in Needs Review; Bundle #143 (v1.1.10 weekend Red build)
+Shipped today, only our own ship-comment on it — owner plays Bethpage Red this weekend so NO field
+feedback exists yet to preempt. Board clean. No open bundle PR (opening fresh when slice 3 lands).
+
+Slice 3 scope (grounded — slice 1 in #142 already landed require_member + azp/authorized-parties
+check + all boot guards + courses_mapped §3.3.0 carve-out, so those are DONE, not this slice):
+  1. Migration DESIGN ONLY (backfill A, tighten B, revoked_users CREATE) — NO Alembic file written
+     (guarded; owner-approval-gated). DETERMINATION: all three deferrable to the open-mode flip
+     (owner mode is dark/single-user, revocation inert), so NO owner STOP needed now — designs
+     presented for approval at flip time.
+  2. Clerk webhook receiver POST /api/webhooks/clerk — Svix-signature-verified + replay protection,
+     NOT member-gated, handles user.deleted/user.banned/session revocation → revocation store.
+  3. Revocation mechanism — in-process store (the 60s-cache layer) + require_member check reachable
+     ONLY in open mode (owner mode short-circuits = byte-identical/dark); durable revoked_users DB
+     table is the guarded follow-up that MUST land before APP_ACCESS_MODE=open.
+  4. NEXT_PUBLIC_AUTH_BYPASS prod-build CI assertion (§3.4 fail-open flags) — assert unset.
+
+Builder LANDED slice 3 @ f4eda94 (webhooks.py + revocation.py + require_member wiring + AUTH_BYPASS
+prebuild guard; migrations DESIGNED not written; 2593 backend non-DB tests + frontend gates green).
+NOW AWAITING reviewer (a4f4cf72, adversarial + /security-review + /code-review) + qa (acf73d78,
+gates + AUTH_BYPASS negative + caddie-experience) on f4eda94, in parallel. On return: BLOCKING →
+re-dispatch builder then re-review; both green → open fresh bundle PR (SILENT/dark), update
+progress+backlog (slice 3 done, note slice 4 multiuser-p0-keychain-token readiness). Do NOT
+ship/ping (dark slice). Reconcile from branch (git log origin/integration/next) if resumed.
+## 2026-07-16 DONE (builder) — caddie-hazard-side-reach-plan implemented on worktree agent-afd3de02e2f7430e6 (NOTICEABLE, P0)
+Implemented specs/caddie-hazard-side-reach-plan.md exactly (Fixes A/B/C), on branch
+worktree-agent-afd3de02e2f7430e6 (based on integration/next). NOT yet rebased/pushed to
+integration/next — eng-lead owns that step (parallel orb lane active, per the plan's own note).
+
+- Fix A (`hazards.py::_derive_tee_green`): tee priority now (1) a valid `tee=` arg (rejects
+  (0,0)) selects the NEAREST stored tee feature, or the arg itself if no stored tee features;
+  (2) no arg + multiple stored tees + green derivable -> FARTHEST tee from green (back tee,
+  deterministic, replaces file-order "first"); (3) single tee unchanged; (4)/(5) hole-linestring
+  / raw-arg fallbacks unchanged. Green derivation untouched. Two-pass loop (collect tee/green,
+  then select) so green is known before back-tee selection.
+- Fix B (`hazards.py::_extract_tree_line_hazards`): replaced the near/far 2-entry collapse with
+  a gap-bounded greedy chain (new `_gap_bounded_tree_chain` + `_TREE_SPAN_MAX_GAP_YDS=40.0`,
+  safety cap `_TREE_CHAIN_SAFETY_CAP=12` with double-the-gap retry loop). Endpoints always
+  survive; real gaps preserved, never interpolated.
+- Fix C (`decade_advice.py::drive_zone_hazards`/`decade_landing_advice` + `aim_point.py`):
+  added optional `max_reach_yds`; when set, the drive-zone long edge =
+  `min(expected_advance_yds, max_reach_yds) + DRIVE_ZONE_LONG_YDS`. Wired at aim_point.py's two
+  positioning call sites with `max_reach_yds=float(tee_shot_numbers.drive_total_yards)` — the
+  confirmed field name (grepped, matches the plan). Default `None` = legacy behavior.
+
+Tests: added `TestTeeSelection` (5 cases, test_hazards.py), `test_bracketing_woods_left_stays_
+left_at_all_eight_bearings` + `test_real_gap_not_interpolated` (test_tree_hazards.py),
+`test_red1_bracketing_left_tree_line_never_confident_right` (test_miss_side_grounding.py, incl.
+a generate_recommendation-level "favor the left" scan), `test_greenside_bunker_beyond_reach_
+excluded` + `test_reach_cap_end_to_end` + `test_drive_zone_default_reach_is_legacy`
+(test_positioning_shot.py). Updated 2 existing tree tests whose entry COUNT changes 2->3 per the
+plan's own justification (T1 `test_tree_point_cluster_becomes_tree_line_range`, T12 `test_woods_
+polygon_and_points_merge_per_side`) — formatted-line assertions kept byte-identical, only the
+count/interior changed; documented inline why. No test weakened or deleted.
+
+Gates (all green, evidence in the builder's report): `ruff check .` clean; backend
+`pytest tests -q --ignore=tests/integration` 2595 passed (incl. every suite the plan named:
+test_bethpage_validation, test_corridor_profile/bend_cap/width_selection, test_tee_shot_numbers,
+test_guide_writer, test_course_guides — 334 passed on that named subset alone); frontend
+`npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded, voice-tests smoke
+278/278, `npm run test:caddie-experience` 241/241 (17 test files). No shared-type changes
+(Hazard unchanged; new params are additive/optional Python kwargs) — types.ts/models.py
+untouched, consistent with plan §6.
+
+Commit on worktree-agent-afd3de02e2f7430e6 (not yet on integration/next): see git log on that
+branch. NEXT: eng-lead rebases onto latest origin/integration/next, dispatches reviewer
+(adversarial — verify no double-flip masking) + qa in parallel, then pushes + adds to bundle PR
+#144 checklist (NOTICEABLE, P0 field-bug fix).
+
+## 2026-07-16 AWAITING Plan(fable) — caddie-hazard-side + drive-zone-reach (NOTICEABLE, P0 field bugs, Red-1/Red-2, v1.1.10)
+Isolated worktree agent-afd3de02e2f7430e6, based on origin/integration/next @ f4d55c5 (reset off a
+stale orb-lane progress-only commit d901688). Parallel orb lane active on a different surface — REBASE
+onto latest origin/integration/next before pushing; add to bundle PR #144 checklist (NOTICEABLE,
+caddie-correctness, owner field-reported). NEVER main; never force-push.
+
+TWO owner field bugs, SAME surface (backend/app/caddie hazard/drive-zone evidence):
+  (P0) Red-1 side "inversion": caddie says "favor left, miss right" but the dominant forest is LEFT.
+  (P0b) Red-2 reach: caddie names a GREENSIDE bunker (dfg=19y, needs 374y carry from back tee) as a
+        tee-shot hazard ("bunker at 360").
+
+ROOT-CAUSE EVIDENCE (real live-OSM Bethpage Red geometry, proven this cycle — scripts in scratchpad):
+  - hazards.py base per-observation side math is CORRECT and bearing-INVARIANT (proved: synthetic
+    N/NE/E/SE/S/SW/W/NW all classify woods-on-golfers-left as "left"). NOT a raw sign flip in
+    extract_hole_hazards (rules out candidate 1/2 at the base layer).
+  - Red-1 has NO mapped golf=hole LineString -> CHORD fallback (tee->green straight). 3 tee features at
+    347/441/467y all bearing ~17deg. _derive_tee_green picks the FIRST tee (347y FORWARD tee), not the
+    player's back tee (467y, card 466) -> ALL carries ~120y short (FRAME/ORIGIN bug, Finding A;
+    bearing-invariant so it doesn't flip sides, but it shifts which hazards fall in the drive window).
+  - Real Red-1 trees are on BOTH sides of the chord; _extract_tree_line_hazards collapses each side to
+    near(min-carry)+far(max-carry) ONLY. The LEFT line's two survivors (145 & 360) BOTH fall OUTSIDE the
+    drive-zone window [advance-50, advance+30] (~[235,315]); the RIGHT line's near entry (270) lands
+    INSIDE. So compute_positioning_miss_side sees only right -> confident "favor left, miss right." The
+    dense left landing-zone woods (carry ~269, lateral +173y) are DISCARDED by the two-entry aggregation
+    (Finding B — representation loss is the real inversion mechanism, candidate 3).
+  - Red-2: 1 bunker, GREENSIDE (dfg=19y), lateral +15y (left). Carry 330y from forward tee / 374y from
+    back tee. drive_zone_hazards windows only by [advance-50, advance+30] with NO player-reach ceiling,
+    so a greenside/unreachable feature can leak into tee-shot advice (Finding C — reach cap missing).
+
+FIX DIRECTION (for Plan/fable to finalize): (A) select the player's tee-set / back tee in
+_derive_tee_green so carries are honest; (B) represent each tree line by a landing-zone-relevant entry
+(not just min/max extremes) so a bracketing line isn't windowed away, OR have miss-side score per-side
+minimum-lateral in-zone; (C) bound drive_zone_hazards by the player's actual one-solve carry/total reach
+(reuse the one-solve numbers; greenside features -> approach, not tee). Consolidate to ONE canonical
+side-of-line path. Tests: Red-1 fixture (dominant-left classified/spoken left, or honest both-sides —
+never confident right); 8-bearing invariant; Red-2 reach fixture (greenside bunker EXCLUDED from tee
+payload; bomber total 350 -> included); existing miss-side/corridor tests stay green (or corrected if
+they encoded the flip — document). Frontend cross-check bunker letter/legend side source.
+
+Plan(fable) DONE -> specs/caddie-hazard-side-reach-plan.md written. Key: frontend ALREADY sends the
+player's tee (`tee: c.tee`), backend ignores it -> Fix A contained to `_derive_tee_green`. Fix B =
+gap-bounded chain sampling (new _TREE_SPAN_MAX_GAP_YDS=40) so a bracketing tree line keeps a
+landing-zone entry. Fix C = optional `max_reach_yds` on drive_zone_hazards, fed drive_total_yards at
+aim_point.py:874/876. No shared-type changes.
+
+## builder DONE @8dfb701 — Fixes A/B/C + 7 tests, all 8 gates green (2595 backend, voice 278, caddie-exp 241)
+Files: hazards.py (_derive_tee_green tee-arg priority + back-tee default, two-pass; _gap_bounded_tree_chain,
+_TREE_SPAN_MAX_GAP_YDS=40, _TREE_CHAIN_SAFETY_CAP=12), decade_advice.py (drive_zone_hazards/
+decade_landing_advice optional max_reach_yds), aim_point.py (max_reach_yds=drive_total_yards at both
+positioning sites). Tests: TestTeeSelection, red1 bracketing e2e, 8-bearing bracketing invariant,
+real-gap-not-interpolated, greenside-bunker-excluded + reach e2e + legacy-default. T1/T12 counts 2->3
+(min/max collapse was the root cause; formatted lines unchanged). No shared-type changes.
+
+## 2026-07-16 DONE — caddie-hazard-side-inversion + drive-zone-reach LANDED on integration/next (NOTICEABLE, P0 field bug)
+Reviewer (fresh, adversarial): SHIP — empty findings (sign convention untouched; _gap_bounded_tree_chain
+terminates + always preserves near/far endpoints; reach cap only tightens the long edge so no reachable
+hazard newly excluded; all drive_zone_hazards/decade_landing_advice callers back-compat via Optional=None;
+format_hazards_line group-cap unaffected; /code-review folded). QA: PASS — ruff clean, backend 2614 non-DB
+(post-rebase, orb lane added ~19), frontend lint/tsc/build clean, voice 278/278, caddie-experience 241/241;
+3 P0 acceptance tests green (test_red1_bracketing_left_tree_line_never_confident_right; 8-bearing bracketing
+invariant x8; test_greenside_bunker_beyond_reach_excluded). Rebased twice onto origin/integration/next
+(orb lane raced f4d55c5->9b27438->07dfcc0; union merge driver auto-resolved progress.md; NO code conflict —
+disjoint surfaces) and pushed: integration/next now b605781. Added to bundle PR #144 checklist as the SECOND
+NOTICEABLE item. CI on push: Backend gate PASS, Frontend gate in progress (backend-only change; frontend
+gates green locally). Did NOT ship or ping owner (per brief) — ship/approval + final all-gates-SUCCESS
+verification handled by the release cycle. Superseded AWAITING record below.
+
+## AWAITING(superseded) reviewer + qa on 8dfb701 (parallel, this cycle)
+Worktree branch @8dfb701; base merge-base 533ac44; origin/integration/next now a135ef7 (orb lane advanced
+f4d55c5->a135ef7 — rebase there at push time). Reviewer: adversarial correctness (construct a layout the
+fix still misclassifies; verify NO sign-flip/double-flip masking; scrutinize gap-chain + tee-selection
+edges) + /code-review. QA: run gates 1-8 in the worktree. Outcomes: both green -> rebase onto latest
+origin/integration/next, push, open/append bundle PR #144 checklist (NOTICEABLE). BLOCKING -> re-dispatch
+builder. On usage/spend error: checkpoint + STOP. Do NOT ship/ping (owner brief).
+
 ## 2026-07-16 DONE — GPS/on-course readiness verification (isolated worktree) [audit record below; RESOLVED block follows]
 Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
 Bethpage Red this weekend; test + make production-ready. Lane: audit + reusable sim harness
@@ -18034,3 +18212,338 @@ the next cycle's targeted tooling): verify the complex's true hole (9 vs 11) + c
 dual-assignment for corridor-spanning hazards. NOTE: a prior commit (eff931a) briefly pushed a
 BROKEN backlog.json (string-surgery bug) — fixed in this commit; lesson reinforced: validate
 BEFORE commit, never chain git after an unvalidated write.
+
+## 2026-07-16 SHIPPED — Bundle #143 merged integration/next -> main, released v1.1.10 (Bethpage Red weekend build)
+Owner approval (verbatim, main session, given the full bundle contents + asked for two decisions):
+"I don't want auto advance. But yes ship it." TWO decisions recorded: (1) ship approved; (2)
+auto-advance declined — it was ALREADY OFF in the code (autoDetectHole={false}, see the GPS-readiness
+audit above, item 4) so no code change was needed; noted here as an explicit owner decision, not an
+oversight. Owner approval was bound to pinned head e380ee7 (records-only commits atop the CI-green
+code head 44340b8 — the last two, eff931a + e380ee7, are a broken-then-fixed backlog.json; final
+state validated before relying on it).
+
+Ship sequence (fresh worktree /Users/justinlee/projects/.scorecard-ship-v1110, npm ci first, primary
+checkout at /Users/justinlee/projects/scorecard never touched):
+1. Verified PR #143 head == e380ee7, OPEN + MERGEABLE; both required gates (Frontend, Backend) +
+   the advisory E2E all SUCCESS on that pinned head.
+2. VERSION bumped 1.1.9 -> 1.1.10, committed + pushed as a clean fast-forward (e380ee7..30aeb56);
+   all three checks re-verified SUCCESS on the bump head before merge.
+3. PR retitled to "Bundle #143: on-course weekend build — draggable 'From you' target + map marking
+   fixes + GPS readiness (+ multi-user identity, dark)" and merged (--merge, not squash/rebase) ->
+   merge commit 533ac446619e429821ddce6457c0d39c7db5a001.
+4. Post-merge main CI green (CI #1008 on 533ac44). A GH Actions "Deploy backend (SSM)" workflow
+   auto-triggers on push to main and had already run + succeeded (#70) by the time this was checked
+   — no manual deploy step needed. Confirmed via SSM run-command on i-0826ae70df62d9fe8: /health ->
+   {"status":"ok"}; printenv shows APP_ACCESS_MODE and VOICE_BOOKING_ENABLED both UNSET (dark/owner
+   mode byte-identical; caller inert). External smoke: curl https://api.looperapp.org/health -> 200
+   {"status":"ok"}.
+5. TestFlight build from the new main (in the ship worktree, `bash ops/ios/ship.sh`, npm ci first):
+   archive + export succeeded, uploaded v1.1.10 build 202607161853. Polled the App Store Connect API
+   (JWT/ES256, key QG927KHTXR) until processingState == VALID (3 polls, ~1 min).
+6. Fresh integration/next cut from new main and pushed as a clean fast-forward (30aeb56..533ac44,
+   pushed via explicit refspec since the branch name was in use by the primary worktree — never
+   force-pushed).
+7. Records: Notion board card #143 -> Shipped with the merge SHA, v1.1.10 + build 202607161853, the
+   full item checklist (headline first, silent work summarized), and the owner's two decisions
+   (ship approved / auto-advance declined) plus how-to-test (drag the target; walk mid-fairway ->
+   "From you"; letters upright on south holes; only current hole's markers; fresh round shows par 4
+   on Red 11). backlog.json: targeted edits only (never json.load+dump — see the duplicate-keys
+   lesson above), validated JSON + item count (94) unchanged before AND after. Added a bundle-#143
+   SHIPPED note (same convention as #142/#141) and closed out map-fieldtest-red11-reingest (ready ->
+   done; the Red re-run above already wrote the corrected par, so this was stale) — every other #143
+   item already carried its own DONE/done-on-bundle resolution from its lane. Worktree removed after.
+
+NOTICEABLE shipped: draggable aim target + "From you" GPS rangefinder mode (mid-fairway target line
+measures from the golfer, live-follows, FIFO-mutex race-proofed) · upright bunker letters (billboard
+fix) · more bunkers marked (cap 4->6 + fairway-adjacency admit + relation/sand ingest) · current-
+hole-only markers (two-writer race fixed, priority-aware queue) · par-sanity display guard (no more
+false "PAR 3 462Y"). SILENT: multi-user client identity + per-user storage (dark) · GPS-readiness
+harness + ONCOURSE_READINESS.md · relation-multipolygon assembly fix · guide-validator/eval records.
+Data (already live): Red+Black re-ingested guide-safe; par 11=4; the hole-11 waste-complex relation
+assembled.
+
+## LANDED on integration/next — multiuser-p0-migrations-revocation (slice 3) — SILENT/dark — 2026-07-16
+Builder implemented the code half of specs/multi-user-epic-plan.md §3.2/§3.4/§3.8 (backlog
+multiuser-p0-migrations-revocation), NOT writing any Alembic migration (guarded, owner-approval-gated —
+migration designs are TEXT ONLY, see below). Head 56db1c6 on integration/next (2 commits: 78afac0 backend,
+56db1c6 frontend), depends_on multiuser-p0-authz-flip (slice 1, already landed on bundle #142).
+
+BUILT:
+1. Clerk webhook receiver POST /api/webhooks/clerk (backend/app/routes/webhooks.py) — Svix-signature-
+   verified (HMAC-SHA256 over exact raw bytes f"{svix_id}.{svix_timestamp}.{body}", base64-decoded
+   whsec_ secret, constant-time hmac.compare_digest per v1,<sig> candidate), +-5min replay tolerance +
+   bounded in-process exact-redelivery guard, fail-closed 401 when CLERK_WEBHOOK_SECRET unset. Handles
+   user.deleted/user.banned/session.revoked -> revokes the Clerk user id; unhandled types 200-ack (Clerk
+   retries on non-2xx). NOT member-gated — mounted in main.py alongside /health and / (Clerk calls it
+   server-to-server, no user session).
+2. In-process revocation store (backend/app/services/revocation.py) — interim, dark. is_revoked()/revoke()
+   interface designed for a localized swap once the durable revoked_users table lands (module docstring
+   has the full swap plan + why in-process is safe today: owner mode never consults it).
+3. clerk_auth.require_member now checks revocation.is_revoked() in OPEN MODE ONLY; owner mode
+   short-circuits BEFORE the check (byte-identical) — proven directly by TestRevocation in
+   test_clerk_auth.py (a revoked-marked owner id still passes in owner mode; a non-revoked open-mode
+   user passes; a revoked open-mode user 403s).
+4. test_authz_isolation.py: added /api/webhooks/clerk to the router-wiring suite's open-paths allowlist
+   (intentionally unguarded by require_member — has its own Svix-verified auth). Existing DB-backed
+   isolation suite otherwise unchanged in shape.
+5. Frontend: NEXT_PUBLIC_AUTH_BYPASS prod-build CI assertion (frontend/scripts/assert-no-auth-bypass.mjs,
+   wired as npm's `prebuild` lifecycle hook so it runs automatically before every `npm run build` — gates
+   both CI's build step and the real prod build via ops/ios/ship.sh). Verified live: normal build succeeds;
+   NEXT_PUBLIC_AUTH_BYPASS=1 exits 1 at prebuild before `next build` ever runs.
+
+MIGRATION DESIGNS (TEXT ONLY — no Alembic file written, forbidden this slice; owner determined all three
+are deferrable to the open-mode flip PR since owner mode is dark/single-user):
+  (A) Backfill: `UPDATE <t> SET owner_id = :owner WHERE owner_id IN (NULL, 'anonymous')` across rounds,
+      tournaments, players, scoring_courses, caddie_sessions, shots (user_id column for the latter two).
+      Pre-run assertion (read-only): assert no owner_id/user_id value outside {NULL, 'anonymous', OWNER}
+      via `SELECT count(*) FILTER (...), array_agg(DISTINCT owner_id) FROM <t>` per table (verify-first,
+      §3.2 Step 0). :owner bound from OWNER_CLERK_USER_ID at migration run time; abort if unset. Idempotent.
+  (B) Tighten (>=1wk soak after the flip): `ALTER COLUMN owner_id SET NOT NULL` on the six tables +
+      composite indexes where lists filter by owner (rounds(owner_id, updated_at), players(owner_id), etc).
+  (C) `revoked_users` table CREATE: columns user_id (PK/unique), reason, revoked_at, source (which event
+      triggered it) — the durable backing for app/services/revocation.py, REQUIRED before
+      APP_ACCESS_MODE=open ships (a restart must not silently un-revoke a banned member).
+All three go through the guarded-migrations process as their own reviewed PR when the owner approves the
+open-mode flip window; NOT run/written this slice.
+
+Gates (local, no DB): backend ruff clean; scoping_lint clean (100 files); 2593 non-DB pytest pass (incl.
+33 new webhook + revocation tests, RED->GREEN sanity via signature-tamper/wrong-secret/missing-header/
+stale-timestamp/replay/unset-secret negative tests all correctly 401/400). Frontend: lint clean, tsc
+clean, 2615 vitest pass, voice-tests --smoke 278/278, prod build green (NEXT_PUBLIC_API_URL + Clerk
+pk_live baked, matches CI) both with and without the bypass flag (flag=1 correctly blocks at prebuild,
+exit 1, before next build runs). DB-backed tests (backend/tests/integration/) skip locally (no Postgres,
+per the "never spin up a container" rule) — CI's postgis job runs them; the ONLY integration-suite change
+is the open-paths allowlist addition (structural, no new DB assertions needed).
+
+NOT shipping/pinging — SILENT (dark, APP_ACCESS_MODE stays owner-default, zero behavior change for the
+owner; webhook is fully inert since CLERK_WEBHOOK_SECRET is unset in prod). Next slice per the epic:
+multiuser-p0-client-identity already landed (bundle #143); multiuser-p0-keychain-token depends on this
+slice + multiuser-p0-authz-flip, both now satisfied — ready to pick up next cycle.
+
+## 2026-07-16 DONE — multiuser-p0-keychain-token (slice 4, FINAL ready P0 slice), SILENT/dark, landed @ 59e899b (bundle PR #144)
+Owner feedback checked FIRST: board polled (no new Bethpage field-feedback card; #143 v1.1.10 comment is
+our own ship notice — owner plays Bethpage Red this weekend, nothing reported yet). Sync: origin/main
+(533ac44) already ancestor of HEAD — integration/next clean+current, no merge needed.
+
+WORK: native Clerk JWT moved off plaintext @capacitor/preferences into the iOS Keychain
+(@aparajita/capacitor-secure-storage@8.0.0). Seam confirmed clean one-file swap (native-token-store.ts
+is sole toucher of the __clerk_client_jwt prefs key). Accessibility set EXPLICITLY to
+whenUnlockedThisDeviceOnly + sync:false on every get/set/remove (encrypted at rest, backup-excluded,
+non-synchronizable). Race-safe migrate-then-delete (module-scoped in-flight promise; Keychain write
+BEFORE plaintext delete so a crash-between never loses the token; idempotent). Sign-out clears both
+stores (zero residue). Fails closed to null (re-auth) if Keychain unavailable. Web/non-native
+byte-identical. 8 new mocked unit tests.
+
+Reviewer (fresh, /security-review + /code-review scoped to the commit): **SHIP** — all 8 attack vectors
+(plaintext residue, accessibility/non-sync, sign-out clear, race/idempotency, downgrade/mixed-state,
+session-UX, dependency/lockfile provenance, Package.swift) attacked & SAFE; 3 LOW non-blocking. qa
+**PASS**: lint/tsc/build/voice-278/vitest-2619/native-token-store-8/caddie-experience-241/ruff/
+npm-ci-dry-run all green on 59e899b + BONUS real iOS-sim (Xcode 26.4.1, iPhone 17) cap-sync +
+xcodebuild BUILD SUCCEEDED + launch + cold-relaunch: no crash, session persisted, keychain access
+observed. No designer (not user-facing). SILENT/dark — NO ship/ping (no noticeable change in the bundle).
+DEVICE-GAP (not a defect, owed pre-App-Store): fresh-sign-in migrate-from-plaintext-scratch path is
+mocked-unit-tested + code-inspected only; needs an attended XCUITest run with a seeded plaintext token +
+live Clerk OTP at the flip window.
+
+### P0 FOUNDATION CODE-COMPLETE (2026-07-16)
+All four ready P0 slices landed SILENT/dark (APP_ACCESS_MODE stays owner-default, byte-identical; NOTHING
+flipped): slice1 authz-flip (#142), slice2 client-identity (#143), slice3 migrations-revocation (#144),
+slice4 keychain-token (#144). REMAINING P0 EXIT CRITERIA = all FLIP-TIME / owner-gated, NOT loop work:
+(a) run the 3 guarded Alembic migrations (backfill / tighten-after-soak / revoked_users CREATE) as their
+own reviewed PR at the flip; (b) multiuser-p0-signout-namespace-clear (LOW); (c) multiuser-p0-self-
+savedplayer (needs PlayerCreate.clerkUserId server change); (d) device/sim Keychain+sign-in acceptance;
+(e) the two clerk-jwt-keychain-swap LOW followups. P1 profiles/discovery/connect is NEXT but OWNER-GATED
+on soak/launch sequencing + the spec's OWNER-DECISION list — do NOT start P1 until the owner sequences
+the flip. Bundle PR #144 remains SILENT-only (no noticeable change) → keeps accumulating, no owner ping.
+## 2026-07-16 — Caddie model audit + safe advice-model decoupling (eng-lead, worktree lane)
+Owner Q: "what model is the caddie using? ChatGPT 5.6 caddies better from a screenshot."
+AUDIT (verified vs code): the VOICE ORB he compared = OpenAI `gpt-realtime` (realtime_relay.py),
+NOT Claude — a speech model reading engine numbers off tools. Claude only powers TEXT paths:
+advice = `claude-sonnet-4-5-20250929` (shared ANTHROPIC_MODEL, temp 0.7, tool_loop.py);
+guides already = `claude-sonnet-5` (dedicated GUIDE_WRITER_MODEL); memory temp 0.3; OCR/voice
+default opus-4. Blast-radius: ANTHROPIC_MODEL has 7 consumers / 3 temps / 2 defaults → cannot
+flip shared env to Sonnet 5 (400s on temp paths, hijacks opus). Fable plan @ specs/caddie-advice-model-plan.md.
+No ANTHROPIC_API_KEY locally → cannot run evals → honesty rule: NOT landing an unproven bump.
+LANDING (SILENT, behavior-neutral): dedicated CADDIE_ADVICE_MODEL env + conditional temperature
+(byte-identical on shipped sonnet-4-5; makes Sonnet-5 flip a one-env change without 400).
+FILING designed-ready: caddie-advice-sonnet5-flip (a), caddie-smart-strategy-tool (b, the big win),
+caddie-vision-visual-read (c). Do NOT ship/ping this cycle.
+
+## AWAITING builder on caddie-advice-model-decoupling (SILENT) per specs/caddie-advice-model-plan.md
+On resume: reconcile from origin/integration/next; if builder's commit is present, run reviewer+qa;
+if not, re-dispatch builder. Two other lanes active (hazards.py + orb) — REBASE before push; add to PR #144.
+
+## AWAITING reviewer + qa on caddie-advice-model-decoupling @ a323851 (SILENT)
+Builder DONE: _advice_model() + conditional-temperature allowlist, byte-identical on shipped sonnet-4-5.
+Gates green local (ruff clean, 72/72 targeted). Reviewer: grounding-contract pins must survive the
+model-change surface (no regression to numbers/decision/language rules); confirm allowlist can't 400.
+QA: full backend gate on the pushed head (CI Postgres). On resume: if both green -> add to PR #144
+(SILENT), done for this item. Filed designed-ready: caddie-smart-strategy-tool (b, big win),
+caddie-advice-sonnet5-flip (a), caddie-vision-visual-read (c). Do NOT ship/ping (SILENT).
+
+## DONE — caddie-advice-model-decoupling @ a323851 (+ b757ba6 allowlist hardening), SILENT, on PR #144
+Reviewer SHIP (grounding-contract pins untouched+green; byte-identical proof walked; fail-safe temp;
+genuine tests; non-blocking note APPLIED — dropped speculative opus-4.5/4.6 allowlist entries).
+QA PASS (ruff clean; 129/129 targeted incl. new env/allowlist pins; full non-DB sweep 2596 passed /
+121 DB-only skips, 0 non-DB failures). Added to PR #144 checklist (SILENT). Pushed head b757ba6;
+CI in-progress on that head (Frontend + Backend gates) — release verifies SUCCESS at ship time.
+FILED designed-ready: caddie-smart-strategy-tool (b, the ChatGPT-parity lever, P1),
+caddie-advice-sonnet5-flip (a, gated on live eval), caddie-vision-visual-read (c). NOT shipping/pinging
+(SILENT; owner's model question answered in the eng-lead report to the main session). Pass complete.
+
+## BONUS FIX (SILENT, verified): frontend-gate unblocked @ 74c3833
+While checking CI on the caddie change, found the bundle's Frontend gate RED for ALL lanes:
+npm ci EUSAGE "Missing: utf-8-validate@5.0.10 from lock file" (x5) — pre-existing (NOT the caddie
+change; my range touched 0 frontend files), the recurring npm-11-prunes-npm-10-native-binding class
+(lockfile-regen-rule). Fixed in place with npm 10 (--package-lock-only --ignore-scripts): restored the
+5 nested utf-8-validate nodes, additive-only (0 deletions). VERIFIED via the exact CI gate:
+`npx npm@10.8.2 ci --dry-run` succeeds (added 1189 pkgs, no EUSAGE). Pushed; CI re-running on 74c3833.
+
+### FABLE PLAN DELIVERED + SAVED (2026-07-16) — specs/caddie-orb-tap-to-talk-inversion-plan.md
+Build-ready CONTRACT. Seam: general orb gets a presentation:"docked"|"full" mode over the SINGLE
+useLooperDictation in CaddieOrbSheet (NO second session); docked->full promotion routes through the
+SAME open/sessionRef/presentation state (3 triggers: user-turn-appended, real mic/connect error,
+unexpected listening-drop). Bare no-speech self-heals in the orb chip w/o promoting. Round pill: idle
+tap = voice.stop()+detachedCaddieLive.start() (no sheet) w/ eligibility fallback to openCaddieSheet();
+idle hold 350ms = openCaddieSheet(); live tap/hold UNCHANGED. Reduced-motion static ring added on both
+surfaces (closes existing indicator gap). New bus field presentation? + LooperDockedGesture channel;
+CaddieOrbState gains "connecting"+activates "listening"; new CaddieOrbCaption channel. Zero backend.
+useDetachedCaddieLive.test.tsx + CaddieSheet.session.test.tsx + LooperSheet.test.tsx must pass UNMODIFIED.
+
+AWAITING: builder implementing specs/caddie-orb-tap-to-talk-inversion-plan.md on THIS worktree branch
+(worktree-agent-aadf4889fca14557d). On builder return -> reviewer (fresh) + qa (gates SUCCESS) ->
+designer BLOCKING on rendered result -> REBASE onto latest origin/integration/next -> push -> add to
+PR #144 as NOTICEABLE. No ship/ping this cycle. No main; no force-push.
+
+### BUILDER IMPLEMENTED (2026-07-16) — caddie-orb-tap-to-talk-inversion, on worktree-aadf4889fca14557d
+All 5 steps of specs/caddie-orb-tap-to-talk-inversion-plan.md implemented to the letter (no plan
+deviations needed — no ambiguity hit). Files: frontend/src/lib/looper-bus.ts (presentation? field +
+LooperDockedGesture send/on channel), frontend/src/lib/caddie-context.ts ("connecting" state activates
+"listening"; new CaddieOrbCaption channel), frontend/src/components/CaddieOrbSheet.tsx (presentation
+state/ref, 3 promotion triggers a/b/c, docked no-speech self-heal w/ 2500ms timer, docked-gesture
+subscription, orb-state/caption publisher, route-change hygiene via usePathname, shell gated
+`open && presentation==="full"`), frontend/src/components/CaddieOrb.tsx (orbState+caption subscriptions,
+useReducedMotion, pressStateRef-captured pointer semantics, listening pulse + reduced-motion static
+double ring, OrbChip factored sub-component, hidden-while-docked cancel effect, stateful aria-label,
+invert-intro one-time chip), frontend/src/app/round/[id]/RoundPageClient.tsx (PILL_OPEN_HOLD_MS=350,
+idle tap talks immediately via detachedCaddieLive.start() w/ eligibility fallback to openCaddieSheet(),
+idle hold opens sheet, live branch byte-identical, stateful aria-label, reduced-motion static accent
+ring, one-time pill intro chip).
+
+Tests: rewrote CaddieOrb.test.tsx tap/hold payload assertions + aria-label queries to the new contract
+(EXPECTED — the whole point is the inversion), added useReducedMotion mock + 9 new tests (listening
+pulse, connecting-never-pulses, reduced-motion static ring, docked tap/hold gestures, mid-press guard,
+caption chip, hidden-while-docked cancel, invert-intro sequencing). Extended CaddieOrbSheet.test.tsx
+with a docked-presentation describe (open/no-chrome, promotion a/b/c, cancel gesture, back-compat,
+no-speech self-heal w/ fake timers) + a route-change-hygiene describe (added usePathname mock to
+next/navigation). Extended looper-bus.test.ts for presentation field + gesture round-trip.
+useDetachedCaddieLive.test.tsx / CaddieSheet.session.test.tsx / LooperSheet.test.tsx untouched, all pass.
+
+GATES (all green): lint clean; tsc clean; build succeeded (19/19 static pages); voice-smoke 278/278;
+vitest 2640/2640 across all 136 test files (full suite, not just the touched files). No backend changes
+(frontend-only feature) so no ruff/DB gate needed. Round pill has no unit harness (pre-existing) —
+verified via the full build + manual code-reading against the plan's exact eligibility-gate mirror
+(useDetachedCaddieLive's own start() gate), not device-tested this cycle.
+
+Committed to worktree-agent-aadf4889fca14557d (not pushed — eng-lead owns rebase/push onto
+integration/next). NEXT: reviewer (fresh) + qa, then designer BLOCKING on rendered result before this
+lands in PR #144 as NOTICEABLE (owner-directed gesture inversion, v1.1.10 field test).
+
+### BUILDER DONE @c778f0c (2026-07-16) — caddie-orb-tap-to-talk-inversion
+All gates green: lint clean, tsc clean, build ok (19/19), voice 278/278, vitest 2640/2640.
+useDetachedCaddieLive.test.tsx + CaddieSheet.session.test.tsx + LooperSheet.test.tsx pass UNMODIFIED.
+Files: looper-bus.ts(+test), caddie-context.ts, CaddieOrbSheet.tsx(+test), CaddieOrb.tsx(+test),
+RoundPageClient.tsx. No plan deviations. Pill has no unit harness (manual verify owed).
+
+AWAITING (parallel): reviewer (fresh, adversarial correctness+security on the diff — no second session
+path, no zombie/dedup regression, no mic-without-indicator) + qa (re-run gates) + designer (BLOCKING on
+rendered interaction). On all-green -> REBASE onto latest origin/integration/next -> push -> add to PR
+#144 as NOTICEABLE. BLOCKING issues -> re-dispatch builder. No ship/ping this cycle.
+
+### DONE — caddie-orb-tap-to-talk-inversion LANDED @9b27438 on integration/next / PR #144 (NOTICEABLE)
+Owner v1.1.10 field-test directive implemented: TAP → talk immediately (no sheet, pulsing medallion);
+HOLD → open chat sheet. Both surfaces. Round pill: idle tap=voice.stop()+detachedCaddieLive.start()
+(no sheet, eligibility fallback), idle hold 350ms=openCaddieSheet(), live tap/hold byte-identical.
+Omnipresent orb: presentation:"docked"|"full" over the SINGLE useLooperDictation (no 2nd session);
+docked auto-promotes→full on user-turn/mic-error/unexpected-drop; bare no-speech self-heals in chip.
+Reduced-motion static ring added on both surfaces (closed a real mic-without-indicator gap). One-time
+re-teach chips + stateful aria-labels.
+VERDICTS: reviewer SHIP (all invariants hand-traced sound; tests strengthened; /security-review
+skipped w/ justification — no new net/data/permission surface). qa PASS (lint0/tsc/build19-19/
+voice278-278/vitest 2640-2640; 3 seam suites unmodified per git show --stat). designer APPROVE
+(faithful to state table; no SaaS-motion/chime drift; resting orb/pill byte-identical).
+REBASED onto origin/integration/next (union-resolved progress.md conflict w/ parallel advice-model+CI
+lockfile lane) → pushed FF 9b27438. PR #144 body updated: item marked NOTICEABLE; bundle now
+approval-eligible. backlog.json intentionally NOT surgically edited (ad-hoc directive, not a filed item;
+fragility lesson) — record is PR #144 + this file.
+NON-BLOCKING follow-ups owed: (1) round-pill idle tap/hold has no unit harness → manual/sim verify at
+build time; (2) the pill idle-tap eligibility gate is a hand-dup of useDetachedCaddieLive.start()'s gate
+(KEEP IN SYNC comment; worst case a silent no-op tap since start() re-guards).
+DID NOT ship/ping (per lane brief; caller INERT). Release/approval handled separately when parallel
+lanes settle + CI green on head. CI: verifying SUCCESS on the pushed head (Frontend+Backend gates).
+
+## 2026-07-17 — caddie-smart-strategy-tool (b, the ChatGPT-parity lever) — eng-lead worktree lane
+OWNER CRUX: the live voice orb (gpt-realtime, fast SPEECH model, weak reasoning) does its own
+strategy SYNTHESIS off engine numbers — caddies worse than a frontier text model ("ChatGPT does a
+better job"). FIX: a realtime-only tool get_strategy served SERVER-SIDE by claude-sonnet-5 (frontier
+reasoning) on the FULL grounded payload; the realtime model just SPEAKS the result. NOTICEABLE.
+Architecture confirmed by read:
+- tools.py: CADDIE_TOOLS registry + realtime_tools()/anthropic_tools()/TEXT_TOOLS; *_payload helpers
+  (recommend/conditions/carries/bend/green_read/player_profile/shot_distance); resolve_tool; ToolContext.
+- tool_loop.py: run_caddie_turn; _TOOL_RESOLVE_TIMEOUT_S=6.0 (WHY get_strategy must NOT go in TEXT_TOOLS
+  — nested LLM call is circular + blows the 6s timeout; text mouth is already Claude).
+- guide_writer.py: the dedicated-model-env pattern to reuse (GUIDE_WRITER_MODEL default claude-sonnet-5),
+  build_ground_truth_block, WRITER_SYSTEM grounding, validate_guide fail-closed, format_guide_line. NOTE
+  Sonnet-5 adaptive thinking counts against max_tokens (=4000 there); strategy tool DISABLES thinking so
+  max_tokens~300 is pure speakable-output budget — that resolves the audit's max_tokens/thinking flag.
+- routes/caddie.py: session endpoints all via get_owned_session(round_id,user_id); _advice_model() env
+  pattern (CADDIE_ADVICE_MODEL||ANTHROPIC_MODEL||sonnet-4-5); _build_session_voice_prompt assembles the
+  grounding rules + guide_line; anthropic.AsyncAnthropic client construction; /session/recommend body.
+- realtime_relay.py: DEFAULT_TOOLS=realtime_tools(); build_session_payload has a tools= override (setup
+  already passes a SEPARATE SETUP_TOOLS list — precedent for realtime-only extras).
+- voice_prompts.py: build_realtime_instructions + _BASE_BEHAVIOR (tool-choice routing lives here);
+  grounding-rule constants (DECISION/MISS_SIDE/HAZARD/NUMBERS_COHERENCE/... GROUNDING_RULE).
+- frontend realtime.ts dispatchTool switch (+ toolContextProvider holeYards/basis ride-along);
+  caddie/api.ts sessionRecommend pattern.
+- test_tool_parity.py asserts set-equal + len-equal across mouths → MUST amend to shared-subset
+  schema-equal + realtime extras (get_strategy) enumerated. Gated live runners: run_tier2/run_consistency/
+  run_latency (need ANTHROPIC_API_KEY/OPENAI + CADDIE_EVAL_LIVE=1, NEVER in CI); goldens under eval/golden/.
+
+## AWAITING Plan(fable) on caddie-smart-strategy-tool → specs/caddie-smart-strategy-tool-plan.md
+On resume: reconcile from origin/integration/next; if the plan spec exists, dispatch builder against it;
+if not, re-dispatch Plan(fable). Then reviewer (fresh, adversarial: can the tool output smuggle
+ungrounded numbers/hazards? does the realtime model faithfully relay? latency regression on simple Qs?)
++ qa (gates SUCCESS + tool-parity amendment + latency/eval evidence or honest gated-run note). Land on
+integration/next, add to PR #144 as NOTICEABLE. Do NOT ship/ping (caller INERT). No main; no force-push.
+
+## OWNER MODEL DIRECTIVE (2026-07-17): brain = OpenAI GPT-5.6-sol, NOT Sonnet 5
+Owner: "send it to ChatGPT 5.5 or 5.6" — he compared our caddie to "ChatGPT 5.6 Sol" and wants THAT brain.
+RESOLVED (OpenAI developer docs, today): PRIMARY = `gpt-5.6-sol` (alias `gpt-5.6`), flagship reasoning,
+$5/$30 per 1M, 1.05M ctx, 128K out, reasoning_effort {none|low|medium|high|xhigh|max}, Responses API.
+Fallbacks: `gpt-5.6-terra` ($2.50/$15 balanced), `gpt-5.6-luna` ($1/$6). Prior: `gpt-5.5`/`gpt-5.5-2026-04-23`.
+CALL: raw httpx POST https://api.openai.com/v1/responses (NO openai SDK installed — deps are anthropic+httpx
+only), mirror realtime_relay.py mint pattern, same OPENAI_API_KEY billing. reasoning={"effort":"low"},
+max_output_tokens~400, NO temperature (docs don't confirm support on gpt-5.6 → omit). Env CADDIE_STRATEGY_MODEL
+default gpt-5.6-sol so owner can flip. Cost ~$0.013/call.
+BLOCKED (honest): live `/v1/models` probe of our key blocked by auto-mode guard — cross-session coordinator
+msg can't authorize prod-secret access (local fetch AND on-box SSM both denied; correct behavior, not bypassed).
+So default from public catalog + runtime safeguard: log resolved model key-free, fail honestly (never fabricate)
+on a 404 model id. Definitive snapshot verification needs an owner-approved on-box probe (flagged in plan Risks).
+Correction SENT to the running Plan(fable) agent (aeb14676d2cb44a1b) — same architecture, swapped brain.
+
+## PLAN DONE + AWAITING builder — caddie-smart-strategy-tool @ specs/caddie-smart-strategy-tool-plan.md
+Plan(fable) delivered the architecture; brain SWAPPED to OpenAI gpt-5.6-sol per owner directive (the
+planner defaulted to Sonnet 5 — my correction arrived after it completed, so I wrote the final spec
+myself with the OpenAI brain: Responses API via raw httpx, reasoning{effort:"low"}, max_output_tokens
+1024, no temperature, env CADDIE_STRATEGY_MODEL default gpt-5.6-sol; fail-closed validator + degraded
+line; realtime-only tool; POST /caddie/session/strategy; STRATEGY_TOOL_RULE routing; parity-test
+amendment). Spec landed on integration/next @5145fea (rebased over the 1.1.11 VERSION bump for #144).
+Working in isolated worktree agent-a380dd83012eda967 (branch worktree-agent-a380dd83012eda967 @5145fea
+= origin/integration/next). NOTE: bundle #144 has a release VERSION bump (1.1.11) — a ship may be in
+motion; if #144 merges + integration/next recuts, REBASE the builder's branch onto the fresh tip at
+land time (my work is on the isolated branch, safe).
+On resume: reconcile from the worktree branch; if the builder's commit is present, run reviewer+qa;
+if not, re-dispatch builder per the spec. Builder commits to the worktree branch (does NOT push/PR);
+eng-lead reviews (reviewer fresh + qa gates) then lands on integration/next as NOTICEABLE on PR #144.
+Latency/eval are gated-live (no OPENAI/ANTHROPIC key locally) → honest note, not fabricated numbers.
+Do NOT ship/ping (caller INERT).

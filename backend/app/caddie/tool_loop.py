@@ -45,6 +45,26 @@ TOOL_STATUS_LABEL = "checking the numbers"
 # Calm failure result — never raw exception text (injection/leak hygiene).
 _TOOL_ERROR_RESULT = {"error": "tool unavailable right now"}
 
+# Conservative ALLOWLIST of model-id prefixes for CURRENTLY-SHIPPED models known
+# to accept `temperature` alongside `tools` (some newer models 400 on that
+# combination). Unknown / future / unverified model ids fail SAFE by omitting
+# temperature, never a 400 — so we deliberately do NOT list speculative
+# forward entries (e.g. a hypothetical opus-4.5/4.6): let them fail-safe until
+# verified, rather than risk sending temperature to a model that rejects it.
+# "claude-opus-4-2" deliberately catches the dated "claude-opus-4-20250514"
+# (.env.example value) while NOT catching opus-4.7/4.8 — do NOT collapse
+# this to a bare "claude-opus-4-" prefix.
+_TEMPERATURE_OK_PREFIXES = (
+    "claude-sonnet-4-",
+    "claude-opus-4-0", "claude-opus-4-1", "claude-opus-4-2",
+    "claude-haiku-4-",
+    "claude-3-",
+)
+
+
+def _accepts_temperature(model: str) -> bool:
+    return model.startswith(_TEMPERATURE_OK_PREFIXES)
+
 
 def _clip(payload: str) -> str:
     if len(payload) <= _TOOL_RESULT_MAX_CHARS:
@@ -84,11 +104,12 @@ async def run_caddie_turn(
         stream_kwargs: dict = dict(
             model=model,
             max_tokens=300,
-            temperature=0.7,
             system=system,
             messages=convo,
             tools=TEXT_TOOLS,  # ALWAYS passed — never mutates (prompt cache)
         )
+        if _accepts_temperature(model):
+            stream_kwargs["temperature"] = 0.7
         if force_text:
             stream_kwargs["tool_choice"] = {"type": "none"}
 

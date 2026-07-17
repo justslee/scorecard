@@ -100,6 +100,13 @@ from app.routes import voice_booking_ws  # noqa: E402
 # (backend/app/services/voice_booking/call_registry.py). See voice_booking_ws.py.
 app.include_router(voice_booking_ws.router)
 
+from app.routes import webhooks  # noqa: E402
+# DELIBERATELY NOT _member: Clerk calls this server-to-server with no user
+# session — Svix signature verification (webhooks.py) IS the auth. Fail-closed
+# if CLERK_WEBHOOK_SECRET is unset (today's dark deployment), so this router
+# is inert until the multi-user flip configures a real webhook secret.
+app.include_router(webhooks.router)
+
 
 @app.on_event("startup")
 async def startup():

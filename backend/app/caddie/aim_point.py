@@ -871,10 +871,18 @@ def generate_recommendation(
         # Driving-zone window around THIS shot's expected advance — not the
         # green-side frame. classify_pin_position is skipped: pin light is a
         # green concept and doesn't apply when the green isn't in play.
-        zone = drive_zone_hazards(hole.hazards, float(club_dist))
+        # max_reach_yds caps the window at the player's own one-solve drive
+        # total (`tee_shot_numbers.drive_total_yards`, computed once above
+        # and already reused for reachability/the printed numbers — parity
+        # by construction) so an out-of-reach hazard (e.g. a greenside
+        # bunker) can never enter the tee-shot window (Finding C fix,
+        # specs/caddie-hazard-side-reach-plan.md §4).
+        max_reach_yds = float(tee_shot_numbers.drive_total_yards)
+        zone = drive_zone_hazards(hole.hazards, float(club_dist), max_reach_yds=max_reach_yds)
         miss = compute_positioning_miss_side(zone)
         landing_advice = decade_landing_advice(
             hole.hazards, float(club_dist), float(leave_yards), handicap=handicap,
+            max_reach_yds=max_reach_yds,
         )
         # Aim/miss coherence guard (§3.1): a "no good miss, commit to the
         # fairway" verdict can never be undercut by a lateral landing-advice

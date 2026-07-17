@@ -303,7 +303,12 @@ class TestExtractHoleHazards:
         assert abs(hazards[0].carry_yards - 200) <= 5
 
     def test_falls_back_to_tee_green_args_as_last_resort(self):
-        """No tee/green polygons AND no hole linestring — use the tee=/green= kwargs."""
+        """No tee/green polygons AND no hole linestring — use the tee=/green=
+        kwargs. Still passes byte-identical after the Finding A tee-selection
+        fix (see TestTeeSelection below): with no STORED tee features, the
+        arg is used directly at top priority rather than as a last resort —
+        same outcome here since this fixture has no stored tee at all, but
+        the arg is no longer merely a fallback by priority ordering."""
         b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 100, -20)
         bunker = _point_feature("bunker", b_lon, b_lat)
         green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 300, 0)
@@ -388,6 +393,146 @@ class TestExtractHoleHazards:
         tee_feat, green_feat, _, _ = _base_hole_features()
         hazards = extract_hole_hazards(_fc(tee_feat, green_feat, degenerate))
         assert hazards == []
+
+
+# ── Tee selection (Finding A fix, 2026-07-16) ───────────────────────────────
+#
+# Owner incident, Bethpage Red-1: 3 stored tee boxes (347/441/467y to green);
+# the file-order-FIRST tee (347y, the forward tee) was picked while the
+# player was on the back tee (467y) -> every carry_yards ~120y short. The
+# frontend already resolves and sends the player's own tee (`applyTeeAnchors`
+# / `ringCentroid`, `frontend/src/lib/course/tee-anchor.ts`) via `tee=hc.get
+# ("tee")` (`routes/caddie.py`) — `_derive_tee_green` just ignored it.
+# specs/caddie-hazard-side-reach-plan.md §2/§5.
+
+
+def _tee_polygon_at_north(north_yards: float) -> dict:
+    lon, lat = _point_north_east(_TEE_LON, _TEE_LAT, north_yards, 0)
+    return _square_polygon("tee", lon, lat)
+
+
+class TestTeeSelection:
+    def test_arg_selects_nearest_stored_tee_back_tee_shaped_numbers(self):
+        """3 tee polygons at 347/441/467y from a 500y-north green (in file
+        order 441, 347, 467 — deliberately not sorted, to prove selection
+        isn't order-dependent); `tee=` arg matches the 467y (back) tee's own
+        centroid. A landing bunker's carry_yards must be measured from the
+        BACK tee (Red-1-shaped: 380y, not the forward tee's 260y — a 120y
+        gap, matching the incident's ~120y-short arithmetic)."""
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 500, 0)
+        green_feat = _square_polygon("green", green_lon, green_lat)
+        tee347 = _tee_polygon_at_north(153)  # 500 - 347
+        tee441 = _tee_polygon_at_north(59)   # 500 - 441
+        tee467 = _tee_polygon_at_north(33)   # 500 - 467 (back tee)
+        tee467_lon, tee467_lat = _point_north_east(_TEE_LON, _TEE_LAT, 33, 0)
+
+        b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 413, -20)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        fc = _fc(tee441, tee347, tee467, green_feat, bunker)
+        hazards = extract_hole_hazards(fc, tee={"lat": tee467_lat, "lng": tee467_lon})
+        assert len(hazards) == 1
+        assert abs(hazards[0].carry_yards - 380) <= 5
+        assert hazards[0].line_side == "left"
+
+    def test_arg_used_directly_when_no_stored_tee_features(self):
+        """A valid `tee=` arg with NO stored tee features in the
+        FeatureCollection is used directly — the pre-fix "last resort" path,
+        promoted to first-class (no priority demotion vs. a stored tee that
+        doesn't exist)."""
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 300, 0)
+        b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 100, -20)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        hazards = extract_hole_hazards(
+            _fc(bunker),
+            tee={"lat": _TEE_LAT, "lng": _TEE_LON},
+            green={"lat": green_lat, "lng": green_lon},
+        )
+        assert len(hazards) == 1
+        assert abs(hazards[0].carry_yards - 100) <= 5
+        assert hazards[0].line_side == "left"
+
+    def test_no_arg_multiple_tees_picks_farthest_from_green_back_tee_default(self):
+        """No `tee=` arg, multiple stored tee features, green derivable ->
+        the tee FARTHEST from the green (the back tee) — deterministic,
+        never file-order "first". Same fixture as the arg-selection test
+        above (tees in file order 441, 347, 467), but with no arg: must
+        still land on the 467y back tee's 380y carry, not the 347y forward
+        tee's 260y or the 441y tee's number."""
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 500, 0)
+        green_feat = _square_polygon("green", green_lon, green_lat)
+        tee347 = _tee_polygon_at_north(153)
+        tee441 = _tee_polygon_at_north(59)
+        tee467 = _tee_polygon_at_north(33)
+
+        b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 413, -20)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        fc = _fc(tee441, tee347, tee467, green_feat, bunker)
+        hazards = extract_hole_hazards(fc)
+        assert len(hazards) == 1
+        assert abs(hazards[0].carry_yards - 380) <= 5
+
+    def test_single_tee_no_arg_unchanged(self):
+        """A single stored tee feature, no arg -> unchanged behavior (byte-
+        identical to the pre-fix single-tee path)."""
+        tee_feat, green_feat, _, _ = _base_hole_features()
+        b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 245, -20)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert abs(hazards[0].carry_yards - 245) <= 5
+        assert hazards[0].line_side == "left"
+
+    def test_polyline_and_bend_coherence_with_tee_selection(self):
+        """Coherence assertion (plan §2): `extract_hole_hazards` AND
+        `extract_hole_bend` share `_derive_tee_green`, so switching the
+        selected tee via the SAME `tee=` arg shifts BOTH a hazard's carry
+        and the bend's distance_yards by the SAME ~120y inter-box gap — Red-
+        1's bend distance and corridor sample distances were also ~120y
+        short from the same root cause. A `"hole"` LineString is present
+        (played-line frame, not the chord) to prove the fix holds under the
+        polyline path too."""
+        tee347_lon, tee347_lat = _point_north_east(_TEE_LON, _TEE_LAT, 153, 0)
+        tee467_lon, tee467_lat = _point_north_east(_TEE_LON, _TEE_LAT, 33, 0)
+        tee347 = _square_polygon("tee", tee347_lon, tee347_lat)
+        tee467 = _square_polygon("tee", tee467_lon, tee467_lat)
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 500, 0)
+        green_feat = _square_polygon("green", green_lon, green_lat)
+
+        start_lon, start_lat = _point_north_east(_TEE_LON, _TEE_LAT, 0, 0)
+        bend_lon, bend_lat = _point_north_east(_TEE_LON, _TEE_LAT, 300, -40)
+        hole_way = {
+            "type": "Feature",
+            "properties": {"featureType": "hole"},
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[start_lon, start_lat], [bend_lon, bend_lat], [green_lon, green_lat]],
+            },
+        }
+        b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 413, -50)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        fc = _fc(tee347, tee467, green_feat, hole_way, bunker)
+
+        # The back tee (467y from green) is farther from the (near-green)
+        # bunker/bend than the forward tee (347y), so the BACK-tee-anchored
+        # numbers are the LARGER ones — back minus forward is the positive
+        # ~120y inter-box gap.
+        hz_back = extract_hole_hazards(fc, tee={"lat": tee467_lat, "lng": tee467_lon})
+        hz_fwd = extract_hole_hazards(fc, tee={"lat": tee347_lat, "lng": tee347_lon})
+        assert hz_back[0].line_side == hz_fwd[0].line_side == "left"
+        carry_delta = hz_back[0].carry_yards - hz_fwd[0].carry_yards
+        assert abs(carry_delta - 120) <= 10, f"expected ~120y carry shift, got {carry_delta}"
+
+        bend_back = extract_hole_bend(fc, tee={"lat": tee467_lat, "lng": tee467_lon})
+        bend_fwd = extract_hole_bend(fc, tee={"lat": tee347_lat, "lng": tee347_lon})
+        assert bend_back is not None and bend_fwd is not None
+        assert not bend_back.straight and not bend_fwd.straight
+        bend_delta = bend_back.distance_yards - bend_fwd.distance_yards
+        assert abs(bend_delta - 120) <= 10, f"expected ~120y bend-distance shift, got {bend_delta}"
 
 
 # ── Bearing-swept regression matrix (hazard-side-flip incident, item 1) ────────

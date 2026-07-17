@@ -16,6 +16,8 @@ import jwt
 from jwt import PyJWKClient
 from fastapi import Depends, Header, HTTPException
 
+from app.services import revocation
+
 log = logging.getLogger("looper.clerk_auth")
 
 CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL")
@@ -154,28 +156,41 @@ def _owner_id() -> Optional[str]:
 #   - user_session(user_id) centralization — the RLS seam; a large mechanical
 #     refactor, its own future slice. ci_scripts/scoping_lint.py is the interim
 #     structural guard against new unscoped tenant queries.
+#   - revocation is now wired (P0 slice 3, below) but backed by an IN-PROCESS
+#     store (app/services/revocation.py) — the durable `revoked_users` Postgres
+#     table is REQUIRED before APP_ACCESS_MODE=open ships (a restart must never
+#     silently un-revoke a banned member once real strangers exist).
 # ─────────────────────────────────────────────────────────────────────────────
 async def require_member(user_id: str = Depends(current_user_id)) -> str:
-    """FastAPI dependency: the multi-user authz gate (P0 slice 1).
+    """FastAPI dependency: the multi-user authz gate (P0 slices 1 + 3).
 
     mode="owner" (default, unset APP_ACCESS_MODE): BYTE-IDENTICAL to
     require_owner today — owner passes, everyone else 403s, and an unset
-    OWNER_CLERK_USER_ID passes everyone through unchanged. Prod ships with the
-    flag unset, so this slice changes NOTHING in production.
+    OWNER_CLERK_USER_ID passes everyone through unchanged. Prod ships with
+    the flag unset, so this slice changes NOTHING in production. This branch
+    returns BEFORE the revocation check below runs — owner mode never
+    consults the revocation store, by design (see
+    app/services/revocation.py's module docstring; proven by
+    TestRequireMemberOwnerModeUntouched in test_clerk_auth.py).
 
-    mode="open": any verified Clerk `sub` passes this gate; per-row scoping
-    (owner_id/user_id columns, already in place for the resources this slice's
-    isolation suite covers) is what isolates one member's data from another.
-    A denylist/revocation check for a banned member is a LATER slice — noted,
-    not built here.
+    mode="open": any verified Clerk `sub` passes UNLESS it has been revoked
+    (banned/deleted via the Clerk webhook — app/routes/webhooks.py, checked
+    against app/services/revocation.py). Per-row scoping (owner_id/user_id
+    columns, already in place for the resources the isolation suite covers)
+    is what isolates one member's data from another.
     """
     mode = _access_mode()
-    if mode == "open":
+    if mode != "open":
+        # owner mode (default): BYTE-IDENTICAL to require_owner today. MUST
+        # short-circuit here, before any revocation lookup.
+        owner = _owner_id()
+        if owner and user_id != owner:
+            raise HTTPException(403, "Forbidden: this deployment is owner-only.")
         return user_id
-    # owner mode (default): BYTE-IDENTICAL to require_owner today.
-    owner = _owner_id()
-    if owner and user_id != owner:
-        raise HTTPException(403, "Forbidden: this deployment is owner-only.")
+
+    # open mode only.
+    if revocation.is_revoked(user_id):
+        raise HTTPException(403, "Forbidden: this account has been revoked.")
     return user_id
 
 

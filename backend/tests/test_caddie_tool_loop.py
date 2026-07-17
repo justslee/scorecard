@@ -320,3 +320,14 @@ async def test_oversized_tool_result_is_clipped_with_marker(monkeypatch):
     (result,) = client.calls[1]["messages"][-1]["content"]
     assert result["content"].endswith("…[truncated]")
     assert len(result["content"]) <= tool_loop_mod._TOOL_RESULT_MAX_CHARS + len("…[truncated]")
+
+
+# ── _accepts_temperature (specs/caddie-advice-model-plan.md Step 2) ─────────
+
+
+def test_accepts_temperature_allowlist_pins():
+    assert tool_loop_mod._accepts_temperature("claude-sonnet-4-5-20250929") is True
+    assert tool_loop_mod._accepts_temperature("claude-sonnet-5") is False
+    assert tool_loop_mod._accepts_temperature("claude-opus-4-20250514") is True
+    assert tool_loop_mod._accepts_temperature("claude-opus-4-7") is False
+    assert tool_loop_mod._accepts_temperature("claude-mythos-5") is False

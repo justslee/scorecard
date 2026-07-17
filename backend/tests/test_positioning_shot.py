@@ -315,6 +315,82 @@ def test_drive_zone_hazards_window_boundaries_pinned():
     assert drive_zone_hazards([just_past_window], 250) == []
 
 
+# ── Finding C — player-relative reach cap (specs/caddie-hazard-side-reach-
+# plan.md §4/§5.4). Owner incident (Red-2): a 374y-carry greenside bunker
+# (distance_from_green=19, mapped near the green) was spoken as a TEE-SHOT
+# miss for a player whose actual drive total is nowhere close to reaching
+# it — the un-capped window used `expected_advance_yds` alone, with no
+# ceiling tied to what the player can physically reach on this swing.
+
+
+def test_drive_zone_default_reach_is_legacy():
+    """`max_reach_yds=None` (the default, and the pre-fix call shape) keeps
+    today's window exactly — back-compat pin for direct callers/tests that
+    never pass a reach ceiling. Reuses the boundary fixture above."""
+    on_long_boundary = Hazard(type="water", side="left", line_side="left", carry_yards=280, penalty_severity="death")
+    just_past_window = Hazard(type="water", side="left", line_side="left", carry_yards=281, penalty_severity="death")
+
+    assert drive_zone_hazards([on_long_boundary], 250, max_reach_yds=None) == [on_long_boundary]
+    assert drive_zone_hazards([just_past_window], 250, max_reach_yds=None) == []
+    # Explicit-None and omitted-arg must be identical.
+    assert drive_zone_hazards([on_long_boundary], 250, max_reach_yds=None) == drive_zone_hazards(
+        [on_long_boundary], 250
+    )
+
+
+def test_greenside_bunker_beyond_reach_excluded():
+    """The Red-2 arithmetic directly: a 374y-carry greenside bunker
+    (distance_from_green=19) against a 350y expected advance. A 285y-total
+    player's cap excludes it (`min(350, 285) + 30 = 315 < 374`); a 350y-total
+    bomber's cap includes it (`min(350, 350) + 30 = 380 >= 374`)."""
+    hazard = Hazard(
+        type="bunker", side="left", line_side="left",
+        carry_yards=374, distance_from_green=19, penalty_severity="moderate",
+    )
+    assert drive_zone_hazards([hazard], 350.0, max_reach_yds=285.0) == []
+    assert drive_zone_hazards([hazard], 350.0, max_reach_yds=350.0) == [hazard]
+
+
+def test_reach_cap_end_to_end():
+    """generate_recommendation, tee-shot turn: a stored 350y driver
+    (physics-solved total ~330y, still air) against a 386y hole with the
+    374y-carry greenside bunker above. WITHOUT the reach cap this hazard
+    WOULD be in-window (the raw club_dist-anchored window is [300, 380],
+    and 374 sits inside it — verified directly via `drive_zone_hazards`
+    below); WITH the cap (`max_reach_yds` = the physics drive total, 330),
+    the window's long edge is capped at 360 and the hazard is excluded — so
+    `generate_recommendation`'s human strings for THIS positioning shot must
+    never say "bunker". The hazard is never removed from `hole.hazards`
+    itself, though: a later, shorter (approach) turn on the SAME hole still
+    picks it up via `compute_miss_side`'s greenside frame (distance_from_
+    green <= 20), with zero extra plumbing — the fix only re-frames the
+    driving-zone WINDOW, it never deletes hazard data."""
+    hazard = Hazard(
+        type="bunker", side="left", line_side="left",
+        carry_yards=374, distance_from_green=19, penalty_severity="moderate",
+    )
+    hole = HoleIntelligence(hole_number=1, par=4, yards=386, hazards=[hazard])
+
+    # Precondition: without a reach cap, this hazard WOULD be in the raw
+    # club_dist-anchored window — proves the fixture actually exercises the
+    # cap rather than being excluded by carry/window mismatch alone.
+    assert drive_zone_hazards([hazard], 350.0) == [hazard]
+
+    rec_tee = generate_recommendation(hole, 386, {"driver": 350}, handicap=15)
+    assert rec_tee.shot_kind == "positioning"
+    joined_tee = " ".join(
+        [rec_tee.aim_point.description, *rec_tee.reasoning, rec_tee.miss_side.description, rec_tee.miss_side.avoid]
+    ).lower()
+    assert "bunker" not in joined_tee
+
+    # Approach turn (same hole.hazards, shorter remaining distance): the
+    # hazard still drives approach-frame logic via compute_miss_side's
+    # greenside (distance_from_green <= 20) reach — never lost.
+    rec_approach = generate_recommendation(hole, 125, {"driver": 350, "9iron": 140}, handicap=15)
+    assert rec_approach.shot_kind == "approach"
+    assert "bunker" in rec_approach.miss_side.avoid.lower()
+
+
 # ── is_green_reachable — direct unit coverage ────────────────────────────────
 
 

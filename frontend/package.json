@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/assert-no-auth-bypass.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -14,6 +15,7 @@
     "test:native-crash": "node ios/simtest-headless.mjs"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "^8.0.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/camera": "^8.2.0",
     "@capacitor/cli": "^8.4.1",

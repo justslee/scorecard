@@ -13,7 +13,11 @@ Pure, no DB/network — mirrors `test_positioning_shot.py`'s fixture style.
 
 from __future__ import annotations
 
+import math
+
 from app.caddie.aim_point import compute_positioning_aim, compute_positioning_miss_side, generate_recommendation
+from app.caddie.decade_advice import drive_zone_hazards
+from app.caddie.hazards import extract_hole_hazards
 from app.caddie.types import Hazard, HoleIntelligence
 
 
@@ -131,3 +135,116 @@ def test_generate_recommendation_bethpage1_shape_aim_and_miss_agree():
     assert "middle of the fairway" in rec.aim_point.description.lower()
     assert "favor the left" not in rec.aim_point.description.lower()
     assert "favor the right" not in rec.aim_point.description.lower()
+
+
+# ── Finding B end-to-end: Red-1 bracketing tree line (gate 1) ───────────────
+#
+# specs/caddie-hazard-side-reach-plan.md §5.2. Real owner incident: Red-1's
+# LEFT tree line spans carry 145->360y (dense, real observations, including
+# vertices squarely in the landing zone at ~250-280y). Under the OLD
+# near/far-only collapse, LEFT's two survivors (145, 360) both fall OUTSIDE
+# an ~80y drive window while a sparse RIGHT cluster's near entry (~268y)
+# survives inside it — `compute_positioning_miss_side` then sees hazards on
+# ONLY the right side and confidently calls "favor left — miss right",
+# exactly inverted (LEFT was equally, if not more, in play). The Finding B
+# gap-bounded chain fix must never reproduce that one-sided confident call.
+
+_YARDS_TO_M = 0.9144
+_LAT_M_PER_DEG = 111_320.0
+_TEE_LON, _TEE_LAT = -73.000, 40.700
+
+
+def _lat_offset_deg(base_lat: float, yards_north: float) -> float:
+    return (yards_north * _YARDS_TO_M) / _LAT_M_PER_DEG
+
+
+def _lon_offset_deg(base_lat: float, yards_east: float) -> float:
+    cos_lat = math.cos(math.radians(base_lat))
+    return (yards_east * _YARDS_TO_M) / (_LAT_M_PER_DEG * cos_lat)
+
+
+def _point_north_east(base_lon: float, base_lat: float, yards_north: float, yards_east: float):
+    lat = base_lat + _lat_offset_deg(base_lat, yards_north)
+    lon = base_lon + _lon_offset_deg(base_lat, yards_east)
+    return lon, lat
+
+
+def _square_polygon(feature_type: str, center_lon: float, center_lat: float, half_deg: float = 0.00005) -> dict:
+    lo_lon, hi_lon = center_lon - half_deg, center_lon + half_deg
+    lo_lat, hi_lat = center_lat - half_deg, center_lat + half_deg
+    ring = [
+        [lo_lon, lo_lat], [hi_lon, lo_lat], [hi_lon, hi_lat], [lo_lon, hi_lat], [lo_lon, lo_lat],
+    ]
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+        "properties": {"featureType": feature_type},
+    }
+
+
+def _woods_ring(verts: list[tuple[float, float]]) -> dict:
+    """A `"woods"` Polygon whose outer ring is exactly `verts` (already
+    lon/lat), closed by repeating the first vertex."""
+    ring = [[lon, lat] for lon, lat in verts]
+    ring.append(ring[0])
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+        "properties": {"featureType": "woods"},
+    }
+
+
+def _fc(*features: dict) -> dict:
+    return {"type": "FeatureCollection", "features": list(features)}
+
+
+def _red1_bracketing_fc() -> dict:
+    """Synthetic Red-1-shaped 466y hole: tee due south, green due north.
+    LEFT woods ring: carries 145/250/265/280/360 (west of centerline —
+    negative east offset, this file's own due-north convention: negative
+    east = west = left). RIGHT woods ring: carries 268/310/355 (east =
+    right), the sparse cluster whose near entry alone survived the old
+    collapse."""
+    green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 466, 0)
+    tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+    green_feat = _square_polygon("green", green_lon, green_lat)
+
+    left_verts = [
+        _point_north_east(_TEE_LON, _TEE_LAT, a, -30)
+        for a in (145, 250, 265, 280, 360)
+    ]
+    left_woods = _woods_ring(left_verts)
+
+    right_verts = [
+        _point_north_east(_TEE_LON, _TEE_LAT, a, 25)
+        for a in (268, 310, 355)
+    ]
+    right_woods = _woods_ring(right_verts)
+
+    return _fc(tee_feat, green_feat, left_woods, right_woods)
+
+
+def test_red1_bracketing_left_tree_line_never_confident_right():
+    fc = _red1_bracketing_fc()
+    hazards = extract_hole_hazards(fc)
+
+    # Precondition: both sides qualify as real "trees" hazards.
+    sides = {h.line_side for h in hazards if h.type == "trees"}
+    assert sides == {"left", "right"}
+
+    zone = drive_zone_hazards(hazards, expected_advance_yds=270.0)
+    miss = compute_positioning_miss_side(zone)
+
+    assert miss.preferred in ("center", "right")
+    assert not (miss.preferred == "left" and "right" in miss.avoid.lower()), (
+        f"confident wrong-side call reproduced: {miss}"
+    )
+    if miss.preferred == "center":
+        assert "left" in miss.description.lower() and "right" in miss.description.lower()
+
+    # End-to-end: generate_recommendation must never speak "favor the left"
+    # (the incident's exact spoken phrase) for this fixture.
+    hole = HoleIntelligence(hole_number=1, par=4, yards=466, hazards=hazards)
+    rec = generate_recommendation(hole, 466, {"driver": 300}, handicap=15)
+    joined = " ".join([rec.aim_point.description, *rec.reasoning, rec.miss_side.description]).lower()
+    assert "favor the left" not in joined
