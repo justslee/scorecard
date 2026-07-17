@@ -19054,6 +19054,12 @@ live pointer drive (Playwright, isTrusted pointer events) that (a) drag works + 
 updates and (b) no card-expand/zoom and no hole-swipe — a code read is NOT sufficient (this class of bug is
 invisible from code). Re-run gates. Then designer BLOCKING live re-render again. HOLD ship. If I die:
 reconcile from origin/integration/next; last KNOWN-WORKING drag @b142f40/85c2ff5, capture regression @997e318.
+[UPDATE] Parallel course-discovery lane landed on bundle #146 (PR #146 OPEN, title already includes this item);
+rebased my work onto it @17a3b5a. AWAITING builder ae9b02c04ba17cfcf: REVERT the co-located onPointerDownCapture
+on the reticle <circle> + × button; restore 85c2ff5's working mechanism (single bubble onPointerDown+setPointerCapture
++ touch-action:none). KEEP all other 997e318 gains (deleted in-SVG panel, onAimChange callback, forwardRef clearAim,
+dead-code removal). MANDATORY live Playwright pointer drive to prove drag works (a-e) + screenshot; code read NOT
+accepted. Then designer BLOCKING live re-render + gates. HOLD ship (rides bundle #146 for owner's next approval).
 Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
 origin/integration/next + worktree commits; do NOT re-run a finished child.
 ## AWAITING — builder (specs/course-discovery-intel-plan.md, in THIS worktree, on integration/next)
