@@ -69,10 +69,10 @@ const clerkAppearance = {
 // The before-request hook: omit cookies, append _is_native=1 (so FAPI echoes the
 // JWT in the "authorization" response header instead of a cookie — requires
 // Native Applications enabled in the Clerk Dashboard), and inject the persisted
-// JWT from the native token store (see native-token-store.ts; @capacitor/
-// preferences today, Keychain-backed before App Store). The after-response hook
-// reads that "authorization" header back and persists it. CapacitorHttp routes
-// fetch() through iOS NSURLSession so all response headers are readable.
+// JWT from the native token store (see native-token-store.ts — Keychain-backed
+// via @aparajita/capacitor-secure-storage). The after-response hook reads that
+// "authorization" header back and persists it. CapacitorHttp routes fetch()
+// through iOS NSURLSession so all response headers are readable.
 
 // FapiRequestInit = RequestInit & { url?: URL; ... }. At call time
 // requestInit.headers is a Headers instance and requestInit.url is the built URL.
