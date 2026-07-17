@@ -367,6 +367,15 @@ def check_context_contains(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
     return CheckResult(ok, f"{check.literal!r} not found in the CURRENT SITUATION block" if not ok else "ok")
 
 
+def check_context_not_contains(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
+    """Structural context strip (specs/caddie-two-tier-routing-plan.md §3) —
+    the inverse of `check_context_contains`: a literal that used to be baked
+    into the CURRENT SITUATION block (hazard/bend/guide/green-slope detail)
+    must now be ABSENT — that data lives in the brain payload only."""
+    ok = check.literal not in ctx.text_situation_block
+    return CheckResult(ok, f"{check.literal!r} unexpectedly found in the CURRENT SITUATION block" if not ok else "ok")
+
+
 def check_carries_tool_matches_hazards(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
     """`get_carries` (both mouths resolve through `app.caddie.tools.
     carries_payload`) must report EXACTLY the scenario's mapped along-path
@@ -478,6 +487,7 @@ TIER1_CHECKS: dict[str, Callable[[Tier1Context, Tier1Check], CheckResult]] = {
     Tier1CheckName.VALIDATE_GUIDE_ACCEPTS.value: check_validate_guide_accepts,
     Tier1CheckName.GROUND_TRUTH_BLOCK_COMPLETE.value: check_ground_truth_block_complete,
     Tier1CheckName.CONTEXT_CONTAINS.value: check_context_contains,
+    Tier1CheckName.CONTEXT_NOT_CONTAINS.value: check_context_not_contains,
     Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS.value: check_carries_tool_matches_hazards,
     Tier1CheckName.SHOT_DISTANCE_IN_BAND.value: check_shot_distance_in_band,
     Tier1CheckName.HISTORY_RENDERS_IN_ORDER.value: check_history_renders_in_order,

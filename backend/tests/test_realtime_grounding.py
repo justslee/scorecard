@@ -142,7 +142,12 @@ def test_conversation_history_absent_is_no_block():
 # ── Gap 2: green slope ────────────────────────────────────────────────────────
 
 
-def test_green_slope_present_reaches_situation_block():
+def test_green_slope_present_never_reaches_situation_block():
+    """UPDATED specs/caddie-two-tier-routing-plan.md §3 (structural context
+    strip): green slope is a STRATEGY ingredient now — it lives in the
+    get_strategy brain payload only, never baked into the realtime mouth's
+    instructions (this is what let the weak model freelance wrong-side
+    advice). Was `test_green_slope_present_reaches_situation_block`."""
     session = _bare_session(
         hole_intel={
             7: HoleIntelligence(
@@ -157,7 +162,7 @@ def test_green_slope_present_reaches_situation_block():
         }
     )
     text = build_realtime_instructions(_persona(), session=session)
-    assert "Green slope: Back-to-front, breaks right" in text
+    assert "Green slope: Back-to-front, breaks right" not in text
 
 
 def test_green_slope_absent_no_line():
@@ -171,7 +176,12 @@ def test_green_slope_absent_no_line():
 # ── Bend line + BEND_GROUNDING_RULE (caddie-bend-distance-plan.md §6) ───────
 
 
-def test_bend_line_present_reaches_situation_block():
+def test_bend_line_present_never_reaches_situation_block():
+    """UPDATED specs/caddie-two-tier-routing-plan.md §3 (structural context
+    strip): bend/dogleg detail is a STRATEGY ingredient now — it lives in
+    the get_strategy brain payload only, never baked into the realtime
+    mouth's instructions. Was `test_bend_line_present_reaches_situation_
+    block`."""
     session = _bare_session(
         hole_intel={
             7: HoleIntelligence(
@@ -181,9 +191,9 @@ def test_bend_line_present_reaches_situation_block():
         }
     )
     block = _situation_block(session)
-    assert "Hole 7 shape: doglegs left at ~270y" in block
+    assert "Hole 7 shape: doglegs left at ~270y" not in block
     text = build_realtime_instructions(_persona(), session=session)
-    assert "Hole 7 shape: doglegs left at ~270y" in text
+    assert "Hole 7 shape: doglegs left at ~270y" not in text
 
 
 def test_bend_line_absent_when_intel_has_no_bend():

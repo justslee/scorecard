@@ -38,6 +38,11 @@ class Tier1CheckName(str, Enum):
     VALIDATE_GUIDE_ACCEPTS = "validate_guide_accepts"
     GROUND_TRUTH_BLOCK_COMPLETE = "ground_truth_block_complete"
     CONTEXT_CONTAINS = "context_contains"
+    # Structural context strip (specs/caddie-two-tier-routing-plan.md §3): the
+    # inverse of CONTEXT_CONTAINS — asserts a literal is ABSENT from the
+    # CURRENT SITUATION block (e.g. hazard/bend/guide/green-slope detail,
+    # which now lives in the brain payload only, never the baked prompt).
+    CONTEXT_NOT_CONTAINS = "context_not_contains"
     CARRIES_TOOL_MATCHES_HAZARDS = "carries_tool_matches_hazards"
     SHOT_DISTANCE_IN_BAND = "shot_distance_in_band"
     # Multi-turn context-retention (specs/caddie-experience-harness-plan.md §2):
@@ -79,6 +84,7 @@ _TIER1_REQUIRED_FIELDS: dict[Tier1CheckName, tuple[str, ...]] = {
     Tier1CheckName.VALIDATE_GUIDE_ACCEPTS: ("guide",),
     Tier1CheckName.GROUND_TRUTH_BLOCK_COMPLETE: (),
     Tier1CheckName.CONTEXT_CONTAINS: ("literal",),
+    Tier1CheckName.CONTEXT_NOT_CONTAINS: ("literal",),
     Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS: (),
     # band is universally required; the club-vs-target_yards either/or is
     # enforced by the model validator below (exactly one must be set).

@@ -27,11 +27,10 @@ from app.caddie.hazards import (
     extract_corridor_profile,
     extract_hole_bend,
     extract_hole_hazards,
-    format_bend_line,
     format_hazards_line,
 )
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
-from app.caddie.guide_writer import format_guide_line, validate_guide
+from app.caddie.guide_writer import validate_guide
 from app.caddie.voice_prompts import (
     DECISION_GROUNDING_RULE,
     INPUT_GROUNDING_RULE,
@@ -860,6 +859,15 @@ async def _build_session_voice_prompt(
         # owned by the yardage line above); the effective/plays-like figure
         # is still stated concretely, as an elevation-adjusted DELTA on top
         # of that ground truth, not a rival claim about the base yardage.
+        #
+        # Structural context strip (specs/caddie-two-tier-routing-plan.md
+        # §3): hazards/bend/the cached guide/green-slope are STRATEGY
+        # INGREDIENTS — they live in the brain-composer's payload ONLY now
+        # (app/caddie/strategy.py). ADVICE-class turns never reach this
+        # prompt (intercepted server-side before the Claude loop runs, §5);
+        # Claude only ever answers FACT/OTHER turns, which resolve hazard
+        # facts honestly through the get_conditions/get_carries tool
+        # results, never a baked line here.
         elev = hole_intel.elevation_change_ft
         if elev and abs(elev) >= 5 and hole_intel.effective_yards is not None:
             direction = "uphill" if elev > 0 else "downhill"
@@ -867,18 +875,6 @@ async def _build_session_voice_prompt(
                 f"Elevation: plays {direction} {abs(round(elev))}ft — treat it as "
                 f"{hole_intel.effective_yards} yards for club selection."
             )
-        if hole_intel.hazards:
-            hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
-            if hazards_line:
-                context_parts.append(hazards_line)
-        bend_line = format_bend_line(request.hole_number, hole_intel.bend)
-        if bend_line:
-            context_parts.append(bend_line)
-        guide_line = format_guide_line(hole_intel.strategy_guide)
-        if guide_line:
-            context_parts.append(guide_line)
-        if hole_intel.green_slope:
-            context_parts.append(f"Green slope: {hole_intel.green_slope.description}")
 
     if session.weather:
         w = session.weather
