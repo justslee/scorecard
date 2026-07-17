@@ -3,6 +3,32 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 BUILDER FIXUP DONE — caddie two-tier advice routing, reviewer fixup batch on worktree agent-a84640c5c3166ffd8, 4 commits, all gates green
+Review verdict on @7d2f94d: 2 BLOCKING (false-positive validator regexes) + 3 fold-ins. Fixed all,
+same worktree/lane (HEAD was rebased to 3da4441 by eng-lead first):
+- BLOCKING B1: club pin used a bare substring check — "swing" contains "sw" (Sand Wedge), "always"
+  contains "lw" (Lob Wedge) — silently degrading a correct on-side tee-shot narrative to the terse
+  engine line. Fixed to word-boundary regex per club name.
+- BLOCKING B2: reachability pin's `\b(at|of|from) the (flag|pin)\b` caught CORRECT positioning
+  phrasing ("short OF THE pin", "wedge in FROM THE pin") — exactly the layup advice this feature
+  targets. Dropped of|from; "at the (flag|pin)" now gated on a nearby aim verb (aim/target/play/send);
+  dead-aim/pin-high unchanged. Updated the one existing reject test to genuine "take dead aim at the
+  pin" phrasing (the old "left OF THE flag" text is precisely what B2 now correctly un-flags).
+- Added the missing regression class both bugs lacked: pass-on-good tests with the actual trigger
+  words (swing/always tee-shot narrative passes; short-of/wedge-from-the-pin layup narrative passes).
+- Fold-in 1: classifier terse-ADVICE misses — "go for it", "send it", "left or right", "bite off",
+  club+"here" ("driver here?"), broadened "what's the (adj) play". 6 new matrix rows.
+- Fold-in 2: putts guard — "I had 3 putts" no longer misclassifies SCORE (a putts count isn't a hole
+  score); only an explicit made/shot/scored verb rescues a putts-mentioning utterance back to SCORE.
+- Fold-in 3 (QA contract gap): new frontend/src/lib/voice/record-scores.test.ts — live-session
+  acceptance at the top of the real wiring chain (RealtimeCaddieClient -> dispatchTool -> the REAL
+  resolveScoreEntry, not a hand-rolled fake), driving the actual Realtime data-channel event shape.
+- Fold-in 4 (designer): _SCORE_TEXT_HANDOFF_LINE reworded to first-person spoken wording (it's TTS'd).
+Gates (all green): backend ruff clean; pytest (not integration) 2781 passed; frontend tsc clean;
+build green; vitest 2700/2700 (140 files); voice-tests smoke 278/278.
+Commits: 26f2b61 (classifier fold-ins), 258e1f4 (B1+B2+copy nit), 6f729ba (QA record-scores test).
+Ships HELD — reviewer/QA/designer re-verify next; eng-lead pushes.
+
 ## 2026-07-17 IN-PROGRESS — caddie two-tier advice routing (OWNER CRUX, NOTICEABLE) — worktree agent-a84640c5c3166ffd8
 Owner-ratified rearchitecture: advice-class asks MUST route to the advanced brain fed the COMPLETE
 grounded payload; fast facts stay on the deterministic engine tools + realtime mouth. Builds ON the
