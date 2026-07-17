@@ -38,12 +38,25 @@ STRATEGY_TOOL_RULE with spoken thinking-bridge. (9) SCORE = record_scores realti
 parse-scores + existing handleSetScore write; DIRECT write + light in-flow ack, NO confirm ceremony
 (owner refinement folded into spec §9). Red-1 fixture = RECONSTRUCTED poisoned guide (no prod/staging DB).
 
-## AWAITING — builder (specs/caddie-two-tier-routing-plan.md, in THIS worktree, on integration/next)
-Builder implements the full plan in build order §13; commits in the worktree; I rebase+push HEAD.
-On builder DONE: reviewer(fresh, adversarial: can any advice-class ask slip un-brained? strip breaks
-chit-chat? guide-gate false-rejects? latency?) + qa(gates + Red-1 acceptance + routing matrix + strip +
-score-entry) + designer(thinking-bridge phrasing + "reading the hole" copy). Ships HELD; do NOT ship/ping.
-If I die: reconcile from origin/integration/next + worktree commits; do NOT re-run a finished builder.
+## BUILDER DONE — 7 build commits, rebased onto origin/integration/next @ee1efdd (clean, no conflicts),
+## PUSHED to origin/integration/next @7d2f94d. Post-rebase re-verified: ruff clean, 57 new offline tests
+pass, frontend tsc clean, landed frontend lane had NO overlap with builder's files. Builder full gates
+(pre-rebase): backend 2770 pytest, frontend 2698 vitest, 278 voice-smoke, Red-1 acceptance + 20-row matrix
+pass. Builder deviations (all reasonable/spec-driven): inverted 2 golden-eval tier1 bend-line rows + added
+reusable context_not_contains check; changed one caching-test probe transcript ("what club?"->"How's the
+wind?" since "what club" is now correctly ADVICE per matrix); frontend score-entry tested via extracted
+lib/caddie/score-entry.ts::resolveScoreEntry unit tests (8 cases incl no-confirm-round-trip) instead of
+full live-session mount.
+
+## AWAITING — reviewer + qa + designer on item @7d2f94d (integration/next), running in parallel
+reviewer(fresh adversarial: can ANY advice-class ask slip to a mouth un-brained? does the strip break
+benign chit-chat/fast-path readout? does the guide-gate false-reject a valid guide? verdict-pin holes?
+score-entry write-path safety? + /security-review + /code-review since NOTICEABLE). qa(full gates + Red-1
+acceptance + routing matrix + structural strip + score-entry acceptance). designer(thinking-bridge phrasing
+in STRATEGY_TOOL_RULE + "reading the hole" SSE status vs NORTHSTAR yardage-book calm). Ships HELD; do NOT
+ship/ping. On BLOCKING findings -> re-dispatch builder, re-review. On all-green -> update bundle PR #146
+checklist (this item NOTICEABLE) + backlog + progress. If I die: reconcile from origin/integration/next
+@7d2f94d + review outputs; do NOT re-run finished reviews.
 SCOPE EXTENSION (owner, mid-plan): router generalizes to a FULL INTENT ROUTER on the one live session —
 class 3 = SCOREKEEPING (recognize "put me down for a 5"/"par for me, double for Mike" -> write scorecard
 directly + spoken confirm, NEVER silent; REUSE the existing frontend/src/lib/voice/* parser + games
