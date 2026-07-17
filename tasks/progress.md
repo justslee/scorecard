@@ -18590,3 +18590,32 @@ unchanged at 97 — no data loss).
 
 Primary checkout (`/Users/justinlee/projects/scorecard`) was never touched; all work done in the
 dedicated worktree `/Users/justinlee/projects/.scorecard-ship-v1111`, now being removed.
+
+## 2026-07-17 IN-PROGRESS (eng-lead) — tree-distance ground-truth verification (P0, NOTICEABLE, SHIPS HELD)
+Owner P0 re-escalation: on v1.1.11 (side/reach fixes) Bethpage RED tree DISTANCES still wrong.
+Measurement-first per brief. Base @ 8579326 (post-#144 recut; local hazards.py == deployed v1.1.11).
+Red course id = 269e1f2e-65cc-5cf6-a9b0-f5908e298155.
+
+CODE-READ FINDING (narrows the search): the base measurement math looks CORRECT on inspection —
+- `_xy_m` (hazards.py:182) DOES scale longitude by cos(mean lat) — the cos-lat suspect is NOT a
+  naive-unscaled bug in this frame. (`_ring_area`/`_ring_shoelace_area` unscaled only affects
+  LARGEST-member selection, not carry.)
+- trees use PER-VERTEX observations (`_tree_observations`) projected via `_project_onto_polyline`
+  against the mapped `hole` LineString, drop behind-tee + >70y-lateral → near-EDGE, not centroid.
+- bunkers & trees share the SAME `_classify` frame (extract_hole_hazards:699). Owner says bunkers
+  are ~right → same frame → suspicion REDIRECTS from projection arithmetic to the DATA layer:
+  (a) per-hole TEE anchoring on Red (forward/back tee, reversed way), (b) the mapped polyline used,
+  (c) WOODS-polygon SCOPING — OSM woods are area-global; a polygon spanning multiple holes injects
+  vertices that fall within 70y of THIS hole's line at a WRONG carry. These are the prime suspects
+  to prove/refute with independent ground truth.
+
+METHOD: fetch STORED Red hole 1-9 FeatureCollections on-box (SSM, read-only, key-free) = faithful
+repro of what owner heard; run deployed engine locally (== on-box) + INDEPENDENT geodesic ground
+truth (fresh script, pyproj/haversine per-vertex, NOT reusing hazards.py projection) → diff → root
+cause → fix + fixtures (±5y) → on-box before/after → observability. reviewer + qa. SHIPS HELD until proven.
+
+## AWAITING — on-box dump of Red hole 1-9 stored FeatureCollections (fixture + engine repro)
+Running scratchpad/dump_red.sh via run_ssm.sh; output saved to scratchpad/red_fc_dump.json.
+On resume: if the dump exists & valid, proceed to Plan(fable) measurement-design with the fixture;
+do NOT re-run the dump. Next steps: Plan(fable) → builder (independent ground-truth + diff + fix +
+fixtures + observability) → reviewer → qa. Do NOT ship/ping.
