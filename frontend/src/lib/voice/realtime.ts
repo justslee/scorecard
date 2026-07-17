@@ -92,24 +92,52 @@ export interface RealtimeCaddieOptions {
 
 // ── Tool dispatch ────────────────────────────────────────────────────────
 
+/** Result of a live `record_scores` tool call (specs/caddie-two-tier-routing
+ *  -plan.md §9) — returned to the model for a brief natural acknowledgment,
+ *  never a read-back-and-confirm loop. `error` covers both "no callback
+ *  wired" (this screen has no scorecard) and the parse-failure guard (a
+ *  low-confidence PARSE writes nothing and asks the player to repeat — NOT
+ *  a confirm ceremony; an explicit command still writes directly). */
+export interface ScoreEntryResult {
+  hole?: number;
+  recorded?: Record<string, number>;
+  unmatched?: string[];
+  confidence?: number;
+  error?: string;
+  heard?: string;
+}
+
+/** Tool-dispatch context — carries live round/turn state so tool calls never
+ *  rely on data snapshotted at connection time (specs/caddie-live-p0-connect
+ *  -hole-plan.md §3.1, extended by specs/caddie-two-tier-routing-plan.md §9
+ *  for score entry). */
+export interface RealtimeToolContext {
+  roundId: string;
+  holeYards?: number | null;
+  yardageBasis?: string | null;
+  /** The hole the golfer is ACTUALLY looking at right now (specs/caddie
+   *  -live-p0-connect-hole-plan.md §3.1-3.2 — Bug B: the model's
+   *  `hole_number` arg can be stale after a swipe mid-turn). Ctx-first
+   *  override for the six hole-scoped tools below; `record_shot` stays
+   *  args-first (a shot is a statement about a just-played hole the
+   *  player often names explicitly) with this only as the omission
+   *  fallback. */
+  currentHole?: number | null;
+  /** Explicit spoken score-entry routing (specs/caddie-two-tier-routing-plan
+   *  .md §9) — wired by RoundPageClient via useDetachedCaddieLive ->
+   *  useCaddieLiveSession's tool-context provider. Absent on surfaces with
+   *  no scorecard (e.g. round setup, a detached live session before the
+   *  round page mounts it) — dispatchTool returns an honest error rather
+   *  than silently dropping the score. */
+  enterScores?: (utterance: string, holeNumber?: number) => Promise<ScoreEntryResult>;
+}
+
 /** Exported for tests — verifies each tool hits the same session endpoint the
  *  text sheet uses (e.g. record_shot → POST /caddie/session/shot dual-write). */
 export async function dispatchTool(
   name: string,
   args: Record<string, unknown>,
-  ctx: {
-    roundId: string;
-    holeYards?: number | null;
-    yardageBasis?: string | null;
-    /** The hole the golfer is ACTUALLY looking at right now (specs/caddie
-     *  -live-p0-connect-hole-plan.md §3.1-3.2 — Bug B: the model's
-     *  `hole_number` arg can be stale after a swipe mid-turn). Ctx-first
-     *  override for the six hole-scoped tools below; `record_shot` stays
-     *  args-first (a shot is a statement about a just-played hole the
-     *  player often names explicitly) with this only as the omission
-     *  fallback. */
-    currentHole?: number | null;
-  },
+  ctx: RealtimeToolContext,
 ): Promise<unknown> {
   const liveHole = ctx.currentHole ?? undefined;
   switch (name) {
@@ -205,12 +233,37 @@ export async function dispatchTool(
       // the server's recommendation solve must use THIS turn's resolved yardage,
       // never a stale cached number (no-fake-data). The persona speaks `strategy`
       // faithfully (STRATEGY_TOOL_RULE) — never re-synthesizes.
+      //
+      // Live-GPS fix (specs/caddie-two-tier-routing-plan.md §10): the
+      // get_recommendation case above already forwards the live GPS fix via
+      // `yards`; this tool was missing the equivalent `distance_to_green_
+      // yards` field entirely — a mid-round GPS fix never reached the brain.
+      // Derived exactly as CaddieSheet.tsx's `distanceToGreenYards` does:
+      // `ctx.holeYards` IS the GPS distance when the basis is 'gps'.
       return await sessionStrategy({
         round_id: ctx.roundId,
         hole_number: args.hole_number != null ? Number(args.hole_number) : undefined,
+        distance_to_green_yards:
+          ctx.yardageBasis === 'gps' && ctx.holeYards != null ? Number(ctx.holeYards) : undefined,
         hole_yards: ctx.holeYards ?? undefined,
         yardage_basis: ctx.yardageBasis ?? undefined,
       });
+    }
+    case 'record_scores': {
+      // Pure routing layer (specs/caddie-two-tier-routing-plan.md §9):
+      // reuses the EXISTING /api/voice/parse-scores parser + the EXISTING
+      // score write path (RoundPageClient.handleSetScore), threaded through
+      // as `ctx.enterScores`. No new parser, schema, or write path. An
+      // explicit spoken score command writes DIRECTLY — no confirm ceremony.
+      // No callback wired (e.g. a live session with no scorecard mounted,
+      // like round setup) → an honest error, never a silently dropped score.
+      if (!ctx.enterScores) {
+        return { error: 'score entry not available on this screen' };
+      }
+      return await ctx.enterScores(
+        String(args.utterance ?? ''),
+        args.hole_number != null ? Number(args.hole_number) : undefined,
+      );
     }
     case 'set_round_setup': {
       // Handled entirely on the client: the component builds + creates the round
@@ -297,9 +350,7 @@ export class RealtimeCaddieClient {
   // (useCaddieLiveSession's holeContextRef), read fresh on every tool
   // dispatch so a hole change or a GPS fix mid-round is reflected
   // immediately, without reconstructing the client.
-  private toolContextProvider:
-    | (() => { holeYards?: number | null; yardageBasis?: string | null; currentHole?: number | null })
-    | null = null;
+  private toolContextProvider: (() => Omit<RealtimeToolContext, 'roundId'>) | null = null;
 
   // Cost control: disconnect after 90s with no conversation activity. The
   // connection is an ephemeral burst — a later press simply reconnects.
@@ -672,9 +723,7 @@ export class RealtimeCaddieClient {
    *  -plan.md §3.1) — the owning surface's OWN resolved-yardage/current-hole
    *  ref, so tool dispatch always reads the current value, not a snapshot
    *  taken at construction/adoption time. */
-  setToolContext(
-    getCtx: () => { holeYards?: number | null; yardageBasis?: string | null; currentHole?: number | null },
-  ): void {
+  setToolContext(getCtx: () => Omit<RealtimeToolContext, 'roundId'>): void {
     this.toolContextProvider = getCtx;
   }
 
@@ -1175,6 +1224,7 @@ export class RealtimeCaddieClient {
         holeYards: toolCtx.holeYards,
         yardageBasis: toolCtx.yardageBasis,
         currentHole: toolCtx.currentHole,
+        enterScores: toolCtx.enterScores,
       });
     } catch (e) {
       output = { error: e instanceof Error ? e.message : String(e) };

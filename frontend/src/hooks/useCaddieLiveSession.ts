@@ -59,6 +59,7 @@ import {
   type RealtimeCaddieEvents,
   type RealtimeMessage,
   type RealtimeStatus,
+  type ScoreEntryResult,
 } from "@/lib/voice/realtime";
 import { warmSession } from "@/lib/voice/warm-session";
 import { sortByOrder } from "@/lib/voice/realtime-ordering";
@@ -113,6 +114,14 @@ export interface UseCaddieLiveSessionOptions {
   yardageBasis?: 'gps' | 'tee-card' | 'tee-geom' | 'card' | null;
   teeName?: string | null;
   resolveOpeningShot?: () => Promise<OpeningShot | null>;
+  /** Explicit spoken score-entry routing (specs/caddie-two-tier-routing-plan
+   *  .md §9) — a PURE routing layer over the EXISTING /api/voice/parse-scores
+   *  parser and the EXISTING score write path; threaded into the live
+   *  session's tool-context provider so the `record_scores` tool can reach
+   *  it. Undefined on a surface with no scorecard (e.g. round setup) —
+   *  dispatchTool then returns an honest "not available on this screen"
+   *  error rather than silently dropping the score. */
+  enterScores?: (utterance: string, holeNumber?: number) => Promise<ScoreEntryResult>;
 }
 
 export interface UseCaddieLiveSessionResult {
@@ -145,6 +154,7 @@ export function useCaddieLiveSession({
   yardageBasis = null,
   teeName = null,
   resolveOpeningShot,
+  enterScores,
 }: UseCaddieLiveSessionOptions): UseCaddieLiveSessionResult {
   const [liveState, setLiveState] = useState<CaddieLiveState>("connecting");
   const [status, setStatus] = useState<RealtimeStatus>("idle");
@@ -244,6 +254,16 @@ export function useCaddieLiveSession({
     resolveOpeningShotRef.current = resolveOpeningShot;
   }, [resolveOpeningShot]);
 
+  /** Mirror of `enterScores` (specs/caddie-two-tier-routing-plan.md §9) —
+   *  read live by `getToolContext` below, same pattern as `resolveOpening
+   *  ShotRef`, so a later-mounted callback (e.g. RoundPageClient finishing
+   *  its own setup) reaches every client this hook creates/adopts without a
+   *  reconnect. */
+  const enterScoresRef = useRef(enterScores);
+  useEffect(() => {
+    enterScoresRef.current = enterScores;
+  }, [enterScores]);
+
   /** Mirror of the current hole facts — read by the connect/reconnect/resume
    *  callbacks (empty dep arrays) so they always re-anchor to the LATEST
    *  hole, not the one captured at mount (specs/caddie-stale-hole-live-plan.md
@@ -270,6 +290,7 @@ export function useCaddieLiveSession({
       holeYards: holeContextRef.current.yards,
       yardageBasis: holeContextRef.current.basis,
       currentHole: holeContextRef.current.holeNumber,
+      enterScores: enterScoresRef.current,
     }),
     [],
   );

@@ -66,6 +66,14 @@ vi.mock('@/lib/caddie/api', () => ({
     double_dogleg: false,
     assumptions: ['distance measured from the tee along the hole centerline'],
   })),
+  sessionStrategy: vi.fn(async () => ({
+    available: true,
+    hole_number: 7,
+    strategy: 'Hit driver, aim center, commit.',
+    degraded: false,
+    reason: null,
+    numbers: {},
+  })),
 }));
 
 import { dispatchTool } from './realtime';
@@ -79,6 +87,7 @@ import {
   getSessionShotDistance,
   getSessionGreenRead,
   getSessionBend,
+  sessionStrategy,
 } from '@/lib/caddie/api';
 
 const ctx = { roundId: 'round-42' };
@@ -220,6 +229,75 @@ describe('dispatchTool — Realtime tool surface v1', () => {
   it('unknown tools return an error payload instead of throwing', async () => {
     const out = await dispatchTool('summon_helicopter', {}, ctx);
     expect(out).toEqual({ error: 'Unknown tool: summon_helicopter' });
+  });
+
+  // specs/caddie-two-tier-routing-plan.md §10 — the live-GPS fix: get_strategy
+  // was missing the distance_to_green_yards field entirely (unlike
+  // get_recommendation above), so a mid-round GPS fix never reached the brain.
+  it('get_strategy forwards distance_to_green_yards when yardage basis is gps', async () => {
+    const gpsCtx = { roundId: 'round-42', holeYards: 178, yardageBasis: 'gps' as const };
+    await dispatchTool('get_strategy', { hole_number: 7 }, gpsCtx);
+    expect(sessionStrategy).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 7,
+      distance_to_green_yards: 178,
+      hole_yards: 178,
+      yardage_basis: 'gps',
+    });
+  });
+
+  it('get_strategy omits distance_to_green_yards when basis is not gps', async () => {
+    const cardCtx = { roundId: 'round-42', holeYards: 400, yardageBasis: 'tee-card' as const };
+    await dispatchTool('get_strategy', { hole_number: 7 }, cardCtx);
+    expect(sessionStrategy).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 7,
+      distance_to_green_yards: undefined,
+      hole_yards: 400,
+      yardage_basis: 'tee-card',
+    });
+  });
+
+  // specs/caddie-two-tier-routing-plan.md §9 — record_scores is a PURE
+  // routing case: dispatchTool just forwards to ctx.enterScores (the real
+  // parse-scores + handleSetScore wiring lives in RoundPageClient/score-
+  // entry.ts, exercised in lib/caddie/score-entry.test.ts).
+  it('record_scores calls parse-scores then enterScores and returns the recorded map', async () => {
+    const parseScores = vi.fn(async () => ({ hole: 4, scores: { Justin: 5 }, confidence: 0.9 }));
+    const enterScores = vi.fn(async (utterance: string, holeNumber?: number) => {
+      const parsed = await parseScores();
+      return {
+        hole: holeNumber ?? parsed.hole,
+        recorded: parsed.scores,
+        unmatched: [],
+        confidence: parsed.confidence,
+      };
+    });
+
+    const out = await dispatchTool(
+      'record_scores',
+      { utterance: 'put me down for a 5' },
+      { roundId: 'round-42', enterScores },
+    );
+
+    expect(parseScores).toHaveBeenCalled();
+    expect(enterScores).toHaveBeenCalledWith('put me down for a 5', undefined);
+    expect(out).toEqual({ hole: 4, recorded: { Justin: 5 }, unmatched: [], confidence: 0.9 });
+  });
+
+  it('record_scores with no enterScores callback returns honest error and writes nothing', async () => {
+    const out = await dispatchTool('record_scores', { utterance: 'I made a 5' }, ctx);
+    expect(out).toEqual({ error: 'score entry not available on this screen' });
+  });
+
+  it('record_scores below confidence threshold writes nothing and returns error', async () => {
+    const enterScores = vi.fn(async () => ({ error: "couldn't make out the scores", heard: 'mumble mumble' }));
+    const out = await dispatchTool(
+      'record_scores',
+      { utterance: 'mumble mumble' },
+      { roundId: 'round-42', enterScores },
+    );
+    expect(out).toEqual({ error: "couldn't make out the scores", heard: 'mumble mumble' });
   });
 });
 

@@ -72,6 +72,7 @@ import { indexByHoleNumber } from "@/lib/hole-index";
 import { fetchAPI } from "@/lib/api";
 import { GPSWatcher } from "@/lib/gps";
 import { resolveOpeningShotDistance } from "@/lib/caddie/opening-shot";
+import { resolveScoreEntry, defaultParseScores } from "@/lib/caddie/score-entry";
 import { setCaddieLiveMode, getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
 
 // Player accent colors (yardage-book palette — warm ink tones)
@@ -1348,6 +1349,32 @@ export default function RoundPage() {
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
 
+  /**
+   * record_scores routing (specs/caddie-two-tier-routing-plan.md §9) — a
+   * PURE routing layer: `resolveScoreEntry` reuses the EXISTING /api/voice/
+   * parse-scores parser and writes through the EXISTING `handleSetScore`
+   * path (optimistic UI + pending overlay + offline retry, unmodified). An
+   * explicit spoken score command writes DIRECTLY, no confirm ceremony; a
+   * low-confidence PARSE writes nothing and asks the player to repeat.
+   */
+  // handleSetScore isn't itself memoized (pre-existing, unrelated to this
+  // item — see the file's several other eslint-disable-next-line react-
+  // hooks/exhaustive-deps precedents) — enterScores is rebuilt every render
+  // as a result, same as any other value closing over it; no functional
+  // impact, since it's only read at call time by the live tool dispatch.
+  const enterScores = useCallback(
+    (utterance: string, holeNumber?: number) =>
+      resolveScoreEntry(
+        utterance,
+        holeNumber ?? currentHole,
+        holePar,
+        players,
+        handleSetScore,
+        defaultParseScores,
+      ),
+    [players, currentHole, holePar, handleSetScore]
+  );
+
   // ---------------------------------------------------------------------------
   // Detached live caddie session (specs/caddie-detach-and-language-pin-plan.md,
   // Item B) — owned HERE, not by CaddieSheet, so a live conversation survives
@@ -1365,6 +1392,7 @@ export default function RoundPage() {
     yardageBasis: resolvedYardage.basis,
     teeName: round?.teeName ?? null,
     resolveOpeningShot: caddieSessionActive && !isLocalRound ? resolveOpeningShot : undefined,
+    enterScores,
     sheetOpen: caddieOpen,
     eligible: caddieSessionActive && !isLocalRound,
   });
