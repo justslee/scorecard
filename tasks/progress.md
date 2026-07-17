@@ -18340,3 +18340,25 @@ AWAITING (parallel): reviewer (fresh, adversarial correctness+security on the di
 path, no zombie/dedup regression, no mic-without-indicator) + qa (re-run gates) + designer (BLOCKING on
 rendered interaction). On all-green -> REBASE onto latest origin/integration/next -> push -> add to PR
 #144 as NOTICEABLE. BLOCKING issues -> re-dispatch builder. No ship/ping this cycle.
+
+### DONE — caddie-orb-tap-to-talk-inversion LANDED @9b27438 on integration/next / PR #144 (NOTICEABLE)
+Owner v1.1.10 field-test directive implemented: TAP → talk immediately (no sheet, pulsing medallion);
+HOLD → open chat sheet. Both surfaces. Round pill: idle tap=voice.stop()+detachedCaddieLive.start()
+(no sheet, eligibility fallback), idle hold 350ms=openCaddieSheet(), live tap/hold byte-identical.
+Omnipresent orb: presentation:"docked"|"full" over the SINGLE useLooperDictation (no 2nd session);
+docked auto-promotes→full on user-turn/mic-error/unexpected-drop; bare no-speech self-heals in chip.
+Reduced-motion static ring added on both surfaces (closed a real mic-without-indicator gap). One-time
+re-teach chips + stateful aria-labels.
+VERDICTS: reviewer SHIP (all invariants hand-traced sound; tests strengthened; /security-review
+skipped w/ justification — no new net/data/permission surface). qa PASS (lint0/tsc/build19-19/
+voice278-278/vitest 2640-2640; 3 seam suites unmodified per git show --stat). designer APPROVE
+(faithful to state table; no SaaS-motion/chime drift; resting orb/pill byte-identical).
+REBASED onto origin/integration/next (union-resolved progress.md conflict w/ parallel advice-model+CI
+lockfile lane) → pushed FF 9b27438. PR #144 body updated: item marked NOTICEABLE; bundle now
+approval-eligible. backlog.json intentionally NOT surgically edited (ad-hoc directive, not a filed item;
+fragility lesson) — record is PR #144 + this file.
+NON-BLOCKING follow-ups owed: (1) round-pill idle tap/hold has no unit harness → manual/sim verify at
+build time; (2) the pill idle-tap eligibility gate is a hand-dup of useDetachedCaddieLive.start()'s gate
+(KEEP IN SYNC comment; worst case a silent no-op tap since start() re-guards).
+DID NOT ship/ping (per lane brief; caller INERT). Release/approval handled separately when parallel
+lanes settle + CI green on head. CI: verifying SUCCESS on the pushed head (Frontend+Backend gates).
