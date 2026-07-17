@@ -33,6 +33,13 @@ matrix, structural strip, consistency). On DONE -> builder implements the plan o
 reviewer(fresh) + qa(gates+acceptance+matrix) + designer(thinking-bridge). Ships HELD; do NOT ship/ping.
 If I die: reconcile from origin/integration/next + worktree commits; re-dispatch Fable only if no plan
 file exists.
+SCOPE EXTENSION (owner, mid-plan): router generalizes to a FULL INTENT ROUTER on the one live session —
+class 3 = SCOREKEEPING (recognize "put me down for a 5"/"par for me, double for Mike" -> write scorecard
+directly + spoken confirm, NEVER silent; REUSE the existing frontend/src/lib/voice/* parser + games
+engine, do NOT build a 2nd parser; distinct from record_shot). Class 4 = extensible seam (tee-times/
+course-search/nav later, list-add not rearchitect). Added acceptance: live "put me down for a 5" ->
+scorecard+confirm+no advice path; matrix discriminator "what do I need to shoot par on the back nine" =
+FACT/engine, not score-entry. Folded into the same Fable plan via SendMessage.
 
 ## 2026-07-17 DONE — draggable yardage-book aim target, NOTICEABLE, committed to worktree-agent-ad870b071dfc686ee (maps to integration/next) @ b142f40 (not yet pushed by builder — eng-lead pushes)
 Owner ask: "Can you make the target draggable? The one on the yardage book and map?" Built
