@@ -18181,23 +18181,38 @@ owner; webhook is fully inert since CLERK_WEBHOOK_SECRET is unset in prod). Next
 multiuser-p0-client-identity already landed (bundle #143); multiuser-p0-keychain-token depends on this
 slice + multiuser-p0-authz-flip, both now satisfied — ready to pick up next cycle.
 
-## AWAITING — slice 4 multiuser-p0-keychain-token (builder dispatched, cycle 2026-07-16)
-Owner feedback checked FIRST: board polled (no new Bethpage field-feedback card; #143 v1.1.10 comment
-is our own ship notice). Sync: origin/main (533ac44) already ancestor of HEAD (820dd50) — integration/next
-clean+current, no merge needed. No pending approval bundle. Bundle PR #144 open, SILENT/dark.
+## 2026-07-16 DONE — multiuser-p0-keychain-token (slice 4, FINAL ready P0 slice), SILENT/dark, landed @ 59e899b (bundle PR #144)
+Owner feedback checked FIRST: board polled (no new Bethpage field-feedback card; #143 v1.1.10 comment is
+our own ship notice — owner plays Bethpage Red this weekend, nothing reported yet). Sync: origin/main
+(533ac44) already ancestor of HEAD — integration/next clean+current, no merge needed.
 
-WORK: multiuser-p0-keychain-token (slice 4, FINAL ready P0 slice; deps authz-flip[#142]+migrations[#144]
-satisfied). Per epic plan §3.4 "Native token → Keychain". Seam VERIFIED = clean one-file swap:
-frontend/src/lib/native-token-store.ts funnels all read/write/clear through Preferences (3 fns). Swap the
-backend to @aparajita/capacitor-secure-storage (kSecAttrAccessibleWhenUnlockedThisDeviceOnly) + one-time
-migrate-then-delete of the plaintext Preferences value + cap sync. SILENT/dark-adjacent (security
-hardening, no owner-visible behavior change).
+WORK: native Clerk JWT moved off plaintext @capacitor/preferences into the iOS Keychain
+(@aparajita/capacitor-secure-storage@8.0.0). Seam confirmed clean one-file swap (native-token-store.ts
+is sole toucher of the __clerk_client_jwt prefs key). Accessibility set EXPLICITLY to
+whenUnlockedThisDeviceOnly + sync:false on every get/set/remove (encrypted at rest, backup-excluded,
+non-synchronizable). Race-safe migrate-then-delete (module-scoped in-flight promise; Keychain write
+BEFORE plaintext delete so a crash-between never loses the token; idempotent). Sign-out clears both
+stores (zero residue). Fails closed to null (re-auth) if Keychain unavailable. Web/non-native
+byte-identical. 8 new mocked unit tests.
 
-AWAITING builder on integration/next. Outcomes:
-- builder pushes head -> dispatch /security-review (mandatory, credential storage) + fresh reviewer
-  (plaintext-residue/purge, accessibility-class, signout-clear, downgrade path) + qa (gates SUCCESS on
-  pushed head + caddie-experience green; sim sign-in/resume if feasible).
-- BLOCKING findings -> re-dispatch builder, re-review. GREEN+clean -> add to PR #144 checklist (SILENT),
-  progress + backlog (slice4->done, P0-COMPLETE note), do NOT ship/ping (no noticeable change).
-On resume, reconcile from origin/integration/next log + builder's actual commits — do NOT re-run a
-finished child.
+Reviewer (fresh, /security-review + /code-review scoped to the commit): **SHIP** — all 8 attack vectors
+(plaintext residue, accessibility/non-sync, sign-out clear, race/idempotency, downgrade/mixed-state,
+session-UX, dependency/lockfile provenance, Package.swift) attacked & SAFE; 3 LOW non-blocking. qa
+**PASS**: lint/tsc/build/voice-278/vitest-2619/native-token-store-8/caddie-experience-241/ruff/
+npm-ci-dry-run all green on 59e899b + BONUS real iOS-sim (Xcode 26.4.1, iPhone 17) cap-sync +
+xcodebuild BUILD SUCCEEDED + launch + cold-relaunch: no crash, session persisted, keychain access
+observed. No designer (not user-facing). SILENT/dark — NO ship/ping (no noticeable change in the bundle).
+DEVICE-GAP (not a defect, owed pre-App-Store): fresh-sign-in migrate-from-plaintext-scratch path is
+mocked-unit-tested + code-inspected only; needs an attended XCUITest run with a seeded plaintext token +
+live Clerk OTP at the flip window.
+
+### P0 FOUNDATION CODE-COMPLETE (2026-07-16)
+All four ready P0 slices landed SILENT/dark (APP_ACCESS_MODE stays owner-default, byte-identical; NOTHING
+flipped): slice1 authz-flip (#142), slice2 client-identity (#143), slice3 migrations-revocation (#144),
+slice4 keychain-token (#144). REMAINING P0 EXIT CRITERIA = all FLIP-TIME / owner-gated, NOT loop work:
+(a) run the 3 guarded Alembic migrations (backfill / tighten-after-soak / revoked_users CREATE) as their
+own reviewed PR at the flip; (b) multiuser-p0-signout-namespace-clear (LOW); (c) multiuser-p0-self-
+savedplayer (needs PlayerCreate.clerkUserId server change); (d) device/sim Keychain+sign-in acceptance;
+(e) the two clerk-jwt-keychain-swap LOW followups. P1 profiles/discovery/connect is NEXT but OWNER-GATED
+on soak/launch sequencing + the spec's OWNER-DECISION list — do NOT start P1 until the owner sequences
+the flip. Bundle PR #144 remains SILENT-only (no noticeable change) → keeps accumulating, no owner ping.
