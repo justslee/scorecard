@@ -543,6 +543,53 @@ def _elevation_patch(profile: dict) -> dict:
     return patch
 
 
+# ── Course intel blob (course-discovery-intel) ─────────────────────────────────
+# `public.courses.course_intel jsonb NOT NULL DEFAULT '{}'` (migration
+# 015_course_intel) — course-level cache for the precomputed Augusta-styled
+# description. Course-scope, NOT per-hole: correct cardinality (a course-level
+# fact belongs on the course row, not one arbitrary hole's feature — see the
+# plan's Option A/B tradeoff), and it survives a re-map (`upsert_course`
+# deletes+reinserts EVERY hole's features on every save; a value parked on a
+# hole feature would silently die on the next edit).
+async def get_course_intel_blob(course_id: str) -> dict:
+    """The raw `courses.course_intel` jsonb blob for one course — `{}` when
+    the course has no row, or no intel has been computed/attempted yet
+    (never raises on a missing course; the caller's `/intel` route never
+    404s for a well-formed id)."""
+    async with async_session() as db:
+        row = (
+            await db.execute(
+                text("select course_intel from public.courses where id = :id"),
+                {"id": course_id},
+            )
+        ).mappings().first()
+    if not row:
+        return {}
+    return _as_obj(row["course_intel"]) or {}
+
+
+async def merge_course_intel_blob(course_id: str, patch: dict) -> bool:
+    """Non-destructive JSONB `||` merge of `patch` into `courses.course_intel`
+    for one course — mirrors `update_green_feature_properties`'s merge idiom.
+    Returns False when the course row doesn't exist (no-op-safe; never raises
+    on a missing target) or `patch` is empty."""
+    if not patch:
+        return False
+    async with async_session() as db:
+        result = await db.execute(
+            text(
+                """
+                update public.courses
+                set course_intel = coalesce(course_intel, '{}'::jsonb) || cast(:patch as jsonb)
+                where id = :id
+                """
+            ),
+            {"id": course_id, "patch": json.dumps(patch)},
+        )
+        await db.commit()
+    return (result.rowcount or 0) > 0
+
+
 # ── Delete ──────────────────────────────────────────────────────────────────────
 async def delete_course(course_id: str) -> None:
     async with async_session() as db:

@@ -14,8 +14,9 @@ import {
 } from "@/lib/golf-api";
 import { fetchMappedCourse, type CourseData } from "@/lib/courses/mapped-course-api";
 import { stashCourseForRound, type CourseHandoff } from "@/lib/course-handoff";
-import { getCourseReviews } from "@/lib/api";
-import type { CourseReview } from "@/lib/types";
+import { getCourseReviews, getCourseIntel } from "@/lib/api";
+import type { CourseReview, CourseIntel } from "@/lib/types";
+import { InkStars, ClampedProse } from "@/components/course/intel-bits";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -49,6 +50,7 @@ export default function CourseDetailClient() {
   const [mapped, setMapped] = useState<CourseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [reviews, setReviews] = useState<CourseReview[]>([]);
+  const [intel, setIntel] = useState<CourseIntel | null>(null);
 
   useEffect(() => {
     if (!courseId) {
@@ -62,29 +64,40 @@ export default function CourseDetailClient() {
       setLoading(true);
       try {
         const reviewsP = getCourseReviews(courseId!).catch(() => [] as CourseReview[]); // silent fail → empty
+        // Silent-fail convention (same as reviewsP): a failed /intel fetch
+        // falls back to null — the page renders with the intel section
+        // simply absent, never throws into the page.
+        const intelP = getCourseIntel(courseId!).catch(() => null as CourseIntel | null);
         if (isMapped) {
-          const [mappedData, reviewData] = await Promise.all([
+          const [mappedData, reviewData, intelData] = await Promise.all([
             fetchMappedCourse(courseId!).catch(() => null),
             reviewsP,
+            intelP,
           ]);
           if (!cancelled) {
             setMapped(mappedData);
             setReviews(reviewData);
+            setIntel(intelData);
           }
         } else if (isCenterOnly) {
           // No backend row guaranteed — the params carry the display data.
-          const reviewData = await reviewsP;
-          if (!cancelled) setReviews(reviewData);
+          const [reviewData, intelData] = await Promise.all([reviewsP, intelP]);
+          if (!cancelled) {
+            setReviews(reviewData);
+            setIntel(intelData);
+          }
         } else {
-          const [courseData, clubData, reviewData] = await Promise.all([
+          const [courseData, clubData, reviewData, intelData] = await Promise.all([
             getCourseDetails(courseId!),
             clubId ? getClubDetails(clubId) : Promise.resolve(null),
             reviewsP,
+            intelP,
           ]);
           if (!cancelled) {
             setCourse(courseData);
             setClub(clubData);
             setReviews(reviewData);
+            setIntel(intelData);
           }
         }
       } catch {
@@ -95,6 +108,7 @@ export default function CourseDetailClient() {
           setClub(null);
           setMapped(null);
           setReviews([]);
+          setIntel(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -377,14 +391,67 @@ export default function CourseDetailClient() {
             </div>
           )}
 
-          {/* Par / Holes mini-stats */}
-          {(displayPar || displayHoles) && (
-            <div style={{ display: "flex", gap: 18, marginTop: 12 }}>
+          {/* Rating row — ink stars + count, or the honest no-reviews line.
+              Sourced from intel.stars (the SAME aggregate the map sheet
+              shows — one shape, two renderers). Omitted while intel hasn't
+              loaded (never a stale placeholder). */}
+          {intel && (
+            <div style={{ marginTop: 10 }}>
+              <InkStars avg={intel.stars.avg} count={intel.stars.count} />
+            </div>
+          )}
+
+          {/* Par / Holes mini-stats (+ Rounds played / Avg score from intel) */}
+          {(displayPar || displayHoles || (intel && intel.stats.roundsPlayed > 0) || intel?.stats.avgScore != null) && (
+            <div style={{ display: "flex", gap: 18, marginTop: 12, flexWrap: "wrap" }}>
               {displayPar ? <MiniStat k="Par" v={displayPar} /> : null}
               {displayHoles ? <MiniStat k="Holes" v={displayHoles} /> : null}
+              {intel && intel.stats.roundsPlayed > 0 ? (
+                <MiniStat k="Rounds" v={intel.stats.roundsPlayed} />
+              ) : null}
+              {intel?.stats.avgScore != null ? (
+                <MiniStat k="Avg score" v={intel.stats.avgScore.toFixed(1)} />
+              ) : null}
             </div>
           )}
         </div>
+
+        {/* ── About section — Augusta-styled description (course-discovery-intel).
+            Omitted entirely while intel hasn't loaded (a failed /intel fetch
+            never blocks the rest of the page); an honest placeholder line
+            when intel loaded but no description is cached yet. ── */}
+        {intel && (
+          <div style={{ padding: "0 22px 10px" }}>
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 9.5,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              About
+            </div>
+            {intel.description.text ? (
+              <ClampedProse text={intel.description.text} lines={2} fontSize={15} />
+            ) : (
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 14,
+                  color: T.pencilSoft,
+                  letterSpacing: -0.1,
+                  paddingTop: 4,
+                }}
+              >
+                Course notes unavailable.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Tees section (hidden for centre-only courses — nothing to show) ── */}
         {!isCenterOnly && (

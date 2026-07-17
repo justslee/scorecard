@@ -111,6 +111,20 @@ async def _ensure_schema(engine) -> None:
         # script; text()/prepared-statement path would choke on it.
         raw = await conn.get_raw_connection()
         await raw.driver_connection.execute(sql_script)
+
+        # courses.course_intel is added by Alembic migration 015_course_intel
+        # (backend/migrations/versions/0012_015_course_intel.py), NOT by the
+        # 001 SQL replayed above — same precedent as the
+        # scores_round_player_hole_uq block: schema that lives outside both
+        # Base.metadata AND the guarded 001 supabase SQL is added here
+        # explicitly so the test DB matches prod/staging after the real
+        # migration runs there.
+        await conn.execute(
+            text(
+                "ALTER TABLE courses ADD COLUMN IF NOT EXISTS course_intel "
+                "jsonb NOT NULL DEFAULT '{}'::jsonb"
+            )
+        )
     _schema_ready = True
 
 

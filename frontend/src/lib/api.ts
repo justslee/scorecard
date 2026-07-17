@@ -23,6 +23,7 @@ import type {
   GolferProfile,
   CourseReview,
   CourseReviewCreate,
+  CourseIntel,
   ScanScorecardResponse,
 } from './types';
 import { getTokenViaClerk, getAuthDiagnostics } from './auth-token';
@@ -41,6 +42,7 @@ export type {
   GolferProfile,
   CourseReview,
   CourseReviewCreate,
+  CourseIntel,
   ScanScorecardResponse,
 };
 
@@ -552,6 +554,23 @@ export async function createCourseReview(
  */
 export async function getMyReviews(): Promise<CourseReview[]> {
   return fetchAPI<CourseReview[]>('/api/reviews/mine');
+}
+
+// ===== Course Intel API (course-discovery-intel) =====
+// GET /api/courses/{courseId}/intel → CourseIntel
+// Pure-DB read: description is a precomputed cache, stars/stats come straight
+// from Postgres. One shape feeds BOTH the map tap-sheet and the course detail
+// page.
+
+/**
+ * Fetch the Augusta-styled description + honest stars/stats for a course.
+ * courseId is `public.courses.id` (the same id used everywhere else in
+ * course discovery — the map pin id, the detail page's `?id=` param).
+ */
+export async function getCourseIntel(courseId: string): Promise<CourseIntel> {
+  return fetchAPI<CourseIntel>(
+    `/api/courses/${encodeURIComponent(courseId)}/intel`,
+  );
 }
 
 // ================
