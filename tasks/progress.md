@@ -18619,3 +18619,36 @@ Running scratchpad/dump_red.sh via run_ssm.sh; output saved to scratchpad/red_fc
 On resume: if the dump exists & valid, proceed to Plan(fable) measurement-design with the fixture;
 do NOT re-run the dump. Next steps: Plan(fable) → builder (independent ground-truth + diff + fix +
 fixtures + observability) → reviewer → qa. Do NOT ship/ping.
+
+## 2026-07-17 PROVEN (eng-lead measurement pass) — tree-distance root cause = FORMATTER gap-collapse, NOT measurement
+On-box (SSM read-only, key-free) dumped stored Red hole 1-9 FeatureCollections + deployed-engine
+extract_hole_hazards + full hole polylines (scratchpad: red_fc_dump.json, red_lines.json, dump_red.sh,
+dump_lines.sh). Built an INDEPENDENT geodesic polyline-frame ground truth (fresh per-vertex haversine/ENU
+cumulative-along-path projection — NOT reusing hazards.py). RESULT — engine carries match independent
+truth within ±5y on EVERY tested hole, including the steepest doglegs:
+  Hole 1 (dev 6y):  indep near-tee R [7,23,33,54,60,67,85] + greenside L woods [264,284,308,355,..,481]
+                    == engine chain (R 5..85, L 265..480). MATCH.
+  Hole 5 (dev 64y right): indep R trees [106,155,171] == engine R [105,155,170]. EXACT.
+  Hole 6 (dev 83y left):  indep R trees [41,137,196,224,250,256,311] == engine R [40,135,195,225,255,310]. EXACT.
+=> MEASUREMENT LAYER IS PROVEN CORRECT (cos-lat scaling, polyline projection, tee-anchor, near-edge all right;
+   bunkers use the same frame and owner confirmed those are right). Ship-bar geometry gate: PASSES.
+
+ROOT CAUSE of the owner's "wrong distance to trees off the tee" = `format_hazards_line` (hazards.py:958-965)
+groups tree entries by (type, line_side) and renders min...max, DISCARDING the gaps the gap-bounded chain
+(`_gap_bounded_tree_chain`) deliberately preserved. Hole 1 LEFT trees [30,65, 265,285,...,480] collapse to
+"trees L 30-480y", HIDING the ~200y OPEN drive zone (65->265y). The model narrates "5-475y"/"30-480y"
+verbatim -> golfer hears trees spanning the whole hole incl. "trees at 5y off the tee." Fed to the model at
+3 sites: tools.py:432, voice_prompts.py:370, caddie.py:764 (all format_hazards_line(intel.hazards)).
+Secondary product judgment to flag: near-tee trees at 5-85y (beside/behind the tee box) read as absurd
+tee-shot hazards even once gaps are shown.
+
+FIX DIRECTION (bounded, representational — measurement UNTOUCHED): make the model-facing tree representation
+PRESERVE gap-separated stands (split each (type,side) tree group into contiguous sub-runs separated by a real
+gap and render each as its own range, e.g. "trees L 30-65y and 265-480y"), so the caddie can honestly say the
+drive zone is clear. Regression-pin with the Red ground-truth fixtures (this dump). Add payload observability.
+
+## AWAITING — Plan(fable) tree-representation fix design, then builder
+Diagnosis PROVEN & committed. Next: Plan(fable) -> specs/caddie-tree-span-gap-plan.md (gap-preserving
+formatter + how it threads the 3 caddie call-sites + guide_writer + fixtures + observability + the near-tee
+product flag); then builder implements; reviewer (hand-check a hole trig + verify fix not fixture-calibrated);
+qa gates. SHIPS HELD until reviewer+qa green. Do NOT ship/ping.
