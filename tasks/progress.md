@@ -18481,3 +18481,37 @@ build time; (2) the pill idle-tap eligibility gate is a hand-dup of useDetachedC
 (KEEP IN SYNC comment; worst case a silent no-op tap since start() re-guards).
 DID NOT ship/ping (per lane brief; caller INERT). Release/approval handled separately when parallel
 lanes settle + CI green on head. CI: verifying SUCCESS on the pushed head (Frontend+Backend gates).
+
+## 2026-07-17 — caddie-smart-strategy-tool (b, the ChatGPT-parity lever) — eng-lead worktree lane
+OWNER CRUX: the live voice orb (gpt-realtime, fast SPEECH model, weak reasoning) does its own
+strategy SYNTHESIS off engine numbers — caddies worse than a frontier text model ("ChatGPT does a
+better job"). FIX: a realtime-only tool get_strategy served SERVER-SIDE by claude-sonnet-5 (frontier
+reasoning) on the FULL grounded payload; the realtime model just SPEAKS the result. NOTICEABLE.
+Architecture confirmed by read:
+- tools.py: CADDIE_TOOLS registry + realtime_tools()/anthropic_tools()/TEXT_TOOLS; *_payload helpers
+  (recommend/conditions/carries/bend/green_read/player_profile/shot_distance); resolve_tool; ToolContext.
+- tool_loop.py: run_caddie_turn; _TOOL_RESOLVE_TIMEOUT_S=6.0 (WHY get_strategy must NOT go in TEXT_TOOLS
+  — nested LLM call is circular + blows the 6s timeout; text mouth is already Claude).
+- guide_writer.py: the dedicated-model-env pattern to reuse (GUIDE_WRITER_MODEL default claude-sonnet-5),
+  build_ground_truth_block, WRITER_SYSTEM grounding, validate_guide fail-closed, format_guide_line. NOTE
+  Sonnet-5 adaptive thinking counts against max_tokens (=4000 there); strategy tool DISABLES thinking so
+  max_tokens~300 is pure speakable-output budget — that resolves the audit's max_tokens/thinking flag.
+- routes/caddie.py: session endpoints all via get_owned_session(round_id,user_id); _advice_model() env
+  pattern (CADDIE_ADVICE_MODEL||ANTHROPIC_MODEL||sonnet-4-5); _build_session_voice_prompt assembles the
+  grounding rules + guide_line; anthropic.AsyncAnthropic client construction; /session/recommend body.
+- realtime_relay.py: DEFAULT_TOOLS=realtime_tools(); build_session_payload has a tools= override (setup
+  already passes a SEPARATE SETUP_TOOLS list — precedent for realtime-only extras).
+- voice_prompts.py: build_realtime_instructions + _BASE_BEHAVIOR (tool-choice routing lives here);
+  grounding-rule constants (DECISION/MISS_SIDE/HAZARD/NUMBERS_COHERENCE/... GROUNDING_RULE).
+- frontend realtime.ts dispatchTool switch (+ toolContextProvider holeYards/basis ride-along);
+  caddie/api.ts sessionRecommend pattern.
+- test_tool_parity.py asserts set-equal + len-equal across mouths → MUST amend to shared-subset
+  schema-equal + realtime extras (get_strategy) enumerated. Gated live runners: run_tier2/run_consistency/
+  run_latency (need ANTHROPIC_API_KEY/OPENAI + CADDIE_EVAL_LIVE=1, NEVER in CI); goldens under eval/golden/.
+
+## AWAITING Plan(fable) on caddie-smart-strategy-tool → specs/caddie-smart-strategy-tool-plan.md
+On resume: reconcile from origin/integration/next; if the plan spec exists, dispatch builder against it;
+if not, re-dispatch Plan(fable). Then reviewer (fresh, adversarial: can the tool output smuggle
+ungrounded numbers/hazards? does the realtime model faithfully relay? latency regression on simple Qs?)
++ qa (gates SUCCESS + tool-parity amendment + latency/eval evidence or honest gated-run note). Land on
+integration/next, add to PR #144 as NOTICEABLE. Do NOT ship/ping (caller INERT). No main; no force-push.
