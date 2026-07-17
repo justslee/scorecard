@@ -385,6 +385,105 @@ def test_validator_flattens_internal_whitespace_and_newlines():
     assert result == "Hit driver. Aim center, commit."
 
 
+# ── Verdict-pinned validator (specs/caddie-two-tier-routing-plan.md §6) ──────
+
+
+def test_validator_rejects_favor_side_disagreeing_with_engine():
+    """Real geometry: bunker LEFT, water RIGHT (grounded, passes hazard/side
+    checks) — but the engine's own verdict says favor RIGHT, and the
+    narrative favors LEFT. The verdict pin catches what hazard-grounding
+    alone cannot (the Red-1 class: a correctly-named hazard, wrongly played)."""
+    rec = {"miss_side": {"preferred": "right"}}
+    text = "Hit driver. Favor the left side off the tee. Bunker left. Water right."
+    assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
+
+
+def test_validator_rejects_lateral_favor_when_engine_says_center():
+    rec = {"miss_side": {"preferred": "center"}}
+    text = "Hit driver. Favor the left side off the tee. Bunker left. Water right."
+    assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
+
+
+def test_validator_rejects_pin_relative_language_on_positioning_shot():
+    rec = {"miss_side": {"preferred": "center"}, "shot_kind": "positioning"}
+    text = "Hit driver. Aim 9 yards left of the flag. Commit to the shot."
+    assert strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec) is None
+
+
+def test_validator_requires_recommended_club_on_tee_shot_narrative():
+    rec = {
+        "miss_side": {"preferred": "center"},
+        "club": "driver",
+        "tee_shot_numbers": {"club": "driver"},
+    }
+    text = "Hit the 3 Wood here, safe play. Bunker left. Water right."
+    assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
+
+
+def test_validator_without_recommendation_behaves_exactly_as_before():
+    """Back-compat pin: `recommendation=None` (the default) reproduces the
+    exact pre-pin behavior — clean text passes byte-identical, existing
+    hazard/side/injection rejects are untouched."""
+    clean_text = (
+        "Hit driver. Bunker left. Water right. Commit to the shot, take a smooth "
+        "two-putt read from mid green, stay calm and confident all day."
+    )
+    assert strategy_mod.validate_strategy_text(clean_text, _REAL_HAZARDS) == clean_text
+    assert strategy_mod.validate_strategy_text(clean_text, _REAL_HAZARDS, recommendation=None) == clean_text
+
+    flipped_text = "Hit driver toward the bunker on the right. Water right."
+    assert strategy_mod.validate_strategy_text(flipped_text, _REAL_HAZARDS) is None
+
+
+# ── Ground-truth: player block + prior-notes demotion (§5, §7) ─────────────
+
+
+def test_ground_truth_player_block_labels_heuristic_vs_learned():
+    payload = {
+        "recommendation": {
+            "club": "driver", "target_yards": 150, "raw_yards": 150,
+            "aim_point": {"description": "center"}, "miss_side": {"preferred": "center"},
+        },
+        "conditions": {}, "carries": {}, "bend": {}, "green_read": {},
+        "player": {
+            "handicap": 12.0,
+            "club_distances": {"Driver": 260},
+            "tendencies": {
+                "miss_direction": "left", "miss_short_pct": 55.0,
+                "three_putts_per_round": 1.8, "par5_bogey_rate": 18.0,
+            },
+            "rounds_analyzed": 12,
+        },
+        "local_knowledge": "",
+    }
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Tendencies — learned from 12 logged rounds" in block
+    assert "handicap-based heuristics, not this player's measured data" in block
+    assert "miss direction: left" in block
+    assert "±" in block  # driver-dispersion line present once handicap is known
+
+    # 0-round / no-profile case: honest omission, never a placeholder.
+    payload["player"]["tendencies"] = None
+    payload["player"]["rounds_analyzed"] = 0
+    block_no_profile = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Tendencies" not in block_no_profile
+
+
+def test_ground_truth_renders_prior_notes_demotion_label():
+    payload = {
+        "recommendation": {"error": "no data"},
+        "conditions": {}, "carries": {}, "bend": {}, "green_read": {},
+        "player": {"handicap": None, "club_distances": {}},
+        "local_knowledge": "Local knowledge: aim center, miss right.",
+    }
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert (
+        "PRIOR NOTES (may be stale — trust the live data above; these notes passed a "
+        "live side-agreement check but remain reference only): Local knowledge: aim "
+        "center, miss right."
+    ) in block
+
+
 # ── Cache ─────────────────────────────────────────────────────────────────
 
 
