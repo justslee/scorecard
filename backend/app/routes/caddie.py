@@ -108,6 +108,19 @@ def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str], call_in
         log.debug("caddie_usage log failed", exc_info=True)
 
 
+def _advice_model() -> str:
+    """Model for the text advice mouths only. Dedicated env so the advice
+    path moves independently of the other ANTHROPIC_MODEL consumers
+    (memory temp 0.3 / setup-parse temp 0 / OCR+voice opus default).
+    `or`-chain (not getenv defaults) so an empty env behaves like unset;
+    a current prod ANTHROPIC_MODEL override still wins when the new var is unset."""
+    return (
+        os.getenv("CADDIE_ADVICE_MODEL")
+        or os.getenv("ANTHROPIC_MODEL")
+        or "claude-sonnet-4-5-20250929"
+    )
+
+
 def _safe_course_uuid(value) -> str | None:
     """The caddie_sessions.course_id column is a UUID — legacy rounds carry
     slug ids that must never reach the INSERT (asyncpg DataError)."""
@@ -892,7 +905,7 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cad
         client = anthropic.AsyncAnthropic(
             api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
         )
-        model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+        model = _advice_model()
         response_text = ""
         async for kind, payload in run_caddie_turn(
             client, model, system_blocks, messages, ctx,
@@ -972,7 +985,7 @@ async def _sse_reply(
     client = anthropic.AsyncAnthropic(
         api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
     )
-    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    model = _advice_model()
     tool_ctx = ctx or caddie_tools.ToolContext(
         session=None, round_id=None, user_id="", default_hole=hole_number,
     )
@@ -1576,7 +1589,7 @@ async def voice_caddie(
         client = anthropic.AsyncAnthropic(
             api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
         )
-        model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+        model = _advice_model()
         response_text = ""
         async for kind, payload in run_caddie_turn(
             client, model, system_blocks, messages, ctx,

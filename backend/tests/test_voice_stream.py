@@ -173,6 +173,38 @@ async def test_sse_reply_uses_identical_model_params(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_sse_reply_advice_model_env_outranks_anthropic_model(monkeypatch):
+    """specs/caddie-advice-model-plan.md Step 1 — `CADDIE_ADVICE_MODEL` is the
+    dedicated env for the text advice mouths and outranks the shared
+    `ANTHROPIC_MODEL` when both are set."""
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["hi"]))
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-opus-4-20250514")
+    monkeypatch.setenv("CADDIE_ADVICE_MODEL", "claude-sonnet-5")
+
+    await _collect(
+        caddie_routes._sse_reply("fake-key", "sys", [{"role": "user", "content": "x"}], log_context="test")
+    )
+    kwargs = _FakeAsyncAnthropic.last_messages.captured_kwargs
+    assert kwargs["model"] == "claude-sonnet-5"
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_advice_model_off_allowlist_omits_temperature(monkeypatch):
+    """specs/caddie-advice-model-plan.md Step 2 — a model outside the
+    conservative allowlist (e.g. `claude-sonnet-5`) must never 400 on
+    `temperature`, so it's simply omitted from the call kwargs."""
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["hi"]))
+    monkeypatch.setenv("CADDIE_ADVICE_MODEL", "claude-sonnet-5")
+
+    await _collect(
+        caddie_routes._sse_reply("fake-key", "sys", [{"role": "user", "content": "x"}], log_context="test")
+    )
+    kwargs = _FakeAsyncAnthropic.last_messages.captured_kwargs
+    assert kwargs["model"] == "claude-sonnet-5"
+    assert "temperature" not in kwargs
+
+
+@pytest.mark.asyncio
 async def test_sse_reply_constructs_client_with_timeout_and_retries(monkeypatch):
     """specs/caddie-prompt-caching-text-path-plan.md §3 (folded
     caddie-llm-timeouts-retries item) — bounded timeout + one SDK-native
