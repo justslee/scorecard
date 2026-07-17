@@ -3,6 +3,26 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 DONE (landed integration/next, SILENT rider on bundle PR) — ingest-overpass-error-honesty, worktree agent-ab5e93ee9bc510a64, base @72086e7
+Eng-lead's bounded contract decision, implemented as specced: `fetch_golf_course_boundaries`
+(backend/app/services/osm.py) previously swallowed Overpass 429/504/timeout into `[]`, same as
+a genuine "no boundary matched" — misleading the ingest under throttling. Fix: added
+`OverpassThrottledError`; `_post_with_retry` gained an opt-in `raise_on_failure=True` param
+(default False — all 4 other callers unchanged) that raises instead of returning `None` when a
+transient failure (429/5xx/timeout) exhausts the retry budget. Only `fetch_golf_course_boundaries`
+opts in; a non-transient 4xx (e.g. 400/406) still returns `None` -> `[]` (a query-shape bug, not
+throttling — out of scope). Call site: `scripts/ingest_osm_course.py`'s `--boundary-name` path (the
+only real caller — no in-process multi-course driver exists, each course ingests via its own
+process invocation) now try/excepts `OverpassThrottledError` and exits 1 with an explicit
+"retryable, not a genuine no-boundary-matched" message instead of an unhandled traceback.
+Renamed `test_overpass_failure_returns_empty_list` -> 4 tests (504 / 429 / timeout all raise;
+true empty 200 still returns `[]`) — sanctioned contract change, not a weakened assertion. Gates:
+`ruff check .` clean; 45/45 targeted (test_osm_boundary_selection.py) + 73/73
+(test_osm_fetch_hardening.py + test_osm_distance_sort.py + test_ingest_osm_course.py) + full
+offline `tests/` suite 2814/2814 passed. SILENT (backend-only, no user-facing surface). Backlog
+item flipped to `done` (targeted edit, JSON validated). Landed @<see git log>, pushed to
+integration/next, checked on bundle PR #147.
+
 ## 2026-07-17 DONE (landed integration/next @f6f559b, re-seeded prod, PR opened) — course-intel seed rejection fix (Bethpage Red + Pebble Beach) — worktree agent-a86892fa81d2f87ee, base @36afad2
 VERDICTS: reviewer SHIP (all four anti-fabrication gates confirmed byte-identical & fail-closed; leak
 scan still covers full landscape; regression tests non-vacuous). qa PASS (ruff clean; 31/31 course-intel
