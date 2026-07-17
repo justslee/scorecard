@@ -80,6 +80,15 @@ _SCORE_STROKE_PATTERN = re.compile(
 # scored); "had"/"got"/"took"/"put me down"/etc alone never do.
 _PUTTS_PATTERN = re.compile(r"\bputts?\b")
 _HOLE_SCORE_VERB_PATTERN = re.compile(r"\b(made|shot|scored)\b")
+# The "<count> putts" phrase itself ("3 putts", "two putts", "a putt"). Used to
+# NARROW the guard (delta review 2026-07-17): the guard must suppress only a
+# pure putting-stats statement, never a real score stated in the same breath as
+# putts ("I had a 5, two putts" is still a 5). We strip the putts phrase and, if
+# a DISTINCT hole-score number/word survives outside it, treat it as a score.
+_PUTTS_PHRASE_PATTERN = re.compile(
+    r"\b(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|a|an|couple|few)"
+    r"\s+putts?\b|\bputts?\b"
+)
 
 
 def _is_score(text: str) -> bool:
@@ -89,7 +98,12 @@ def _is_score(text: str) -> bool:
         return True
     if _SCORE_PERSON_PATTERN.search(text) and _SCORE_STROKE_PATTERN.search(text):
         if _PUTTS_PATTERN.search(text) and not _HOLE_SCORE_VERB_PATTERN.search(text):
-            return False
+            # Putting-stats statement — suppress UNLESS a distinct hole-score
+            # number/word survives after removing the "<count> putts" phrase
+            # ("I had a 5, two putts" keeps the 5; "I had 3 putts" does not).
+            remainder = _PUTTS_PHRASE_PATTERN.sub(" ", text)
+            if not _SCORE_STROKE_PATTERN.search(remainder):
+                return False
         return True
     return False
 

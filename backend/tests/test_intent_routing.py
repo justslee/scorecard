@@ -89,6 +89,16 @@ def test_explicit_score_verb_with_putts_word_still_pinned_correctly() -> None:
     assert classify_intent("I made a 5, three putts on that green") is Intent.SCORE
 
 
+@pytest.mark.parametrize("text", ["I had a 5, two putts", "I took a 6, two putts"])
+def test_score_plus_putts_in_one_breath_still_scores(text) -> None:
+    """Putts-guard delta (2026-07-17): the guard must suppress only a PURE
+    putting-stats statement ('I had 3 putts'), never a real hole score stated
+    alongside the putts count ('I had a 5, two putts' is still a 5). A distinct
+    hole-score number surviving outside the '<count> putts' phrase keeps it a
+    SCORE even with the ambiguous verb (had/took) and no made/shot/scored."""
+    assert classify_intent(text) is Intent.SCORE
+
+
 def test_intent_enum_is_extensible_without_dispatch_rewrite(monkeypatch) -> None:
     """Seam proof (plan §1 'extensibility, proved not built'): registering a
     brand-new routing class is ONE predicate + ONE appended rule — no edit to

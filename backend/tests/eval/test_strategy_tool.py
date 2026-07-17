@@ -404,14 +404,29 @@ def test_validator_rejects_lateral_favor_when_engine_says_center():
     assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
 
 
-def test_validator_rejects_pin_relative_language_on_positioning_shot():
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hit driver. Take dead aim at the pin. Commit to the shot.",
+        # B2 delta (2026-07-17): a first fix gated "at the (flag|pin)" on an
+        # aim-verb allowlist {aim,target,play,send}, which LEAKED the most
+        # idiomatic aggressive-aim verbs on a positioning turn. Each of these
+        # tells an unreachable layup to aim at the flag and MUST reject.
+        "Hit driver and fire at the pin.",
+        "Go at the pin off the tee.",
+        "Just hit it at the pin.",
+        "Start it at the pin and let it ride.",
+        "Go right at the pin here.",
+    ],
+)
+def test_validator_rejects_pin_relative_language_on_positioning_shot(text):
     """B2 (eng-lead review, 2026-07-17): genuine AIM-AT-THE-PIN language —
     the flag doesn't exist for an unreachable positioning swing — still
     rejects. The old text here used 'left OF THE flag', which the B2 fix
-    deliberately un-flags (see the pass-on-good regression right below);
-    'take dead aim at the pin' is unambiguous pin-relative language."""
+    deliberately un-flags (see the pass-on-good regression right below).
+    Bare `at the (flag|pin)` on a positioning shot is wrong by definition,
+    so no aim-verb whitelist is used — every aggressive-aim verb rejects."""
     rec = {"miss_side": {"preferred": "center"}, "shot_kind": "positioning"}
-    text = "Hit driver. Take dead aim at the pin. Commit to the shot."
     assert strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec) is None
 
 

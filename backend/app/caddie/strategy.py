@@ -424,12 +424,22 @@ _STRATEGY_MAX_CHARS = 600
 # (flag|pin)\b` alternation false-positived on CORRECT positioning phrasing —
 # "lay up to about 100 short OF THE pin", "leaves a full wedge in FROM THE
 # pin" — degrading good brain advice to the terse engine line on exactly the
-# layup turns this feature targets. Dropped `of|from`; "at the (flag|pin)" is
-# now gated on an AIM VERB nearby (never a bare "look at the pin"/"short of
-# the pin"), so only genuine pin-relative aim language rejects.
-_AIM_VERB = r"(?:aim|target|play|send)"
+# layup turns this feature targets. The false-positives came ONLY from the
+# `of|from` alternatives; `at the (flag|pin)` never over-matched a benign
+# layup phrasing (those say "short OF"/"away FROM"/"left OF" the pin, never
+# "AT the pin"). A first attempt gated `at the (flag|pin)` on a nearby
+# AIM-VERB allowlist {aim,target,play,send}, but an allowlist is inherently
+# incomplete and leaked the most idiomatic aggressive-aim verbs on a
+# positioning turn ("fire/go/hit it/start it AT THE pin" all slipped past the
+# reachability backstop — the exact caddie-safety rule the pin exists for).
+# So: drop the aim-verb gate entirely and keep the bare `at the (flag|pin)`.
+# On a positioning shot the flag doesn't exist for this swing, so ANY
+# "at the pin/flag" language is wrong by definition; the layup phrasings that
+# matter ("short of"/"from"/"away from"/"left/right of" the pin) contain no
+# "at the pin" and still PASS (pinned by test_validator_passes_positioning_
+# narrative_with_short_of_or_from_the_pin_phrasing).
 _PIN_RELATIVE_PATTERN = re.compile(
-    rf"\b{_AIM_VERB}\w*\b[^.?!]{{0,25}}\bat the (?:flag|pin)\b"
+    r"\bat the (?:flag|pin)\b"
     r"|\bdead aim\b"
     r"|\bpin.high\b"
 )
