@@ -60,6 +60,44 @@ locally (backend integration/DB gate runs in CI per policy). NEXT: eng-lead revi
 NOTICEABLE (the caddie will now speak materially different, more accurate hazard lines on any hole
 with a real tree-line gap, most visibly Bethpage Red 1) and is the owner's live P0, so likely wants
 prompt QA + a push once bundled.
+## 2026-07-17 AWAITING Plan(fable) — caddie live P0s A+B (owner field bugs, v1.1.11), in worktree agent-a23cf368966ee80ce (tracks integration/next @ 8579326)
+Two owner P0 field bugs, ONE eng-lead pass, land on integration/next (REBASE before push), bundle PR
+(both NOTICEABLE). Ships HELD pending tree-distance verification lane — do NOT ship/ping.
+
+ROOT-CAUSE TRACE (done, handed to Plan agent):
+- Bug A (orb stuck "Connecting…"→never "Listening"): on-course surface = the round-page floating
+  "Ask caddie" pill (RoundPageClient.tsx ~L2399, shouldShowCaddieOrb('/round/[id]')=false so the
+  omnipresent CaddieOrb defers). Path = pill tap → detachedCaddieLive.start() → useDetachedCaddieLive
+  → useCaddieLiveSession → RealtimeCaddieClient.start(). State machine: hook arms ONE 3s MINT_DEADLINE_MS
+  (transport.ts=3000) covering the ENTIRE connect (mint HTTP + WebRTC ICE + SDP), cleared only on
+  onStatus('connected') (set by pc.onconnectionstatechange==='connected'). Problems: (1) the single 3s
+  budget is too tight for mint+ICE on a course cell → intermittent false timeouts; (2) NO onMinted seam
+  used in this hook (useVoiceCaddie DOES use it) so mint vs ICE aren't separated; (3) NO per-phase
+  timeout on the SDP fetch (REALTIME_CALLS_URL) or ICE; (4) on timeout it fallBack()s to classic which,
+  while sheet CLOSED, useDetachedCaddieLive auto-releases liveOn → pill silently reverts to "Ask caddie"
+  = the owner's "didn't go to listening" with no retry/honest-fail UX; (5) NO auto-retry; (6) warm-pool
+  dead-session handover not detected. Copy: live-copy.ts LIVE_STATUS_LABEL (idle/connecting→"Connecting…",
+  connected→"Ready — go ahead", listening→"Listening…"). NEED: per-phase timeouts (mint via onMinted +
+  longer ICE budget), ONE quiet auto-retry (fresh cold mint; dead warm → re-mint), honest tap-to-retry
+  state after retry fails (never indefinite spinner, never silent revert), key-free phase telemetry.
+- Bug B (hole context stale: on hole 2, answered hole 1): detachedCaddieLive DOES receive live
+  holeNumber:currentHole (RoundPageClient L1362) and useCaddieLiveSession re-anchors via anchorHole()→
+  RealtimeCaddieClient.sendContext(buildHoleContextText) on connect + hole/basis change (opening-turn.ts:
+  "player is now on hole N, disregard earlier hole"). GAP: the re-anchor only STEERS the model (system
+  msg) — dispatchTool (realtime.ts) still resolves hole from MODEL-supplied args.hole_number, and the
+  backend defaults omitted hole to session.current_hole (minted, never updated on swipe). So a lagging/
+  stale model passes hole=1 → hole-1 answer, INCOHERENT with the client's live hole (same class as the
+  shipped "125" yardage-incoherence fix, which already made get_recommendation carry the CLIENT's
+  resolved yards/basis via getToolContext). STRUCTURAL FIX: extend getToolContext (useCaddieLiveSession
+  L199) + dispatchTool ctx to carry the LIVE currentHole (read off holeContextRef at dispatch time) and
+  use it as the authoritative hole for hole-scoped tools (get_recommendation/get_conditions/get_carries/
+  get_bend/get_shot_distance/get_green_read), overriding stale args.hole_number — mirrors the yards/basis
+  override already there; structurally cannot go stale.
+
+NEXT: Plan(fable) → specs/caddie-live-p0-connect-hole-plan.md; builder; reviewer(fresh, adversarial:
+retry zombies? rapid-swipe race? stall-fix masking real net errors?); qa(gates SUCCESS + caddie suites);
+designer BLOCKING on connecting-UX states. On resume: reconcile from worktree branch git log; if Plan's
+spec file exists, do NOT re-run Plan.
 
 ## 2026-07-16 DONE — caddie-advice-model-decoupling, SILENT, committed @ a323851 (on worktree branch tracking integration/next, NOT pushed — eng-lead rebases+pushes)
 Implemented specs/caddie-advice-model-plan.md Steps 1-3 exactly (no re-plan). `_advice_model()`
