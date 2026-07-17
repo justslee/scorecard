@@ -18271,3 +18271,11 @@ CI in-progress on that head (Frontend + Backend gates) — release verifies SUCC
 FILED designed-ready: caddie-smart-strategy-tool (b, the ChatGPT-parity lever, P1),
 caddie-advice-sonnet5-flip (a, gated on live eval), caddie-vision-visual-read (c). NOT shipping/pinging
 (SILENT; owner's model question answered in the eng-lead report to the main session). Pass complete.
+
+## BONUS FIX (SILENT, verified): frontend-gate unblocked @ 74c3833
+While checking CI on the caddie change, found the bundle's Frontend gate RED for ALL lanes:
+npm ci EUSAGE "Missing: utf-8-validate@5.0.10 from lock file" (x5) — pre-existing (NOT the caddie
+change; my range touched 0 frontend files), the recurring npm-11-prunes-npm-10-native-binding class
+(lockfile-regen-rule). Fixed in place with npm 10 (--package-lock-only --ignore-scripts): restored the
+5 nested utf-8-validate nodes, additive-only (0 deletions). VERIFIED via the exact CI gate:
+`npx npm@10.8.2 ci --dry-run` succeeds (added 1189 pkgs, no EUSAGE). Pushed; CI re-running on 74c3833.
