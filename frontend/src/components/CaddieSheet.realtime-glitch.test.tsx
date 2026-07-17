@@ -292,6 +292,7 @@ function buildProps(
       muted: false,
       toggleMute: vi.fn(),
       resume: vi.fn(),
+      retryConnect: vi.fn(),
       stop: vi.fn(),
     },
     liveOn: false,

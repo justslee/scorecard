@@ -6,7 +6,13 @@
 // honest-states claims disagreeing on screen at once.
 
 import { describe, it, expect } from 'vitest';
-import { LIVE_STATUS_LABEL, liveStatusLabel, liveEmptyStateHint } from './live-copy';
+import {
+  LIVE_STATUS_LABEL,
+  liveStatusLabel,
+  liveEmptyStateHint,
+  LIVE_CONNECT_RETRYING_LABEL,
+  LIVE_CONNECT_FAILED_LABEL,
+} from './live-copy';
 import { captionPersonaName } from './persona';
 import type { RealtimeStatus } from '@/lib/voice/realtime';
 
@@ -68,6 +74,41 @@ describe('liveEmptyStateHint', () => {
     for (const { status, paused, expected } of table) {
       expect(liveEmptyStateHint(status, paused, 'Scotty')).toBe(expected);
     }
+  });
+});
+
+// specs/caddie-live-p0-connect-hole-plan.md §2.3 — Bug A connect-stall UX.
+describe('liveEmptyStateHint — retrying branch (Bug A)', () => {
+  it('the new placeholder labels exist and are calm, non-alarming strings', () => {
+    expect(typeof LIVE_CONNECT_RETRYING_LABEL).toBe('string');
+    expect(LIVE_CONNECT_RETRYING_LABEL.length).toBeGreaterThan(0);
+    expect(typeof LIVE_CONNECT_FAILED_LABEL).toBe('string');
+    expect(LIVE_CONNECT_FAILED_LABEL.length).toBeGreaterThan(0);
+  });
+
+  it('retrying=true ⇒ a distinct "still connecting" hint, regardless of status', () => {
+    for (const status of ALL_STATUSES) {
+      expect(liveEmptyStateHint(status, false, 'Scotty', true)).toBe('Still connecting to Scotty…');
+    }
+  });
+
+  it('paused still wins over retrying (paused is checked first)', () => {
+    expect(liveEmptyStateHint('connecting', true, 'Scotty', true)).toBe(
+      'Paused — tap resume below to keep talking.',
+    );
+  });
+
+  it('retrying defaults to false — byte-identical to the pre-Bug-A behavior when omitted', () => {
+    expect(liveEmptyStateHint('connecting', false, 'Scotty')).toBe('Connecting to Scotty…');
+    expect(liveEmptyStateHint('listening', false, 'Scotty')).toBe('Go ahead — Scotty is listening.');
+  });
+
+  it('the retrying hint must not contradict the footer — footer still says "Connecting…" for status=connecting, never claims listening/speaking', () => {
+    const hint = liveEmptyStateHint('connecting', false, 'Scotty', true);
+    const footerLabel = liveStatusLabel('connecting', 'Scotty');
+    expect(footerLabel).toBe('Connecting…');
+    expect(hint.toLowerCase()).not.toContain('is listening');
+    expect(hint.toLowerCase()).not.toContain('is speaking');
   });
 });
 

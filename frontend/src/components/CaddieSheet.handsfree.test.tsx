@@ -221,6 +221,7 @@ function makeLiveStub(): UseCaddieLiveSessionResult {
     muted: false,
     toggleMute: vi.fn(),
     resume: vi.fn(),
+    retryConnect: vi.fn(),
     stop: vi.fn(),
   };
 }
