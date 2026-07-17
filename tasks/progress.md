@@ -18990,8 +18990,14 @@ FREE 2D drag clamped to paper, origin=tee always, round5; NEW pure module fronte
 (+test); map = VERIFY-ONLY (no code). Concept @b47d315 (specs/yardage-target-concept.md): ink ring+crosshair
 reticle (accent while dragging), ONE dashed target->green line only (no tee-leg), top-right pill grows to
 two-line TEE/PIN readout round5, × to clear. Concept wins on visuals, plan wins on mechanics.
-AWAITING: builder afc248ffc7883a360 (in THIS worktree, commits here; I push HEAD:integration/next). On DONE:
-reviewer (fresh: touch-event correctness, no drag leak, yardage math correct+consistent, no map regression)
-+ qa (gates SUCCESS + map/caddie suites, drive interaction) + designer BLOCKING (both rendered targets).
+Builder DONE: b142f40 (code) + 85c2ff5 (progress) pushed to origin/integration/next. Gates green at build
+time (lint/tsc/build clean, voice 278/278, vitest 2685 no regress). New pure module yardage-book-target.ts
+(+16 tests); HoleIllustration.tsx reticle/readout; map untouched. Builder deviation (accepted, NORTHSTAR-calm):
+pill persists while aim!==null (drag OR settled) so × stays reachable, else quiet reticle baseline.
+AWAITING (parallel): reviewer a86f1e678fb8952a2 (fresh adversarial + /code-review) + qa ae370cd83a9761875
+(6 gates + drive) + designer a2a18abae00ed93b7 (BLOCKING vs concept). On all back: BLOCKING issues ->
+re-dispatch builder + re-review; all green -> open/refresh bundle PR (NOTICEABLE), update progress+backlog,
+HOLD ship (owner's next approval). If I die: reconcile from origin/integration/next @85c2ff5; children are
+read-only reviewers — safe to re-run if their verdict didn't land.
 Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
 origin/integration/next + worktree commits; do NOT re-run a finished child.
