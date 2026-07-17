@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 DONE — caddie live P0s A (connect-stall UX) + B (live-hole answers), BOTH NOTICEABLE, LANDED on origin/integration/next @ fbd2061 (rebased onto eba80ca, pushed); added to bundle PR #145
+Two owner v1.1.11 field P0s, one eng-lead pass (worktree agent-a23cf368966ee80ce). Fable plan
+specs/caddie-live-p0-connect-hole-plan.md, builder @3e030e7, designer copy fix @fbd2061.
+- Bug A ("orb doesn't go from connecting to listening"): per-phase connect budgets (LIVE_MINT_BUDGET_MS
+  =4000 via onMinted, LIVE_CONNECT_BUDGET_MS=8000 for ICE) + ONE quiet cold auto-retry; new honest
+  states "retrying"("Still connecting…") and "connect-failed"("Couldn't connect — tap to retry") that
+  PERSIST liveOn (never the silent revert to "Ask caddie"), mic torn down, tap-retries/hold-ends;
+  Slice-D reconnect/resume deadlines widened 3s→8s; key-free live_connect_* phase telemetry; realtime.ts
+  untouched for A. Mic-deny classification made UNCONDITIONAL (builder deviation, reviewer verified
+  load-bearing: realtime.ts fires onStatus/onError synchronously in attachMic's catch → the gated
+  version would strand a mic-deny in retrying→connect-failed instead of fallback).
+- Bug B ("on hole 2, answered hole 1"): getToolContext carries the LIVE currentHole (single snapshot,
+  read at dispatch/answer time); the six hole-scoped tools resolve ctx-first, overriding stale
+  args.hole_number (record_shot args-first). No backend / shared-types change; useVoiceCaddie byte-identical.
+VERDICTS on 399d6e6: reviewer SHIP (no blocking — retry can't zombie, late events inert, mic-deny →
+immediate honest fallback never a spinner, connect-failed tears down mic + has escapes, single-read
+triple can't mix across a swipe, no 0/NaN/null hole leak, telemetry PII-clean, guards intact, tests
+strengthened not weakened; one NON-BLOCKING nit below). qa PASS (7 local gates: tsc/lint/voice-278/
+vitest-2669/caddie-experience-271/build/ruff; DB tests → CI). designer BLOCKING→RESOLVED (one copy swap
+applied @fbd2061; retrying/failed states calm, pill never falsely pulses, no SaaS-toast drift, aria honest).
+NON-BLOCKING FOLLOW-UP (filed): cold mic-deny constructs one throwaway retry client (wasted mint +
+phantom live_connect_retry breadcrumb) before fallback wins — terminal state correct, rare once-per-user;
+reviewer suggested the fake emit onStatus('error') to pin real behavior. Ships HELD pending tree-distance
+verification lane — did NOT ship/ping; both items ride the eventual verified ship on bundle PR #145.
+
 ## 2026-07-17 DONE — caddie-tree-span-gap (Bethpage Red P0), NOTICEABLE (caddie-audible), pushed @ 6feb8a4 on origin/integration/next
 Implemented specs/caddie-tree-span-gap-plan.md exactly (no re-plan) — owner P0, Bethpage Red tree
 distances "wrong off the tee." `format_hazards_line` (backend/app/caddie/hazards.py) now splits a
