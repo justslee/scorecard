@@ -21,7 +21,7 @@ import type { RealtimeStatus } from '@/lib/voice/realtime';
  * `LIVE_CONNECT_FAILED_LABEL` — the honest terminal, tap-to-retry.
  */
 export const LIVE_CONNECT_RETRYING_LABEL = 'Still connecting…';
-export const LIVE_CONNECT_FAILED_LABEL = "Couldn't reach your caddie — tap to retry";
+export const LIVE_CONNECT_FAILED_LABEL = "Couldn't connect — tap to retry";
 
 /** Every status label except `speaking` needs no persona name — `speaking`
  *  is resolved separately by `liveStatusLabel` below
