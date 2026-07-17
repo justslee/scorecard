@@ -309,9 +309,21 @@ async def write_course_description(
 
 # ── Validator (§3b) ─────────────────────────────────────────────────────────
 
-_MAX_LANDSCAPE_CHARS = 700
+# Structural sanity bounds — NOT anti-fabrication gates (those are the
+# injection / fact-leak / confidence / par-claim rules below, all untouched by
+# these numbers). They exist only to reject runaway output. The original 700
+# cap was too tight for the writer's OWN instructed register ("3-5 sentences in
+# an Augusta-broadcast register"), which naturally runs 700-830 chars: it
+# reject-ALL'd clean, geometry-grounded landscapes for Bethpage Red (794) and
+# Pebble Beach Golf Links (727) at the v1.1.13 seed while Bethpage Black passed
+# only by luck of fitting under 700 (a Red-1-class false positive). Raised to
+# fit a genuine 5-sentence landscape with margin; composed lifted in step so a
+# near-max landscape plus surviving high-confidence facts can't trip a new
+# length false-positive of the same class. See the regression tests pinning the
+# two exact rejected drafts to PASS.
+_MAX_LANDSCAPE_CHARS = 950
 _MAX_FACT_SENTENCE_CHARS = 220
-_MAX_COMPOSED_CHARS = 1200
+_MAX_COMPOSED_CHARS = 1600
 
 # Fact-leak scan on `landscape` (rule 3): the confidence gate on the four
 # optional fact fields is worthless if a fact simply leaks into the

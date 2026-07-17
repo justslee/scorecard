@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 IN-PROGRESS — course-intel seed rejection fix (Bethpage Red + Pebble Beach) — worktree agent-a86892fa81d2f87ee, base integration/next @36afad2
+DIAGNOSIS DONE (on-box SSM diagnostic, key-free, ~$0.09 of writer calls charged to the pre-approved
+3-course seed budget). Regenerated the writer+validator run for the EXACT rejected rows:
+- Bethpage Red id=269e1f2e-65cc-5cf6-a9b0-f5908e298155 (18 holes, par 70)
+- Pebble Beach Golf Links id=f8d6b570-f54e-56d8-890c-000e85a42c95 (18 holes, par 72)
+ROOT CAUSE = (b) over-strict validator length gate, for BOTH. `_MAX_LANDSCAPE_CHARS=700` in
+course_intel_writer.py reject-ALL'd the writer's own instructed "3-5 sentence Augusta-register"
+landscape whenever it runs >700 chars: Pebble landscape=727 -> REJECT rule2; Red ship-time run=794
+-> REJECT (a fresh run measured 585 and PASSED — Red lives on the knife-edge). Bethpage Black passed
+only by luck of fitting under 700. NOT (a) fabrication, NOT (c) data gap: the rejected prose is clean,
+geometry-grounded, on-register; the anti-fabrication gates all worked (par restatements matched 70/72;
+Pebble's U.S.-Open facts stayed OUT of landscape, correctly routed to history_sentence at high conf).
+FIX (precision only, no fabrication loosening): raised `_MAX_LANDSCAPE_CHARS` 700->950 and
+`_MAX_COMPOSED_CHARS` 1200->1600 in course_intel_writer.py; added pass-on-good regression tests
+pinning the two exact rejected drafts (Pebble 727-char landscape + 4 high-conf facts -> PASS enriched;
+Red 794-char landscape -> PASS landscape) and updated the old 701/1201-boundary reject tests to the
+new thresholds. Injection/fact-leak/confidence/par-claim gates UNTOUCHED. Gates local: ruff clean;
+test_course_intel_writer 21/21, test_course_intel_service 10/10, guide_writer siblings green (147 total
+offline). DB-route integration test runs in CI.
+
+## AWAITING — reviewer + qa on the landed course_intel_writer length-cap fix (pushed to integration/next)
+Self-implemented (2-constant precision fix + tests; too small to warrant a builder sub-agent in the
+worktree). On reviewer SHIP + qa PASS -> re-seed prod: ship the reviewed course_intel_writer.py to the
+box, clear the negative-cache for the two rows, re-run the seed through the FIXED validator, verify
+opening lines + verdicts (report verbatim). Then open the next bundle PR (integration/next -> main),
+update checklist + backlog item 57 resolution + this log. On BLOCKING -> fix + re-push + re-review.
+Do NOT ship/ping this cycle. Reviewer verdict target: does raising the two length caps keep the
+validator fail-CLOSED (length is orthogonal to the injection/leak/confidence/par gates)?
+
 ## 2026-07-17 BUILDER FIXUP DONE — caddie two-tier advice routing, reviewer fixup batch on worktree agent-a84640c5c3166ffd8, 4 commits, all gates green
 Review verdict on @7d2f94d: 2 BLOCKING (false-positive validator regexes) + 3 fold-ins. Fixed all,
 same worktree/lane (HEAD was rebased to 3da4441 by eng-lead first):
