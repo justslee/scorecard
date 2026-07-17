@@ -19038,10 +19038,22 @@ callback + forwardRef {clearAim}; HoleCard's existing top-right pill grows to tw
 custom aim active, collapses to default ###Y otherwise; × now 44x44 DOM button; onPointerDownCapture on hit
 circle + × (capture-phase framer isolation); dead movedRef/startClientRef removed. Gates green (lint/tsc/build,
 voice 278/278, unit 16/16, map+yardage 349/349).
-AWAITING (parallel): designer a600b92de11282834 (BLOCKING re-render — single pill + no dogleg collision) +
-reviewer a2c750d73f25d1623 (focused: render-loop/effect safety, forwardRef, capture on × still clears, no map
-regress). On both PASS/SHIP: open bundle PR (NOTICEABLE), update backlog, HOLD ship (owner's next approval).
-Any BLOCK -> re-dispatch builder. If I die: reconcile from origin/integration/next @997e318; reviewers read-only.
+RE-REVIEW @997e318: reviewer a2c750 SHIP (render-loop safe, forwardRef ok — but CODE READ only). Designer
+a600b9 BLOCK via LIVE render: the double-pill/collision IS fixed, but the capture-phase fix KILLED THE DRAG
+entirely. React 19: co-located onPointerDownCapture{stopPropagation} + onPointerDown bubble on the SAME <circle>
+aborts React's dispatch queue for that event -> handlePointerDown never fires -> pointerIdRef stays null ->
+drag totally dead (mouse+touch, every hole). Total feature regression.
+DIAGNOSIS: the capture add was harmful AND ineffective. QA already proved 85c2ff5's mechanism (bubble-phase
+stopPropagation + setPointerCapture) works with NO hole-swipe on a live drive — setPointerCapture reroutes
+pointermoves to the reticle so framer's drag="x" never sees the movement (that's the real isolator; a lone
+pointerdown w/o moves can't trigger a swipe). touch-action:none on the hit circle further blocks browser pan.
+AWAITING: builder re-fix — REVERT the co-located onPointerDownCapture on the <circle> (HoleIllustration.tsx
+~L330-343) and on the × button (HoleCard); restore the working single bubble onPointerDown={handlePointerDown}
++ onClick stopPropagation + setPointerCapture (the 85c2ff5 mechanism QA verified). MUST re-verify with a REAL
+live pointer drive (Playwright, isTrusted pointer events) that (a) drag works + reticle follows + readout
+updates and (b) no card-expand/zoom and no hole-swipe — a code read is NOT sufficient (this class of bug is
+invisible from code). Re-run gates. Then designer BLOCKING live re-render again. HOLD ship. If I die:
+reconcile from origin/integration/next; last KNOWN-WORKING drag @b142f40/85c2ff5, capture regression @997e318.
 Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
 origin/integration/next + worktree commits; do NOT re-run a finished child.
 ## AWAITING — builder (specs/course-discovery-intel-plan.md, in THIS worktree, on integration/next)
