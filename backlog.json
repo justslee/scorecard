@@ -1224,6 +1224,30 @@
       "landed": "2026-07-16 on integration/next (bundle #143, NOTICEABLE). Plan specs/oncourse-gps-target-origin-plan.md. Wired the existing tapTargetDistances origin+fromGps plumbing to the live GPS: extracted isGpsPlausibleToGreen (5-800y, shared with RoundPageClient posOnHole byte-identical), resolveGpsOrigin feeds tapTargetForPos + placeTarget leg-1 so tap AND drag anchor at the golfer when on-hole (label 'From you' per designer, else 'From tee'); live re-place on GPS ticks via a createSerialRunner FIFO mutex (all placeTarget/clearTapMarker callers serialized — closes a reviewer-caught orphan race, v1.1.9 class). Amber TO-GREEN leg unchanged. Verdicts: reviewer SHIP (mutex traced+falsified), qa PASS (lint/tsc/build/voice 278/vitest 773), designer APPROVE-WITH-COPY. Gates green on the landed head.",
       "depends_on": [],
       "why": "specs/oncourse-gps-readiness-plan.md (owner's Bethpage Red readiness pass, 2026-07-16), behavior #8 of the GPS-consumer audit: GoogleSatelliteMap.tsx's tap-to-measure handler (tap 782-824) hardcodes the origin at the tee (fromGps=false) even when the golfer's live GPS position is known and on-hole — the FROM number and the drawn line should originate at the player, not the tee, in that case. The distance-from-point helper already supports an arbitrary origin; this is a bounded follow-up (P2) confined to GoogleSatelliteMap.tsx, a map-lane hot file (fix/map-fieldtest-v119) — deliberately NOT touched by this harness pass to avoid conflict."
+    },
+    {
+      "id": "ingest-elevation-ref-parse-fix",
+      "title": "elevation.py int(ref) crashes on composite hole refs like '1 - #2' (Pinehurst format)",
+      "status": "ready",
+      "priority": "p2",
+      "depends_on": [],
+      "why": "Found during the 2026-07-17 championship-course ingest op: backend/app/services/elevation.py:448 int(ref) raises on OSM refs like '1 - #2', and course_spatial._ref_to_int returns 0 for the same, collapsing hole numbers. Worked around at runtime with a leading-int normalization wrapper; needs the real repo fix (shared leading-int ref parser) + tests covering composite/dash/hash ref formats."
+    },
+    {
+      "id": "ingest-duplicate-hole-ref-dedupe",
+      "title": "Same-boundary duplicate hole refs (e.g. Pine Valley short course) contaminate par merge + polygon grouping",
+      "status": "ready",
+      "priority": "p2",
+      "depends_on": [],
+      "why": "Found 2026-07-17: when a club boundary contains two courses whose holes share refs (Pine Valley main + short course), par merge and polygon grouping mix them (first ingest produced holes 1-10 all par 3; caught by audit). Runtime fix was a longest-way-per-ref dedupe wrapper; needs the repo fix in the ingest path + a regression test with a two-course-one-boundary fixture."
+    },
+    {
+      "id": "ingest-overpass-error-honesty",
+      "title": "fetch_golf_course_boundaries swallows 429/504 into an empty list (reads as 'no boundary matched')",
+      "status": "ready",
+      "priority": "p3",
+      "depends_on": [],
+      "why": "Found 2026-07-17 under heavy Overpass throttling: HTTP 429/504 from Overpass is caught and returned as [], indistinguishable from a genuine no-boundary result, sending the ingest down misleading failure paths. Raise/annotate throttle errors distinctly (retry-able) vs true empties, + tests."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
