@@ -18932,8 +18932,21 @@ Writer = course_intel_writer.py, COURSE_INTEL_MODEL default claude-sonnet-5, NO 
 NOTE: consolidated this lane onto the ISOLATED worktree (Edit/Write are worktree-sandboxed; builder must
 work here too). Concept commit already on origin/integration/next; worktree ff'd to bundle head dc8e165.
 
-## AWAITING — builder (specs/course-discovery-intel-plan.md, in THIS worktree, on integration/next)
-Builder implements the full plan EXCEPT the two STOP items (prod migration apply + prod seed). Commits in
-the worktree; I rebase+push HEAD:integration/next. On builder DONE: reviewer (fresh) + qa (gates+offline
-validator matrix) + designer (BLOCKING on rendered card+page). Ships HELD; do NOT ship/ping.
-If I die: reconcile from origin/integration/next + the builder's worktree commits; do NOT re-run a finished builder.
+## AWAITING — draggable-aim-target lane (2026-07-17, owner feature; NOTICEABLE)
+Bundle #145 SHIPPED (course-discovery + smart-brain now on main @ad319eb). Fresh integration/next cut off
+origin/main @ad319eb and pushed (ea718e9..ad319eb ff). NO open bundle PR yet — open on first item land.
+Working in worktree agent-ad870b071dfc686ee (branch worktree-agent-...; Edit/Write sandboxed here); push
+via git push origin HEAD:integration/next.
+Owner ask: make the aim target DRAGGABLE on BOTH the satellite map AND the yardage-book HoleIllustration.
+- Map (GoogleSatelliteMap.tsx): draggable seam ALREADY exists (placeTarget/tapTargetForPos + native
+  draggable reticle + drag-start/drag/drag-end + live mid-drag readout, GPS origin). VERIFY touch-drag +
+  live readout; fix roughness only. NOT new.
+- Yardage book (HoleIllustration.tsx + HoleCard.tsx): static SVG on abstract HOLES path, only a passive
+  shotPoint dot. ADD a draggable on-paper aim marker; yardages (to-target, target-to-green) derive from
+  hole.yards via path/geometry. This is the NEW work. Designer BLOCKING on on-paper feel.
+AWAITING: fable Plan (specs/draggable-target-plan.md) + designer concept (yardage-book target look+gesture),
+running in parallel. On both back: builder implements plan in THIS worktree on integration/next; then
+reviewer (fresh: touch-event correctness, no drag leak, yardage math correct+consistent, no map regression)
++ qa (gates SUCCESS + map/caddie suites, drive interaction) + designer BLOCKING (both rendered targets).
+Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
+origin/integration/next + worktree commits; do NOT re-run a finished child.
