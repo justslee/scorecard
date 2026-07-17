@@ -1,5 +1,12 @@
 "use client";
 
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useReducedMotion } from "framer-motion";
+import { T } from "./tokens";
+import { shotPointForPath, type PathPoint } from "@/lib/hole-shot-point";
+import { bookTargetDistances, clampToDiagram } from "@/lib/yardage-book-target";
+import { haptic } from "@/lib/haptics";
+
 // Abstract top-down hole diagram — ported from the prototype.
 
 export type HoleSpec = {
@@ -96,8 +103,102 @@ export default function HoleIllustration({
   const tee = hole.path[0];
   const green = hole.path[hole.path.length - 1];
 
+  // ── Draggable aim target (owner ask 2026-07-17) ──────────────────────────
+  // Aim state lives INSIDE this component — no lift to HoleCard, `shotPoint`
+  // prop contract stays untouched. `aim` is the user's drag override; when
+  // null the reticle is seeded from `shotPoint` (or the path midpoint) so
+  // there is ALWAYS something to grab. See specs/draggable-target-plan.md §2.4.
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [aim, setAim] = useState<PathPoint | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const pointerIdRef = useRef<number | null>(null);
+  const movedRef = useRef(false);
+  const startClientRef = useRef<{ x: number; y: number } | null>(null);
+  const reduceMotion = useReducedMotion();
+
+  // Reset on hole change — adjust state during render (React's documented
+  // pattern for "derived from a changed prop"), not in an effect, so there's
+  // no extra render pass / flash of the old hole's aim point. Don't rely on
+  // the consumer remounting via a keyed AnimatePresence — reset locally too,
+  // per the plan's edge-case guard.
+  const [lastHoleNumber, setLastHoleNumber] = useState(holeNumber);
+  if (holeNumber !== lastHoleNumber) {
+    setLastHoleNumber(holeNumber);
+    setAim(null);
+    setDragging(false);
+  }
+  // Refs aren't rendering state — React's rules disallow touching them
+  // during render, so the in-flight-pointer-id reset happens in an effect
+  // instead (still fires on the same hole-change, just a tick later; the
+  // state reset above already zeroed `dragging`/`aim` synchronously).
+  useEffect(() => {
+    pointerIdRef.current = null;
+  }, [holeNumber]);
+
+  const seed = shotPoint ?? shotPointForPath(hole.path) ?? tee;
+  const aimPoint = aim ?? seed;
+
+  // Screen→viewBox conversion via getScreenCTM().inverse() (canonical path,
+  // plan §2.5) — keeps the reticle exactly under the finger regardless of the
+  // card's rendered size (190 collapsed / 340 expanded). Falls back to a
+  // bounding-rect ratio if the CTM isn't available yet; equivalent here
+  // because the viewBox is a uniform square (width === height).
+  function toSvgPoint(e: { clientX: number; clientY: number }): PathPoint {
+    const svg = svgRef.current;
+    if (svg) {
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        const pt = svg.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const loc = pt.matrixTransform(ctm.inverse());
+        return [loc.x / VB, loc.y / VB];
+      }
+      const rect = svg.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
+      }
+    }
+    return aimPoint;
+  }
+
+  function handlePointerDown(e: ReactPointerEvent<SVGCircleElement>) {
+    e.stopPropagation();
+    if (pointerIdRef.current !== null) return; // ignore a second finger mid-drag
+    pointerIdRef.current = e.pointerId;
+    movedRef.current = false;
+    startClientRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+    haptic("light"); // once per drag-start, matches the map's feel
+  }
+
+  function handlePointerMove(e: ReactPointerEvent<SVGCircleElement>) {
+    if (pointerIdRef.current !== e.pointerId) return;
+    const start = startClientRef.current;
+    if (start && !movedRef.current) {
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) movedRef.current = true;
+    }
+    setAim(clampToDiagram(toSvgPoint(e)));
+  }
+
+  function endDrag(e: ReactPointerEvent<SVGCircleElement>) {
+    if (pointerIdRef.current !== e.pointerId) return;
+    pointerIdRef.current = null;
+    setDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // already released (e.g. pointercancel) — fine to ignore
+    }
+  }
+
+  const { toTarget, toGreen } = bookTargetDistances(aimPoint, hole.path, hole.yards);
+  const reticleColor = dragging ? accent : T.ink;
+  const colorTransition = reduceMotion ? "none" : "stroke 0.2s ease, fill 0.2s ease";
+
   return (
-    <svg viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
+    <svg ref={svgRef} viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
       <defs>
         <pattern id={`rough-${holeNumber}`} width="2" height="2" patternUnits="userSpaceOnUse">
           <rect width="2" height="2" fill="#cfc9b7" />
@@ -135,13 +236,106 @@ export default function HoleIllustration({
         <circle r="0.6" fill="#f4f1ea" />
       </g>
 
-      {shotPoint && (
-        <g transform={`translate(${scale(shotPoint[0])}, ${scale(shotPoint[1])})`}>
-          <circle r="2.5" fill={accent} opacity="0.2">
-            <animate attributeName="r" values="2.5;4;2.5" dur="2.4s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.2;0;0.2" dur="2.4s" repeatCount="indefinite" />
-          </circle>
-          <circle r="1.2" fill={accent} stroke="#f4f1ea" strokeWidth="0.3" />
+      {/* Draggable aim reticle — supersedes the old passive shotPoint pulse
+          (never both: two markers would be noise). One dashed thread while
+          dragging, echoing the map's "what's left" leg, but restrained —
+          no permanent tee→target leg on this smaller, calmer surface. */}
+      <line
+        x1={scale(aimPoint[0])}
+        y1={scale(aimPoint[1])}
+        x2={scale(green[0])}
+        y2={scale(green[1])}
+        stroke={T.pencil}
+        strokeWidth="0.3"
+        strokeDasharray="1 1.5"
+        style={{
+          opacity: dragging ? 0.35 : 0,
+          transition: reduceMotion ? "none" : "opacity 0.3s ease",
+        }}
+      />
+
+      {/* Translate via the XML attribute (position tracks the pointer
+          glued, every render, no CSS transition — no lag). Scale-on-grab
+          lives on a NESTED <g> as a separate CSS transform, so the grab
+          bounce can spring/ease independently of position. (A CSS
+          `transform` style completely overrides the XML `transform`
+          attribute on the same element per SVG2/CSS Transforms — mixing
+          both on ONE <g> would silently drop the translate, so they're
+          split across parent/child instead.) */}
+      <g transform={`translate(${scale(aimPoint[0])}, ${scale(aimPoint[1])})`}>
+        <g
+          style={{
+            transform: `scale(${dragging ? 1.15 : 1})`,
+            transformOrigin: "0px 0px",
+            transition: reduceMotion ? "none" : "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          }}
+        >
+          <circle r="3.2" fill="none" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="0" y1="-3.6" x2="0" y2="-4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="0" y1="3.6" x2="0" y2="4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="3.6" y1="0" x2="4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <line x1="-3.6" y1="0" x2="-4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+          <circle r="0.9" fill={reticleColor} stroke={T.paper} strokeWidth="0.3" style={{ transition: colorTransition }} />
+        </g>
+      </g>
+
+      {/* Invisible hit target, ≥44pt physical touch target at both card
+          sizes (r=12 viewBox units ⇒ ~45.6px diameter at the 190px
+          collapsed card). Sits last so it's on top for hit-testing; the
+          visible glyph above is purely decorative. */}
+      <circle
+        cx={scale(aimPoint[0])}
+        cy={scale(aimPoint[1])}
+        r="12"
+        fill="transparent"
+        style={{ touchAction: "none", cursor: "grab" }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Drag aim target"
+      />
+
+      {/* Live/settled readout — appears once the golfer has placed a custom
+          aim point (drag or settled); the drawn reticle alone is the quiet
+          baseline the rest of the time. In-SVG (state is internal to this
+          component), matching the DOM ink-pill idiom used for HoleCard's
+          {distance}Y badge (dark ink fill, mono, paper text) rather than
+          inventing a new chrome style. */}
+      {aim && (
+        // pointerEvents: none on the pill body — if the reticle is dragged
+        // under this top-left corner, the pill must not shadow the hit
+        // circle underneath it (re-enabled explicitly on the × control).
+        <g style={{ pointerEvents: "none" }}>
+          <rect x="4" y="4" width="46" height="24" rx="3.5" fill={T.ink} />
+          <text x="7" y="17" fontFamily={T.mono} fontSize="3.6" letterSpacing="0.3" fill={T.paperMid} style={{ textTransform: "uppercase" }}>
+            From tee
+          </text>
+          <text x="44" y="17" fontFamily={T.mono} fontSize="5.2" fill={T.paper} textAnchor="end" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {toTarget}Y
+          </text>
+          <text x="7" y="25" fontFamily={T.mono} fontSize="3.6" letterSpacing="0.3" fill={T.paperMid} style={{ textTransform: "uppercase" }}>
+            To green
+          </text>
+          <text x="44" y="25" fontFamily={T.mono} fontSize="5.2" fill={accent} textAnchor="end" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {toGreen}Y
+          </text>
+          <circle
+            cx="45"
+            cy="8.5"
+            r="4"
+            fill="transparent"
+            style={{ cursor: "pointer", pointerEvents: "auto" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAim(null);
+            }}
+            aria-label="Clear aim target"
+          />
+          <text x="45" y="10.3" fontFamily={T.mono} fontSize="5" fill={T.paperMid} textAnchor="middle" style={{ pointerEvents: "none" }}>
+            ×
+          </text>
         </g>
       )}
 
