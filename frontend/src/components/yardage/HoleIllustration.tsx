@@ -327,13 +327,15 @@ const HoleIllustration = forwardRef<
         r="12"
         fill="transparent"
         style={{ touchAction: "none", cursor: "grab" }}
-        // Capture-phase too: framer-motion 12 registers the round page's
-        // `drag="x"` hole-swipe via native CAPTURE-phase listeners on an
-        // ancestor motion.div (RoundPageClient's HoleCard wrapper), so a
-        // bubble-phase-only stopPropagation fires too late and a horizontal
-        // aim drag can rubber-band into a hole swipe. Mirrors the proven
-        // in-file pattern at RoundPageClient.tsx (~line 1983).
-        onPointerDownCapture={(e) => e.stopPropagation()}
+        // Isolation from the round page's framer-motion `drag="x"` hole-swipe
+        // comes from setPointerCapture (inside handlePointerDown) rerouting
+        // all subsequent pointermove/up to this element — a lone pointerdown
+        // without moves can't trigger a swipe. touch-action:none blocks
+        // native browser pan gestures. Do NOT add an onPointerDownCapture
+        // alongside this bubble handler: in React 19, stopPropagation() in a
+        // capture handler aborts the WHOLE synthetic dispatch for that
+        // event on this node, including this same bubble-phase
+        // onPointerDown — silently killing the drag (regression, fixed).
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}

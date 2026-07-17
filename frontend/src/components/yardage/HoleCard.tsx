@@ -166,11 +166,15 @@ export default function HoleCard({
                   e.stopPropagation();
                   illustrationRef.current?.clearAim();
                 }}
-                // Capture-phase: same ancestor `drag="x"` hole-swipe hazard as
-                // the reticle itself (RoundPageClient.tsx ~line 1983) — the ×
-                // now lives in the DOM, not the SVG, but the wrapper it sits
-                // inside can still be a framer drag surface.
-                onPointerDownCapture={(e) => e.stopPropagation()}
+                // Bubble-phase only (never capture): in React 19,
+                // stopPropagation() inside an onXCapture handler aborts the
+                // whole synthetic dispatch for that event on this node,
+                // including a same-node bubble onClick — that killed the
+                // drag on the reticle's sibling handler (regression, fixed).
+                // A tap on this 44px × button won't move far enough to hit
+                // framer's swipe threshold, so bubble stopPropagation is
+                // enough belt-and-suspenders against a stray drag starting here.
+                onPointerDown={(e) => e.stopPropagation()}
                 style={{
                   position: "absolute",
                   top: -12,
