@@ -19125,3 +19125,29 @@ in specs/course-discovery-intel-plan.md (already register-approved: "Ship this r
 ## NEXT (for whoever resumes / the coordinator): prod migration+seed needs DIRECT owner permission-grant OR
 runs on the normal ship path (merge -> deploy.yml applies 015; then run the seed on-box). Ships HELD pending
 tree-distance verification. Do NOT re-run builder/reviewer/qa/designer — course-discovery-intel is DONE & GREEN.
+
+## 2026-07-17 BUILDER — draggable-aim-target REGRESSION FIXED @c338254 (React 19 capture-phase revert)
+Reverted the onPointerDownCapture+bubble-onPointerDown pair 997e318 added on the reticle hit-<circle>
+(HoleIllustration.tsx) and the × button (HoleCard.tsx). Root cause confirmed: in React 19, stopPropagation()
+inside an onXCapture handler aborts the WHOLE synthetic dispatch for that event on that node, including the
+SAME node's bubble handler — so handlePointerDown never fired, the drag was a total no-op. Restored the
+85c2ff5 mechanism: setPointerCapture (inside handlePointerDown, bubble-phase only) reroutes subsequent
+pointermove/up to the reticle so framer-motion's ancestor `drag="x"` hole-swipe never sees a swipe-worthy
+move; bubble stopPropagation + touch-action:none round out isolation. Kept all the good 997e318 changes
+(deleted in-SVG panel, onAimChange callback, forwardRef clearAim, dead movedRef/startClientRef removal).
+
+MANDATORY live verification done (code read alone was explicitly disallowed for this bug class): drove real
+Playwright pointer events against `npm run dev` (localhost:3000, offline localStorage-fallback round — no
+backend/DB needed). Confirmed (a) reticle follows the pointer, readout grows to a two-line FROM TEE/TO GREEN
+pill, reticle turns accent; (b) numbers stay plausible (positive, no NaN); (c) × clears back to the default
+single "###Y" pill; (d) no card zoom/expand and no hole-swipe during drag (hole label stayed "HOLE 1"); (e)
+switching to hole 2 resets the aim to the default centerline target. Screenshots (scratchpad, not committed):
+proof-reticle-mid-drag.png shows the reticle moved + two-line accent pill mid-drag. Throwaway harness deleted
+from the worktree before commit — `git status` clean except the two source-file edits.
+
+Gates green: lint clean, tsc clean, next build green, voice-tests 278/278, yardage-book-target.test.ts 16/16,
+src/lib/map + src/components/yardage 349/349 (no regressions).
+
+STATE: fix committed @c338254 on this worktree branch (maps to integration/next), NOT pushed per brief (builder
+does not push/PR). Rides bundle #146 alongside course-discovery-intel — coordinator/eng-lead to push +
+designer to do a final live re-render pass before the bundle is offered to the owner for "ship it".
