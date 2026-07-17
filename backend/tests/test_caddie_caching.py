@@ -444,9 +444,14 @@ def test_session_voice_logs_cache_usage_and_sends_system_list(monkeypatch, caplo
 
     client = _make_client()
     with caplog.at_level("INFO", logger="looper.caddie"):
+        # "How's the wind?" is a FACT-class ask (specs/caddie-two-tier
+        # -routing-plan.md §1 matrix row 3) — stays on the Claude tool loop
+        # this test exercises. "what club?" is now ADVICE-class and routes
+        # to the brain (run_strategy_turn) BEFORE this loop ever runs — see
+        # tests/test_text_advice_interception.py for that path's own coverage.
         res = client.post(
             "/api/caddie/session/voice",
-            json={"round_id": "round-1", "transcript": "what club?", "personality_id": "classic", "hole_number": 4},
+            json={"round_id": "round-1", "transcript": "How's the wind?", "personality_id": "classic", "hole_number": 4},
         )
     assert res.status_code == 200
     assert res.json()["response"] == "Take the 7-iron."

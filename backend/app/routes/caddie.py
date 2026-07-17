@@ -45,8 +45,9 @@ from app.caddie.voice_prompts import (
     output_language_rule,
 )
 from app.caddie import tools as caddie_tools
+from app.caddie.routing import Intent, classify_intent
 from app.caddie.strategy_turn import run_strategy_turn
-from app.caddie.tool_loop import run_caddie_turn
+from app.caddie.tool_loop import READING_THE_HOLE_STATUS_LABEL, run_caddie_turn
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.caddie.personalities import (
@@ -57,7 +58,7 @@ from app.caddie.personalities import (
     DEFAULT_PERSONALITY_ID,
 )
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
-from app.caddie.session import sessions, get_owned_session
+from app.caddie.session import RoundSession, sessions, get_owned_session
 from app.db.engine import async_session
 from app.db.models import PlayerProfile
 from app.caddie import memory as memory_mod
@@ -974,15 +975,62 @@ or known tendencies when relevant.
     return system_blocks, messages, persona_id
 
 
+# SCORE intent — text-mouth v1 honest handoff (specs/caddie-two-tier-routing
+# -plan.md §9): the live realtime session owns record_scores (the existing
+# parser + the existing score write path, wired client-side); the text path
+# has no live tool-context (players/handleSetScore) to route a write through
+# yet. A constant, never model-generated — the seam accepts a future
+# server-side write without rearchitecting this interception.
+_SCORE_TEXT_HANDOFF_LINE = "Score entry runs on the live caddie or the score sheet."
+
+
 @router.post("/session/voice", response_model=VoiceCaddieResponse)
 async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Voice caddie using session state — remembers entire round conversation.
 
-    Caller must own the round.
+    Caller must own the round. Intent routing (specs/caddie-two-tier-routing
+    -plan.md §1, §2, §9) runs BEFORE the Claude loop: an ADVICE-class ask
+    never reaches Claude — it routes straight to the one brain (`run_
+    strategy_turn`, the SAME implementation `/session/strategy` uses); a
+    SCORE-class ask gets the honest text-path handoff line. Both persist the
+    user/assistant pair to the message ledger exactly like a normal turn.
+    FACT/OTHER stays on the Claude tool loop, unchanged.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    intent = classify_intent(request.transcript)
+    if intent is Intent.ADVICE:
+        session = await get_owned_session(request.round_id, user_id)
+        hole = request.hole_number or session.current_hole
+        result = await run_strategy_turn(
+            session, request.round_id, user_id, hole,
+            distance_to_green_yards=request.distance_to_green_yards,
+            hole_yards=request.hole_yards,
+            yardage_basis=request.yardage_basis,
+        )
+        response_text = (
+            result.get("strategy")
+            or result.get("reason")
+            or "Say that once more? I want to get this right."
+        )
+        await sessions.append_message_pair(
+            request.round_id,
+            user_content=request.transcript,
+            assistant_content=response_text,
+            hole_number=request.hole_number,
+        )
+        return VoiceCaddieResponse(response=response_text)
+
+    if intent is Intent.SCORE:
+        await sessions.append_message_pair(
+            request.round_id,
+            user_content=request.transcript,
+            assistant_content=_SCORE_TEXT_HANDOFF_LINE,
+            hole_number=request.hole_number,
+        )
+        return VoiceCaddieResponse(response=_SCORE_TEXT_HANDOFF_LINE)
 
     system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
     # The tool loop resolves against the live session (same object the orb's
@@ -1132,6 +1180,48 @@ async def _sse_reply(
     yield "event: done\ndata: {}\n\n"
 
 
+async def _intercepted_reply_stream(
+    session: RoundSession,
+    request: SessionVoiceRequest,
+    user_id: str,
+    hole: int,
+    intent: Intent,
+) -> AsyncIterator[str]:
+    """SSE twin of the text-path ADVICE/SCORE interception in `session_voice`
+    (specs/caddie-two-tier-routing-plan.md §2, §9) — same framing contract as
+    `_sse_reply` (token/status/done/error) but without the Claude tool loop:
+    ADVICE routes straight to `run_strategy_turn` (one calm 'reading the
+    hole' status frame while the ~3-4s brain call is in flight, then the
+    strategy text as a single token frame); SCORE returns the honest
+    text-path handoff line instantly. Both persist the message pair exactly
+    like the normal streamed turn.
+    """
+    if intent is Intent.ADVICE:
+        yield f"event: status\ndata: {json.dumps(READING_THE_HOLE_STATUS_LABEL)}\n\n"
+        result = await run_strategy_turn(
+            session, request.round_id, user_id, hole,
+            distance_to_green_yards=request.distance_to_green_yards,
+            hole_yards=request.hole_yards,
+            yardage_basis=request.yardage_basis,
+        )
+        response_text = (
+            result.get("strategy")
+            or result.get("reason")
+            or "Say that once more? I want to get this right."
+        )
+    else:
+        response_text = _SCORE_TEXT_HANDOFF_LINE
+
+    yield f"event: token\ndata: {json.dumps(response_text)}\n\n"
+    await sessions.append_message_pair(
+        request.round_id,
+        user_content=request.transcript,
+        assistant_content=response_text,
+        hole_number=request.hole_number,
+    )
+    yield "event: done\ndata: {}\n\n"
+
+
 @router.post("/session/voice/stream")
 async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Streaming twin of /session/voice — same auth/gates/prompt assembly,
@@ -1142,10 +1232,23 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
     (missing API key, round not owned, etc.) is still a normal JSON
     HTTPException with headers not yet sent, identical to /session/voice.
     Only the Anthropic call itself runs inside the generator, after 200 OK.
+
+    Intent routing (specs/caddie-two-tier-routing-plan.md §2, §9) runs here
+    too, before prompt assembly: ADVICE/SCORE never build the Claude prompt
+    at all — they stream from `_intercepted_reply_stream` instead.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    intent = classify_intent(request.transcript)
+    if intent in (Intent.ADVICE, Intent.SCORE):
+        session = await get_owned_session(request.round_id, user_id)
+        hole = request.hole_number or session.current_hole
+        return StreamingResponse(
+            _intercepted_reply_stream(session, request, user_id, hole, intent),
+            media_type="text/event-stream",
+        )
 
     system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
     # Tool-resolution context — same live session the orb's HTTP tool

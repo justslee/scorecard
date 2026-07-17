@@ -42,6 +42,12 @@ _TOOL_RESULT_MAX_CHARS = 4000
 # "checking the numbers…"); calm copy, no internals.
 TOOL_STATUS_LABEL = "checking the numbers"
 
+# Text-path ADVICE interception status label (specs/caddie-two-tier-routing
+# -plan.md §2, §9) — the sheet's existing calm-status rendering, emitted once
+# before the brain call (`run_strategy_turn`) that replaces the Claude loop
+# for an ADVICE-class turn on /session/voice/stream.
+READING_THE_HOLE_STATUS_LABEL = "reading the hole"
+
 # Calm failure result — never raw exception text (injection/leak hygiene).
 _TOOL_ERROR_RESULT = {"error": "tool unavailable right now"}
 
