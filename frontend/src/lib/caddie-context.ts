@@ -131,11 +131,14 @@ export function onCaddieContextChange(
 }
 
 // ── Orb state channel (host → orb, one-way) ─────────────────────────────────
-// S2 consumes only "confirming" (the success beat after a task dispatch).
-// "listening"/"thinking" are in the type so S5 motion work slots in without
-// a contract change, but nothing sets them yet.
+// S2 consumed only "confirming" (the success beat after a task dispatch).
+// The tap-to-talk inversion (specs/caddie-orb-tap-to-talk-inversion-plan.md
+// §1b) activates "listening" (a docked live-mic session, orb pulses) and
+// adds "connecting" (mic requested, not hot yet — no pulse: a live mic must
+// always show a same-frame indicator, never a silent pre-hot beat that reads
+// as "listening" before it is). "thinking" stays reserved — nothing sets it.
 
-export type CaddieOrbState = "idle" | "listening" | "thinking" | "confirming";
+export type CaddieOrbState = "idle" | "connecting" | "listening" | "thinking" | "confirming";
 
 let orbState: CaddieOrbState = "idle";
 const orbListeners = new Set<(s: CaddieOrbState) => void>();
@@ -153,4 +156,31 @@ export function getCaddieOrbState(): CaddieOrbState {
 export function onCaddieOrbState(cb: (s: CaddieOrbState) => void): () => void {
   orbListeners.add(cb);
   return () => orbListeners.delete(cb);
+}
+
+// ── Orb caption channel (host → orb, one-way) ───────────────────────────────
+// Docked presentation renders no sheet chrome — the caption line ("Hearing…",
+// a quoted interim, "Didn't catch that") that would normally live in the
+// sheet body is published here instead and rendered BY THE ORB (CaddieOrb.tsx
+// §3d). Same pub-sub shape + dedup guard as orb state; pure module state, so
+// it is SSR-inert without a typeof-window guard (nothing here touches window).
+
+export type CaddieOrbCaption = string | null;
+
+let orbCaption: CaddieOrbCaption = null;
+const orbCaptionListeners = new Set<(c: CaddieOrbCaption) => void>();
+
+export function setCaddieOrbCaption(c: CaddieOrbCaption): void {
+  if (c === orbCaption) return;
+  orbCaption = c;
+  for (const cb of orbCaptionListeners) cb(c);
+}
+
+export function getCaddieOrbCaption(): CaddieOrbCaption {
+  return orbCaption;
+}
+
+export function onCaddieOrbCaption(cb: (c: CaddieOrbCaption) => void): () => void {
+  orbCaptionListeners.add(cb);
+  return () => orbCaptionListeners.delete(cb);
 }

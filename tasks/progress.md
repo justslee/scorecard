@@ -18295,3 +18295,37 @@ AWAITING: builder implementing specs/caddie-orb-tap-to-talk-inversion-plan.md on
 (worktree-agent-aadf4889fca14557d). On builder return -> reviewer (fresh) + qa (gates SUCCESS) ->
 designer BLOCKING on rendered result -> REBASE onto latest origin/integration/next -> push -> add to
 PR #144 as NOTICEABLE. No ship/ping this cycle. No main; no force-push.
+
+### BUILDER IMPLEMENTED (2026-07-16) — caddie-orb-tap-to-talk-inversion, on worktree-aadf4889fca14557d
+All 5 steps of specs/caddie-orb-tap-to-talk-inversion-plan.md implemented to the letter (no plan
+deviations needed — no ambiguity hit). Files: frontend/src/lib/looper-bus.ts (presentation? field +
+LooperDockedGesture send/on channel), frontend/src/lib/caddie-context.ts ("connecting" state activates
+"listening"; new CaddieOrbCaption channel), frontend/src/components/CaddieOrbSheet.tsx (presentation
+state/ref, 3 promotion triggers a/b/c, docked no-speech self-heal w/ 2500ms timer, docked-gesture
+subscription, orb-state/caption publisher, route-change hygiene via usePathname, shell gated
+`open && presentation==="full"`), frontend/src/components/CaddieOrb.tsx (orbState+caption subscriptions,
+useReducedMotion, pressStateRef-captured pointer semantics, listening pulse + reduced-motion static
+double ring, OrbChip factored sub-component, hidden-while-docked cancel effect, stateful aria-label,
+invert-intro one-time chip), frontend/src/app/round/[id]/RoundPageClient.tsx (PILL_OPEN_HOLD_MS=350,
+idle tap talks immediately via detachedCaddieLive.start() w/ eligibility fallback to openCaddieSheet(),
+idle hold opens sheet, live branch byte-identical, stateful aria-label, reduced-motion static accent
+ring, one-time pill intro chip).
+
+Tests: rewrote CaddieOrb.test.tsx tap/hold payload assertions + aria-label queries to the new contract
+(EXPECTED — the whole point is the inversion), added useReducedMotion mock + 9 new tests (listening
+pulse, connecting-never-pulses, reduced-motion static ring, docked tap/hold gestures, mid-press guard,
+caption chip, hidden-while-docked cancel, invert-intro sequencing). Extended CaddieOrbSheet.test.tsx
+with a docked-presentation describe (open/no-chrome, promotion a/b/c, cancel gesture, back-compat,
+no-speech self-heal w/ fake timers) + a route-change-hygiene describe (added usePathname mock to
+next/navigation). Extended looper-bus.test.ts for presentation field + gesture round-trip.
+useDetachedCaddieLive.test.tsx / CaddieSheet.session.test.tsx / LooperSheet.test.tsx untouched, all pass.
+
+GATES (all green): lint clean; tsc clean; build succeeded (19/19 static pages); voice-smoke 278/278;
+vitest 2640/2640 across all 136 test files (full suite, not just the touched files). No backend changes
+(frontend-only feature) so no ruff/DB gate needed. Round pill has no unit harness (pre-existing) —
+verified via the full build + manual code-reading against the plan's exact eligibility-gate mirror
+(useDetachedCaddieLive's own start() gate), not device-tested this cycle.
+
+Committed to worktree-agent-aadf4889fca14557d (not pushed — eng-lead owns rebase/push onto
+integration/next). NEXT: reviewer (fresh) + qa, then designer BLOCKING on rendered result before this
+lands in PR #144 as NOTICEABLE (owner-directed gesture inversion, v1.1.10 field test).

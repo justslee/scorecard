@@ -127,23 +127,58 @@ vi.mock("@/hooks/useSheetTTS", () => ({
   }),
 }));
 
+// CaddieOrbSheet now reads usePathname() (route-change hygiene, §2i) — a
+// controllable mock so the route-change test can simulate navigation without
+// a real app router context.
+const { pathnameMock } = vi.hoisted(() => ({ pathnameMock: vi.fn(() => "/tee-time") }));
+vi.mock("next/navigation", () => ({ usePathname: () => pathnameMock() }));
+
 // A controllable fake dictation hook — real React state so the component's
 // re-renders on listening/interim changes behave like the genuine hook,
-// while start/stopAndResolve/cancel are fully test-driven.
-const H = vi.hoisted(() => ({
-  startFn: vi.fn(async () => {}),
-  stopAndResolveFn: vi.fn(async (): Promise<string | null> => null),
-  cancelFn: vi.fn(),
-  lastOptions: null as { surface?: string; getKeyterms?: () => readonly string[] } | null,
-}));
+// while start/stopAndResolve/cancel are fully test-driven. `micError` and an
+// externally-triggerable "unexpected drop" (dropListening) are additive for
+// the tap-to-talk-inversion promotion tests (§2e triggers b/c) — every
+// pre-existing test that never touches them is unaffected (both default
+// inert: micError starts null, dropListening is simply never called).
+const H = vi.hoisted(() => {
+  const micErrorListeners = new Set<(e: string | null) => void>();
+  let listeningSetter: ((v: boolean) => void) | null = null;
+  return {
+    startFn: vi.fn(async () => {}),
+    stopAndResolveFn: vi.fn(async (): Promise<string | null> => null),
+    cancelFn: vi.fn(),
+    lastOptions: null as { surface?: string; getKeyterms?: () => readonly string[] } | null,
+    micErrorListeners,
+    triggerMicError: (e: string | null) => {
+      for (const cb of micErrorListeners) cb(e);
+    },
+    setListeningSetter: (fn: ((v: boolean) => void) | null) => {
+      listeningSetter = fn;
+    },
+    /** Simulates the mic dying underneath the session WITHOUT going through
+     *  stopAndResolve/cancel — the "unexpected listening drop" promotion
+     *  trigger (c) is specifically about telling THIS apart from an
+     *  intentional stop. */
+    dropListening: () => listeningSetter?.(false),
+  };
+});
 vi.mock("@/hooks/useLooperDictation", () => ({
   useLooperDictation: (opts: { surface?: string; getKeyterms?: () => readonly string[] }) => {
     H.lastOptions = opts;
     const [listening, setListening] = React.useState(false);
+    const [micError, setMicError] = React.useState<string | null>(null);
+    React.useEffect(() => {
+      H.micErrorListeners.add(setMicError);
+      H.setListeningSetter(setListening);
+      return () => {
+        H.micErrorListeners.delete(setMicError);
+        H.setListeningSetter(null);
+      };
+    }, []);
     return {
       listening,
       interim: "",
-      micError: null,
+      micError,
       start: async () => {
         await H.startFn();
         setListening(true);
@@ -162,10 +197,14 @@ vi.mock("@/hooks/useLooperDictation", () => ({
 
 import CaddieOrbSheet from "./CaddieOrbSheet";
 import { talkToCaddie, talkToCaddieStream, getCaddieProfile } from "@/lib/caddie/api";
-import { openLooper, looperContextForPath } from "@/lib/looper-bus";
+import { openLooper, looperContextForPath, sendLooperDockedGesture } from "@/lib/looper-bus";
 import {
   registerCaddieContext,
   onCaddieOrbState,
+  getCaddieOrbState,
+  setCaddieOrbState,
+  getCaddieOrbCaption,
+  setCaddieOrbCaption,
   getCaddieContext,
   type CaddieTaskContext,
   type CaddieSurfaceContext,
@@ -254,6 +293,11 @@ afterEach(() => {
   cleanupCtx = null;
   vi.unstubAllGlobals();
   cleanup();
+  pathnameMock.mockReturnValue("/tee-time");
+  // caddie-context orb state/caption are module-level singletons — reset so
+  // a docked-presentation test never bleeds into the next test's mount.
+  setCaddieOrbState("idle");
+  setCaddieOrbCaption(null);
 });
 
 describe("CaddieOrbSheet — gate (b): low confidence blocks dispatch", () => {
@@ -900,5 +944,144 @@ describe("CaddieOrbSheet — no cross-page leakage guard", () => {
     expect(getCaddieContext()).toBeNull();
     registerTask();
     expect(getCaddieContext()?.id).toBe("tee-time");
+  });
+});
+
+describe("CaddieOrbSheet — docked presentation (specs/caddie-orb-tap-to-talk-inversion-plan.md §2)", () => {
+  it("docked open renders NO chrome, and traces connecting → listening via the orb-state publisher", async () => {
+    const orbStates: string[] = [];
+    onCaddieOrbState((s) => orbStates.push(s));
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: true, presentation: "docked" }));
+
+    // No sheet chrome — the shell is gated `open && presentation === "full"`.
+    expect(screen.queryByLabelText("Close Looper")).toBeNull();
+
+    await waitFor(() => expect(H.startFn).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(orbStates).toContain("connecting"));
+    await waitFor(() => expect(orbStates).toContain("listening"));
+    expect(screen.queryByLabelText("Close Looper")).toBeNull(); // still no chrome
+  });
+
+  it("promotion (a): speaking while docked appends the turn and reveals the full sheet", async () => {
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Sure thing.");
+      return "Sure thing.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: true, presentation: "docked" }));
+    await waitFor(() => expect(H.startFn).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText("Close Looper")).toBeNull();
+
+    H.stopAndResolveFn.mockResolvedValueOnce("what's a good warmup?");
+    act(() => sendLooperDockedGesture("send"));
+
+    await waitFor(() => expect(screen.getByLabelText("Close Looper")).toBeTruthy());
+    expect(await screen.findByText("what's a good warmup?")).toBeTruthy();
+    expect(await screen.findByText("Sure thing.")).toBeTruthy();
+  });
+
+  it("promotion (b): a real mic/connect error while docked promotes to the full sheet", async () => {
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: true, presentation: "docked" }));
+    await waitFor(() => expect(H.startFn).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText("Close Looper")).toBeNull();
+
+    act(() => H.triggerMicError("Couldn't start the microphone."));
+
+    await waitFor(() => expect(screen.getByLabelText("Close Looper")).toBeTruthy());
+  });
+
+  it("promotion (c): an unexpected listening drop (not send/cancel) while docked promotes to the full sheet", async () => {
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: true, presentation: "docked" }));
+    await waitFor(() => expect(H.startFn).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText("Close Looper")).toBeNull();
+
+    act(() => H.dropListening());
+
+    await waitFor(() => expect(screen.getByLabelText("Close Looper")).toBeTruthy());
+  });
+
+  it("docked cancel gesture closes cleanly: dictation.cancel called, no chrome, orb resets to idle", async () => {
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: true, presentation: "docked" }));
+    await waitFor(() => expect(H.startFn).toHaveBeenCalledTimes(1));
+
+    act(() => sendLooperDockedGesture("cancel"));
+
+    expect(H.cancelFn).toHaveBeenCalled();
+    expect(screen.queryByLabelText("Close Looper")).toBeNull();
+    await waitFor(() => expect(getCaddieOrbState()).toBe("idle"));
+  });
+
+  it("back-compat: a summon with no presentation field behaves exactly like presentation:'full' (today's default)", async () => {
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    expect(await screen.findByLabelText("Close Looper")).toBeTruthy();
+  });
+
+  describe("no-speech self-heal (fake timers)", () => {
+    // Dedicated fake timers, scoped to this describe only (tasks/lessons.md
+    // 2026-07-07 — never let fake timers leak into other describes).
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    });
+
+    /** Drains pending microtasks without touching a real timer. */
+    async function flush(times = 8) {
+      for (let i = 0; i < times; i++) {
+        await act(async () => {
+          await Promise.resolve();
+        });
+      }
+    }
+
+    it("bare silence while docked collapses to idle after 2500ms — no promotion, no chrome", async () => {
+      render(<CaddieOrbSheet />);
+      act(() => openLooper({ context: "general", listening: true, presentation: "docked" }));
+      await act(async () => {
+        vi.advanceTimersByTime(60); // the summon's own start() delay
+      });
+      await flush();
+      expect(H.startFn).toHaveBeenCalledTimes(1);
+
+      H.stopAndResolveFn.mockResolvedValueOnce(null); // nothing heard
+      act(() => sendLooperDockedGesture("send"));
+      await flush();
+
+      expect(getCaddieOrbCaption()).toBe("Didn't catch that");
+      expect(screen.queryByLabelText("Close Looper")).toBeNull(); // no promotion for silence
+
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+      });
+      await flush();
+
+      expect(getCaddieOrbState()).toBe("idle");
+      expect(getCaddieOrbCaption()).toBeNull();
+      expect(screen.queryByLabelText("Close Looper")).toBeNull();
+    });
+  });
+});
+
+describe("CaddieOrbSheet — route-change hygiene (docked is page-scoped, §2i)", () => {
+  it("navigating away while docked cancels the mic and resets to idle; full-sheet sessions are untouched by this path", async () => {
+    const { rerender } = render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: true, presentation: "docked" }));
+    await waitFor(() => expect(H.startFn).toHaveBeenCalledTimes(1));
+
+    pathnameMock.mockReturnValue("/somewhere-else");
+    rerender(<CaddieOrbSheet />);
+
+    expect(H.cancelFn).toHaveBeenCalled();
+    expect(screen.queryByLabelText("Close Looper")).toBeNull();
+    await waitFor(() => expect(getCaddieOrbState()).toBe("idle"));
   });
 });

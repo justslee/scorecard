@@ -72,7 +72,7 @@ import { indexByHoleNumber } from "@/lib/hole-index";
 import { fetchAPI } from "@/lib/api";
 import { GPSWatcher } from "@/lib/gps";
 import { resolveOpeningShotDistance } from "@/lib/caddie/opening-shot";
-import { setCaddieLiveMode } from "@/lib/voice/live-mode-pref";
+import { setCaddieLiveMode, getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -1427,6 +1427,12 @@ export default function RoundPage() {
   const [pillEndConfirming, setPillEndConfirming] = useState(false);
   const pillHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pillEndHoldFiredRef = useRef(false);
+  // Owner directive, v1.1.10 field test (specs/caddie-orb-tap-to-talk-
+  // inversion-plan.md §4) — idle tap talks immediately; idle hold opens the
+  // chat sheet. Shares pillHoldTimerRef with the live end-hold above
+  // (mutually exclusive at arm time — see onPointerDown); this fired-ref is
+  // the idle counterpart to pillEndHoldFiredRef.
+  const pillOpenHoldFiredRef = useRef(false);
   /** Shared cleanup for onPointerUp/onPointerLeave/onPointerCancel — clears
    *  the pending long-press-to-end hold timer. Wired to all three so an OS
    *  gesture/scroll (pointercancel, not up/leave, on some mobile browsers)
@@ -1436,6 +1442,26 @@ export default function RoundPage() {
       clearTimeout(pillHoldTimerRef.current);
       pillHoldTimerRef.current = null;
     }
+  }, []);
+
+  // One-time inverted-gesture re-teach for the round pill (§5b) — own
+  // localStorage key, same burn-once/SSR-guarded/deferred-setState shape as
+  // CaddieOrb's own intro chips.
+  const [showPillIntro, setShowPillIntro] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (window.localStorage.getItem("looper.roundPillTapHoldInvertedSeen")) return;
+      window.localStorage.setItem("looper.roundPillTapHoldInvertedSeen", "1");
+    } catch {
+      return;
+    }
+    const show2 = setTimeout(() => setShowPillIntro(true), 0);
+    const hide = setTimeout(() => setShowPillIntro(false), 3200);
+    return () => {
+      clearTimeout(show2);
+      clearTimeout(hide);
+    };
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1541,6 +1567,10 @@ export default function RoundPage() {
   // end" would visually disagree with the label about whether the session
   // is still normally live or about to end.
   const pillPulsing = pillIsLive && !pillConnecting && !pillIsSuspended && !pillEndConfirming;
+  // Reduced-motion fix (§4e): today, reduceMotion turns a pulsing-eligible
+  // live medallion into one byte-identical to idle — a live mic with no
+  // indicator at all. This drives a static accent ring instead.
+  const pillStaticLive = pillPulsing && reduceMotion;
   // connected + listening share the calmer 2.6s cadence; speaking is a
   // touch brisker (1.8s) — the designer's two-cadence spec (§B3).
   const pillPulseDuration = pillStatus === "speaking" ? 1.8 : 2.6;
@@ -1550,6 +1580,11 @@ export default function RoundPage() {
   // "Release to end" confirm-window flash before the session actually ends —
   // never a silent kill on a single long-press.
   const PILL_END_CONFIRM_MS = 500;
+  // Idle hold-to-open threshold — intentionally LOWER than PILL_END_HOLD_MS:
+  // ending a live session is the higher-stakes gesture and earns the longer
+  // press; opening the sheet from idle is low-stakes and matches CaddieOrb's
+  // own ORB_HOLD_MS.
+  const PILL_OPEN_HOLD_MS = 350;
 
   // ---------------------------------------------------------------------------
   // Main render
@@ -2305,6 +2340,52 @@ export default function RoundPage() {
             pointerEvents: scoreOpen || voiceOpen || caddieOpen || scanOpen ? "none" : "auto",
           }}
         >
+          {/* One-time inverted-gesture re-teach (§5b) — same chip treatment as
+              CaddieOrb's own intro chips; only shown idle (never over a live
+              pulsing pill, which already reads as "in progress"). The outer
+              div only positions/centers above the action row; the inner
+              motion.div carries the actual pill visuals + exit/enter motion. */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: "100%",
+              left: 0,
+              right: 0,
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: 8,
+              pointerEvents: "none",
+            }}
+          >
+            <AnimatePresence>
+              {showPillIntro && !pillIsLive && (
+                <motion.div
+                  role="status"
+                  aria-live="polite"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={T.springSoft}
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: "italic",
+                    fontSize: 14,
+                    color: T.inkSoft,
+                    background: T.paper,
+                    border: `1px solid ${T.hairline}`,
+                    borderRadius: 999,
+                    padding: "6px 14px",
+                    whiteSpace: "nowrap",
+                    boxShadow: "0 4px 14px rgba(26,42,26,0.14)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  Tap to talk - hold to open chat
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px)
               Pill/orb interplay (specs/omnipresent-caddie-orb-plan.md §1): this
               pill IS the caddie invocation on the round page —
@@ -2317,9 +2398,15 @@ export default function RoundPage() {
               sheet without stopping the session. Long-press ends it. */}
           <motion.button
             aria-label={
-              pillIsLive
-                ? "Ask caddie — live, hold to end"
-                : "Ask caddie"
+              pillEndConfirming
+                ? "Ask caddie — release to end"
+                : pillIsSuspended
+                  ? "Ask caddie — paused, tap to resume, hold to end"
+                  : pillConnecting
+                    ? "Ask caddie — connecting, tap to view, hold to end"
+                    : pillIsLive
+                      ? "Ask caddie — live, tap to view, hold to end"
+                      : "Ask caddie — tap to talk, hold to open chat"
             }
             onClick={() => {
               if (pillEndHoldFiredRef.current) {
@@ -2328,28 +2415,70 @@ export default function RoundPage() {
                 pillEndHoldFiredRef.current = false;
                 return;
               }
+              if (pillOpenHoldFiredRef.current) {
+                // The long-press already opened the sheet — the trailing
+                // pointerup's click must not also fire the idle-tap talk path.
+                pillOpenHoldFiredRef.current = false;
+                return;
+              }
               if (pillIsLive) {
                 // Session already live+detached — reopen only, no voice.stop()
                 // (that stop is for a cold classic-path start, not a live tap).
                 setCaddieOpen(true);
                 return;
               }
+              // IDLE TAP: talk immediately, no sheet. Eligibility gate
+              // mirrors useDetachedCaddieLive's own start() gate (KEEP IN
+              // SYNC — see live-mode-pref.ts / useDetachedCaddieLive.ts):
+              // ineligible (no active/online session), live mode off, or
+              // offline all fall back to the classic sheet-open path instead
+              // of a silent no-op tap.
+              if (
+                !(caddieSessionActive && !isLocalRound) ||
+                !getCaddieLiveMode() ||
+                (typeof navigator !== "undefined" && !navigator.onLine)
+              ) {
+                openCaddieSheet();
+                return;
+              }
+              haptic("light");
               voice.stop();
-              openCaddieSheet();
+              detachedCaddieLive.start(); // fires grounded spoken opener; DO NOT touch
             }}
             onPointerDown={() => {
-              if (!pillIsLive) return;
-              pillEndHoldFiredRef.current = false;
+              if (pillIsLive) {
+                // EXISTING live-end hold body — byte-identical (also arms
+                // while suspended: pillIsLive stays true, §4b).
+                pillEndHoldFiredRef.current = false;
+                pillHoldTimerRef.current = setTimeout(() => {
+                  pillHoldTimerRef.current = null;
+                  pillEndHoldFiredRef.current = true;
+                  hapticWarning();
+                  setPillEndConfirming(true);
+                  setTimeout(() => {
+                    setPillEndConfirming(false);
+                    // Timer-coexistence edge: a live→idle flip mid-hold (e.g.
+                    // the session dropped on its own) can still let this
+                    // pending end-timer fire — detachedCaddieLive.end() is
+                    // idempotent, so calling it on an already-ended session
+                    // is a safe no-op.
+                    detachedCaddieLive.end();
+                  }, PILL_END_CONFIRM_MS);
+                }, PILL_END_HOLD_MS);
+                return;
+              }
+              // IDLE: hold opens the chat sheet — tap now talks immediately
+              // (onClick below). Shares pillHoldTimerRef with the live-end
+              // hold above; mutually exclusive at arm time since only one
+              // branch runs per press, and clearPillHold clears whichever
+              // is pending.
+              pillOpenHoldFiredRef.current = false;
               pillHoldTimerRef.current = setTimeout(() => {
                 pillHoldTimerRef.current = null;
-                pillEndHoldFiredRef.current = true;
-                hapticWarning();
-                setPillEndConfirming(true);
-                setTimeout(() => {
-                  setPillEndConfirming(false);
-                  detachedCaddieLive.end();
-                }, PILL_END_CONFIRM_MS);
-              }, PILL_END_HOLD_MS);
+                pillOpenHoldFiredRef.current = true;
+                haptic("medium");
+                openCaddieSheet();
+              }, PILL_OPEN_HOLD_MS);
             }}
             onPointerUp={clearPillHold}
             onPointerLeave={clearPillHold}
@@ -2396,7 +2525,13 @@ export default function RoundPage() {
                 borderRadius: "50%",
                 background: T.ink,
                 border: `1px solid ${T.hairline}`,
-                boxShadow: "0 1px 4px rgba(26,42,26,0.20), 0 1px 0 rgba(255,255,255,0.25) inset",
+                // Reduced motion previously left a pulsing-eligible live
+                // session with a medallion IDENTICAL to idle (a live mic with
+                // no indicator — mic-privacy invariant violation). Prepend a
+                // static accent ring so reduced-motion still shows something.
+                boxShadow: pillStaticLive
+                  ? `0 0 0 2px ${accent}, 0 1px 4px rgba(26,42,26,0.20), 0 1px 0 rgba(255,255,255,0.25) inset`
+                  : "0 1px 4px rgba(26,42,26,0.20), 0 1px 0 rgba(255,255,255,0.25) inset",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
