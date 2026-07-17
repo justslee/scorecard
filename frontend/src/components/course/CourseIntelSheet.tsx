@@ -129,7 +129,7 @@ export default function CourseIntelSheet({
             Omitted for an unmapped pin, mirroring the detail page's
             !isCenterOnly Tees guard. */}
         {hasStatsBlock && stats && (
-          <div style={{ display: "flex", gap: 18, marginTop: 14 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 18, marginTop: 14 }}>
             <SheetMiniStat k="Holes" v={stats.holesMapped!} />
             <SheetMiniStat k="Par" v={stats.parTotal!} />
             <SheetMiniStat k="Rounds" v={stats.roundsPlayed} />
