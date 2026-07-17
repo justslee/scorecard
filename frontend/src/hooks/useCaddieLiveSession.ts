@@ -12,12 +12,19 @@
  * touches realtime.ts / warm-session.ts / realtime-ordering.ts internals —
  * it only calls their existing public methods.
  *
- * Honest degradation (never a dead sheet): if the mint takes longer than
- * `MINT_DEADLINE_MS`, or the connection closes/errors before ever reaching
- * `connected`, or `attachMic()` rejects (mic permission denied), `fellBack`
- * flips true. The caller (CaddieSheet) then renders the classic tap-to-talk
- * path with a calm "Tap-to-talk mode" indicator instead of this hook's live
- * transcript view.
+ * Honest degradation (never a dead sheet, never a silent "Connecting…"
+ * stall — specs/caddie-live-p0-connect-hole-plan.md §2): a pre-connect
+ * failure (mint takes longer than `LIVE_MINT_BUDGET_MS`, the whole attempt
+ * exceeds `LIVE_CONNECT_BUDGET_MS`, or the connection closes/errors before
+ * ever reaching `connected`) gets ONE quiet auto cold-mint retry
+ * (`liveState "retrying"`); a second such failure lands in the honest
+ * terminal `liveState "connect-failed"` (tap-to-retry via `retryConnect()`
+ * — PERSISTS `liveOn`, no silent revert). Only `attachMic()` rejecting with
+ * a mic-permission error (`NotAllowedError`/`NotFoundError`/`SecurityError`)
+ * flips `fellBack` immediately, with zero retries (retrying a denied
+ * getUserMedia can never succeed). The caller (CaddieSheet) then renders the
+ * classic tap-to-talk path with a calm "Tap-to-talk mode" indicator instead
+ * of this hook's live transcript view.
  *
  * Opening turn: once the client has both connected at least once AND the mic
  * has been attached/acquired, `resolveOpeningShot()` (parent-owned GPS) is
@@ -55,7 +62,7 @@ import {
 } from "@/lib/voice/realtime";
 import { warmSession } from "@/lib/voice/warm-session";
 import { sortByOrder } from "@/lib/voice/realtime-ordering";
-import { MINT_DEADLINE_MS } from "@/lib/caddie/transport";
+import { LIVE_MINT_BUDGET_MS, LIVE_CONNECT_BUDGET_MS } from "@/lib/caddie/transport";
 import { REALTIME_IDLE_DISCONNECT_MS } from "@/lib/voice/idle-timer";
 import {
   buildOpeningGreetingInstruction,
@@ -65,7 +72,21 @@ import {
 } from "@/lib/caddie/opening-turn";
 import { voiceEvent } from "@/lib/voice/telemetry";
 
-export type CaddieLiveState = "connecting" | "live" | "suspended" | "fallback";
+/**
+ * "retrying" — the one quiet auto-retry (fresh cold client) is in flight,
+ * pre-connected only. "connect-failed" — the honest terminal tap-to-retry
+ * state, distinct from "fallback": it PERSISTS `liveOn` (no silent revert to
+ * "Ask caddie") — only mic-permission denial and post-connected reconnect
+ * exhaustion (Slice D) still land in "fallback" (specs/caddie-live-p0
+ * -connect-hole-plan.md §2.1).
+ */
+export type CaddieLiveState =
+  | "connecting"
+  | "retrying"
+  | "live"
+  | "suspended"
+  | "fallback"
+  | "connect-failed";
 
 /** Margin subtracted from REALTIME_IDLE_DISCONNECT_MS to absorb same-tick
  *  clock skew between this hook's activity mirror and realtime.ts's own
@@ -106,6 +127,10 @@ export interface UseCaddieLiveSessionResult {
   /** User-triggered resume from `liveState === "suspended"` — cold-mints a
    *  fresh client and continues the same conversation (no re-greet). */
   resume: () => void;
+  /** User-triggered fresh attempt from `liveState === "connect-failed"` —
+   *  resets the one-retry budget and cold-mints (specs/caddie-live-p0
+   *  -connect-hole-plan.md §2.1). No-op from any other state. */
+  retryConnect: () => void;
   /** Tear the live client down (e.g. on sheet close). */
   stop: () => void;
 }
@@ -128,7 +153,6 @@ export function useCaddieLiveSession({
 
   const clientRef = useRef<RealtimeCaddieClient | null>(null);
   const mountedRef = useRef(true);
-  const mintDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const everConnectedRef = useRef(false);
   const micReadyRef = useRef(false);
   const openedTurnRef = useRef(false);
@@ -175,6 +199,46 @@ export function useCaddieLiveSession({
    *  calls through this. Cleared in effect cleanup (plan §2.2/§3.3). */
   const resumeImplRef = useRef<(() => void) | null>(null);
 
+  // ── Pre-connect retry state machine refs (specs/caddie-live-p0-connect
+  // -hole-plan.md §2.2) — bugs A: the mint+ICE budget used to be ONE 3s
+  // timer; below is the per-attempt 4s-mint/8s-attempt pair plus the
+  // one-quiet-auto-retry bookkeeping. Pre-connected only — disjoint from the
+  // Slice D reconnect refs above (those require `everConnectedRef` true;
+  // these require it false — see plan §2.4 race 6). ──
+  /** Identifies the CURRENT connect attempt — every timer/failure callback
+   *  captures its own id at arm-time and no-ops if it's gone stale (a newer
+   *  attempt superseded it, or `cancelled`/`fellBackRef`/`everConnectedRef`
+   *  already resolved things). */
+  const attemptIdRef = useRef(0);
+  /** Guards `failPreConnect` idempotency for the CURRENT attempt — absorbs
+   *  the double-fire when `attachMic()` both rejects AND pushes an 'error'
+   *  status through `onStatus`/`onError` (plan §2.2 step 5/6). Reset at the
+   *  top of every `startAttempt()`. */
+  const attemptHandledRef = useRef(false);
+  /** Mint-phase timer (attempt start → `onMinted`) — `LIVE_MINT_BUDGET_MS`. */
+  const mintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Whole-attempt timer (attempt start → first `'connected'`) —
+   *  `LIVE_CONNECT_BUDGET_MS`. Also the dead-warm-adoption watchdog: an
+   *  adopted warm client never re-fires `onMinted`, so only this timer
+   *  bounds it. */
+  const attemptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** `Date.now()` when the current attempt was armed — telemetry `ms=`. */
+  const attemptStartedAtRef = useRef(0);
+  /** The ONE quiet auto-retry budget for THIS activation's pre-connect
+   *  phase — flips true the first time `failPreConnect` retries; a second
+   *  pre-connect failure then lands in the honest terminal
+   *  `"connect-failed"` instead of looping. A human tap (`retryConnect()`)
+   *  resets it, mirroring `doResume()` resetting Slice D's own budget. */
+  const retryUsedRef = useRef(false);
+  /** Mirror of `liveState === "connect-failed"` for use inside closures with
+   *  stale `liveState` snapshots (mirrors `suspendedRef`'s pattern) —
+   *  `doRetryConnect()` is only valid from this state. */
+  const connectFailedRef = useRef(false);
+  /** The activation effect's `doRetryConnect()` closure — the returned
+   *  stable `retryConnect()` calls through this (mirrors `resumeImplRef`).
+   *  Cleared in effect cleanup. */
+  const retryConnectImplRef = useRef<(() => void) | null>(null);
+
   const resolveOpeningShotRef = useRef(resolveOpeningShot);
   useEffect(() => {
     resolveOpeningShotRef.current = resolveOpeningShot;
@@ -195,9 +259,18 @@ export function useCaddieLiveSession({
    *  (`client.setToolContext(...)`) — reads `holeContextRef` live, so
    *  `get_recommendation` dispatch always carries THIS turn's resolved
    *  yardage/basis, the same values `anchorHole()` feeds `buildHoleContextText`
-   *  (specs/caddie-numbers-coherence-plan.md §2.1). */
+   *  (specs/caddie-numbers-coherence-plan.md §2.1). `currentHole` rides
+   *  along as the SAME single snapshot (specs/caddie-live-p0-connect-hole
+   *  -plan.md §3.1) — the (hole, yards, basis) triple can never mix across
+   *  a swipe landing between two separate reads, and `dispatchTool`
+   *  (realtime.ts) overrides the model's possibly-stale `hole_number` arg
+   *  with this live value for the six hole-scoped tools. */
   const getToolContext = useCallback(
-    () => ({ holeYards: holeContextRef.current.yards, yardageBasis: holeContextRef.current.basis }),
+    () => ({
+      holeYards: holeContextRef.current.yards,
+      yardageBasis: holeContextRef.current.basis,
+      currentHole: holeContextRef.current.holeNumber,
+    }),
     [],
   );
 
@@ -208,10 +281,16 @@ export function useCaddieLiveSession({
     };
   }, []);
 
-  const clearMintDeadline = useCallback(() => {
-    if (mintDeadlineRef.current !== null) {
-      clearTimeout(mintDeadlineRef.current);
-      mintDeadlineRef.current = null;
+  /** Clears BOTH pre-connect attempt timers (plan §2.2) — the mint-phase
+   *  4s timer and the whole-attempt 8s timer. */
+  const clearAttemptTimers = useCallback(() => {
+    if (mintTimerRef.current !== null) {
+      clearTimeout(mintTimerRef.current);
+      mintTimerRef.current = null;
+    }
+    if (attemptTimerRef.current !== null) {
+      clearTimeout(attemptTimerRef.current);
+      attemptTimerRef.current = null;
     }
   }, []);
 
@@ -222,11 +301,20 @@ export function useCaddieLiveSession({
     }
   }, []);
 
-  /** Fall to the classic path. Idempotent — the first caller wins. */
+  /** Fall to the classic path. Idempotent — the first caller wins. Terminal
+   *  for THIS activation — unlike `"connect-failed"`, this ALSO releases
+   *  `liveOn` via `useDetachedCaddieLive`'s auto-release effect (mic-deny,
+   *  or post-connected Slice D reconnect exhaustion). Not gated by
+   *  `attemptHandledRef` — a mic-deny classified from the outer attachMic
+   *  catch must be able to override an already-in-flight generic pre-connect
+   *  retry that a same-tick `onStatus`/`onError` may have already started
+   *  (plan §2.2 step 6's "idempotency absorbs the double-fire": whichever
+   *  fires first may have called `failPreConnect`, but `fallBack()` always
+   *  wins and tears down whatever client is currently referenced). */
   const fallBack = useCallback(() => {
     if (fellBackRef.current) return;
     fellBackRef.current = true;
-    clearMintDeadline();
+    clearAttemptTimers();
     clearReconnectDeadline();
     reconnectingRef.current = false;
     if (mountedRef.current) setLiveState("fallback");
@@ -239,7 +327,7 @@ export function useCaddieLiveSession({
     clientRef.current?.setEvents({});
     clientRef.current?.stop();
     clientRef.current = null;
-  }, [clearMintDeadline, clearReconnectDeadline]);
+  }, [clearAttemptTimers, clearReconnectDeadline]);
 
   /** Clean-idle transition (plan §3.2): the socket is ALREADY fully stopped
    *  (realtime.ts's own IdleTimer already called stop()/cleanup()), so this
@@ -250,14 +338,14 @@ export function useCaddieLiveSession({
   const suspend = useCallback(() => {
     suspendedRef.current = true;
     reconnectingRef.current = false; // defensive; clean-idle can't be mid-reconnect
-    clearMintDeadline();
+    clearAttemptTimers();
     clearReconnectDeadline();
     const dead = clientRef.current;
     dead?.setEvents({}); // public seam — stop any late event re-entering onStatus
     clientRef.current = null; // socket already stopped by realtime.ts's IdleTimer
     if (mountedRef.current) setLiveState("suspended");
     voiceEvent("caddie", "live_suspend", { flush: true });
-  }, [clearMintDeadline, clearReconnectDeadline]);
+  }, [clearAttemptTimers, clearReconnectDeadline]);
 
   const upsert = useCallback((m: RealtimeMessage) => {
     if (!mountedRef.current) return;
@@ -334,7 +422,12 @@ export function useCaddieLiveSession({
       mutedRef.current = false;
       suspendedRef.current = false;
       anchoredHoleRef.current = null;
-      clearMintDeadline();
+      attemptIdRef.current = 0;
+      attemptHandledRef.current = false;
+      attemptStartedAtRef.current = 0;
+      retryUsedRef.current = false;
+      connectFailedRef.current = false;
+      clearAttemptTimers();
       clearReconnectDeadline();
       // Detach before stop() — same belt as fallBack()/effect cleanup below
       // (specs/caddie-realtime-double-emit-plan.md §2 Part B).
@@ -362,6 +455,11 @@ export function useCaddieLiveSession({
     mutedRef.current = false;
     suspendedRef.current = false;
     anchoredHoleRef.current = null;
+    attemptIdRef.current = 0;
+    attemptHandledRef.current = false;
+    attemptStartedAtRef.current = 0;
+    retryUsedRef.current = false;
+    connectFailedRef.current = false;
     setLiveState("connecting");
     setStatus("idle");
     setMessages([]);
@@ -397,8 +495,16 @@ export function useCaddieLiveSession({
         if (s === "connected") {
           if (!everConnectedRef.current) {
             everConnectedRef.current = true;
-            clearMintDeadline();
-            setLiveState((prev) => (prev === "fallback" ? prev : "live"));
+            clearAttemptTimers();
+            voiceEvent("caddie", "live_connect_connected", {
+              detail: `attempt=${attemptIdRef.current}`,
+              ms: Date.now() - attemptStartedAtRef.current,
+            });
+            // A pre-connect retry (liveState "retrying") lands here too —
+            // openedTurnRef is still false on a first-ever connect (even a
+            // retried one), so maybeFireOpeningTurn() below fires the
+            // opener normally (plan §2.1).
+            setLiveState((prev) => (prev === "fallback" || prev === "connect-failed" ? prev : "live"));
           }
           anchorHole(); // silent re-anchor BEFORE the opening turn — corrects a stale (e.g. warm-pool) mint
           maybeFireOpeningTurn();
@@ -407,7 +513,7 @@ export function useCaddieLiveSession({
 
         if (s === "closed" || s === "error") {
           if (!everConnectedRef.current) {
-            fallBack();
+            failPreConnect(s === "closed" ? "status_closed" : "status_error");
             return;
           }
           // Post-connected close/error (§3). realtime.ts exposes no
@@ -439,11 +545,160 @@ export function useCaddieLiveSession({
         if (cancelled || fellBackRef.current) return;
         upsert(m);
       },
-      onError: () => {
+      onError: (err) => {
         if (cancelled) return;
-        if (!everConnectedRef.current) fallBack();
+        if (everConnectedRef.current) return;
+        // Pre-connect only. `onError` carries the actual Error, so it is the
+        // one place that can classify mic-permission denial — a genuine
+        // getUserMedia rejection can never succeed on a retry, so it must
+        // fall back immediately rather than consume the one quiet retry
+        // (plan §2.2 step 6). This can race `onStatus`'s generic
+        // `failPreConnect` call for the SAME failure (both fire
+        // synchronously, back to back, from realtime.ts's own catch
+        // blocks) — `fallBack()` is intentionally NOT gated by
+        // `attemptHandledRef`, so it always wins and tears down whatever
+        // client is currently referenced (including a just-started retry).
+        const name = err instanceof Error ? err.name : "";
+        if (name === "NotAllowedError" || name === "NotFoundError" || name === "SecurityError") {
+          fallBack();
+        } else {
+          failPreConnect("client_error");
+        }
+      },
+      onMinted: () => {
+        if (cancelled || !mountedRef.current || fellBackRef.current) return;
+        if (mintTimerRef.current !== null) {
+          clearTimeout(mintTimerRef.current);
+          mintTimerRef.current = null;
+        }
+        voiceEvent("caddie", "live_connect_minted", {
+          detail: `attempt=${attemptIdRef.current} path=cold`,
+          ms: Date.now() - attemptStartedAtRef.current,
+        });
       },
     };
+
+    /** One pre-connect connect attempt (plan §2.2 step 1) — arms the two
+     *  phase timers (`LIVE_MINT_BUDGET_MS`/`LIVE_CONNECT_BUDGET_MS`) and, for
+     *  `'auto-retry'`/`'user-retry'`, ALSO performs the connect itself: a
+     *  fresh COLD client (never `takeWarm` on retry — the warm pool is
+     *  already consumed mid-round, same reasoning as Slice D's
+     *  `startReconnect`). `'initial'` only arms the timers — the existing
+     *  warm-adopt-or-cold-mint IIFE below performs THAT connect, so its
+     *  first attempt shares the identical warm-adopt path a plain (non-retry)
+     *  connect always had. */
+    const startAttempt = (kind: "initial" | "auto-retry" | "user-retry") => {
+      attemptIdRef.current += 1;
+      const myAttemptId = attemptIdRef.current;
+      attemptHandledRef.current = false;
+      clearAttemptTimers();
+      const t0 = Date.now();
+      attemptStartedAtRef.current = t0;
+      const pathLabel = kind === "initial" ? "cold" : kind;
+      const stale = () =>
+        cancelled || fellBackRef.current || everConnectedRef.current || myAttemptId !== attemptIdRef.current;
+
+      mintTimerRef.current = setTimeout(() => {
+        mintTimerRef.current = null;
+        if (stale()) return;
+        voiceEvent("caddie", "live_connect_mint_timeout", {
+          detail: `attempt=${myAttemptId} path=${pathLabel}`,
+          ms: Date.now() - t0,
+        });
+        failPreConnect("mint_timeout");
+      }, LIVE_MINT_BUDGET_MS);
+      attemptTimerRef.current = setTimeout(() => {
+        attemptTimerRef.current = null;
+        if (stale()) return;
+        voiceEvent("caddie", "live_connect_attempt_timeout", {
+          detail: `attempt=${myAttemptId} path=${pathLabel}`,
+          ms: Date.now() - t0,
+        });
+        failPreConnect("attempt_timeout");
+      }, LIVE_CONNECT_BUDGET_MS);
+
+      if (kind === "initial") return; // the warm-adopt-or-cold-mint IIFE below connects this attempt
+
+      const client = new RealtimeCaddieClient(
+        { roundId, personalityId: personaId, currentHole: holeContextRef.current.holeNumber },
+        events,
+      );
+      client.setToolContext(getToolContext);
+      clientRef.current = client;
+      void (async () => {
+        try {
+          await client.start();
+        } catch {
+          if (!stale()) failPreConnect("start_reject");
+          return;
+        }
+        if (stale()) return;
+        try {
+          await client.attachMic();
+        } catch (err) {
+          if (cancelled || fellBackRef.current) return;
+          const name = err instanceof Error ? err.name : "";
+          if (name === "NotAllowedError" || name === "NotFoundError" || name === "SecurityError") {
+            // Mic-deny is classified UNCONDITIONALLY (not gated by `stale()`
+            // / `everConnectedRef`) — the underlying transport can already
+            // be `'connected'` (e.g. a warm-adopted client whose connection
+            // was live before the sheet ever opened) by the time the FIRST
+            // real `getUserMedia()` call (this one) is denied. Retrying a
+            // denied permission can never succeed either way.
+            fallBack();
+          } else if (!stale()) {
+            failPreConnect("warm_dead");
+          }
+          return;
+        }
+        if (stale()) return;
+        micReadyRef.current = true;
+        if (mutedRef.current) client.setMuted(true);
+        maybeFireOpeningTurn();
+      })();
+    };
+
+    /** One phase of a pre-connect attempt failed before ever reaching
+     *  `'connected'` (plan §2.2 step 5) — idempotent per attempt via
+     *  `attemptHandledRef`. Tears down the current client (detach before
+     *  stop — same belt as `fallBack()`), then either fires the ONE quiet
+     *  auto-retry (fresh cold client) or lands in the honest terminal
+     *  `"connect-failed"` (persists `liveOn` — deliberately NEVER calls
+     *  `fallBack()` here). */
+    const failPreConnect = (reason: string) => {
+      if (attemptHandledRef.current) return;
+      attemptHandledRef.current = true;
+      clearAttemptTimers();
+      clientRef.current?.setEvents({});
+      clientRef.current?.stop();
+      clientRef.current = null;
+      if (!retryUsedRef.current) {
+        retryUsedRef.current = true;
+        if (mountedRef.current) setLiveState("retrying");
+        voiceEvent("caddie", "live_connect_retry", { detail: `reason=${reason}` });
+        startAttempt("auto-retry");
+      } else {
+        connectFailedRef.current = true;
+        if (mountedRef.current) setLiveState("connect-failed");
+        voiceEvent("caddie", "live_connect_failed", { detail: `reason=${reason}`, flush: true });
+      }
+    };
+
+    /** User-triggered fresh attempt from `"connect-failed"` (plan §2.2 step
+     *  7) — resets the one-retry budget (a human tap delineates a new
+     *  burst, mirroring `doResume()`'s reset of Slice D's own budget). */
+    const doRetryConnect = () => {
+      if (!connectFailedRef.current) return; // only valid from connect-failed
+      connectFailedRef.current = false;
+      retryUsedRef.current = false;
+      if (mountedRef.current) {
+        setLiveState("connecting");
+        setStatus("connecting"); // immediate honest feedback on the tap
+      }
+      voiceEvent("caddie", "live_connect_user_retry");
+      startAttempt("user-retry");
+    };
+    retryConnectImplRef.current = doRetryConnect;
 
     /** ONE quiet cold-mint reconnect after a post-connected drop (plan §2.2).
      *  Detaches the dead client's handlers before stopping it so its own
@@ -460,7 +715,7 @@ export function useCaddieLiveSession({
       reconnectDeadlineRef.current = setTimeout(() => {
         reconnectDeadlineRef.current = null;
         if (!cancelled && !fellBackRef.current) fallBack();
-      }, MINT_DEADLINE_MS);
+      }, LIVE_CONNECT_BUDGET_MS);
       // Always cold — the warm pool is already consumed mid-round (plan §2.2).
       // currentHole (§3.8, defense-in-depth): read live off holeContextRef so
       // a reconnect mints with the hole current AT THAT MOMENT, not the hole
@@ -512,7 +767,7 @@ export function useCaddieLiveSession({
       reconnectDeadlineRef.current = setTimeout(() => {
         reconnectDeadlineRef.current = null;
         if (!cancelled && !fellBackRef.current) fallBack();
-      }, MINT_DEADLINE_MS);
+      }, LIVE_CONNECT_BUDGET_MS);
       // Always cold — the warm pool is already consumed mid-round (same as reconnect).
       // currentHole (§3.8, defense-in-depth) — read live off holeContextRef.
       const client = new RealtimeCaddieClient(
@@ -536,10 +791,10 @@ export function useCaddieLiveSession({
     };
     resumeImplRef.current = doResume;
 
-    mintDeadlineRef.current = setTimeout(() => {
-      mintDeadlineRef.current = null;
-      if (!everConnectedRef.current) fallBack();
-    }, MINT_DEADLINE_MS);
+    startAttempt("initial");
+    const initialAttemptId = attemptIdRef.current;
+    const initialStale = () =>
+      cancelled || fellBackRef.current || everConnectedRef.current || initialAttemptId !== attemptIdRef.current;
 
     void (async () => {
       // Adopt a warm (mic-withheld) session if one is already up for this
@@ -553,15 +808,36 @@ export function useCaddieLiveSession({
         clientRef.current = warm;
         warm.setEvents(events);
         warm.setToolContext(getToolContext);
+        // Already minted (adopted, not freshly connecting) — never re-fires
+        // onMinted, so clear the mint sub-timer manually and log path=warm
+        // (plan §2.2 step 3). The 8s attempt timer keeps running until
+        // 'connected' — that IS the dead-warm watchdog.
+        if (mintTimerRef.current !== null) {
+          clearTimeout(mintTimerRef.current);
+          mintTimerRef.current = null;
+        }
+        voiceEvent("caddie", "live_connect_minted", { detail: `attempt=${initialAttemptId} path=warm` });
         warm.emitCurrentStatus(); // paint the current state immediately
         try {
           await warm.attachMic();
+        } catch (err) {
           if (cancelled || fellBackRef.current) return;
-          micReadyRef.current = true;
-          maybeFireOpeningTurn();
-        } catch {
-          if (!cancelled && !fellBackRef.current) fallBack(); // mic-deny (or a half-built warm client)
+          const name = err instanceof Error ? err.name : "";
+          if (name === "NotAllowedError" || name === "NotFoundError" || name === "SecurityError") {
+            // Mic-deny is classified UNCONDITIONALLY (not gated by
+            // `initialStale()`/`everConnectedRef`) — a warm-adopted client's
+            // underlying transport can already be `'connected'` (painted by
+            // `emitCurrentStatus()` above) by the time this FIRST real
+            // `getUserMedia()` call is denied. Never retried either way.
+            fallBack();
+          } else if (!initialStale()) {
+            failPreConnect("warm_dead"); // half-built/dead warm client
+          }
+          return;
         }
+        if (initialStale()) return;
+        micReadyRef.current = true;
+        maybeFireOpeningTurn();
         return;
       }
 
@@ -576,23 +852,35 @@ export function useCaddieLiveSession({
       clientRef.current = client;
       try {
         await client.start();
-        if (cancelled || fellBackRef.current) return;
+      } catch {
+        if (!initialStale()) failPreConnect("start_reject");
+        return;
+      }
+      if (initialStale()) return;
+      try {
         // A cold (non-withheld) client already has `opened = true` from
         // construction, so this is a no-op on the real client (realtime.ts's
         // `if (this.opened) return;` guard) — called uniformly so "mic
         // ready" means the same thing on both the warm and cold branches.
         await client.attachMic();
+      } catch (err) {
         if (cancelled || fellBackRef.current) return;
-        micReadyRef.current = true;
-        maybeFireOpeningTurn();
-      } catch {
-        if (!cancelled && !fellBackRef.current) fallBack();
+        const name = err instanceof Error ? err.name : "";
+        if (name === "NotAllowedError" || name === "NotFoundError" || name === "SecurityError") {
+          fallBack(); // mic-deny — never retried, unconditional (see warm branch above)
+        } else if (!initialStale()) {
+          failPreConnect("warm_dead"); // dead/half-built client
+        }
+        return;
       }
+      if (initialStale()) return;
+      micReadyRef.current = true;
+      maybeFireOpeningTurn();
     })();
 
     return () => {
       cancelled = true;
-      clearMintDeadline();
+      clearAttemptTimers();
       clearReconnectDeadline();
       // Detach before stop() — same belt as fallBack()/`!active` above
       // (specs/caddie-realtime-double-emit-plan.md §2 Part B).
@@ -600,6 +888,7 @@ export function useCaddieLiveSession({
       clientRef.current?.stop();
       clientRef.current = null;
       resumeImplRef.current = null;
+      retryConnectImplRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, roundId, personaId]);
@@ -636,8 +925,12 @@ export function useCaddieLiveSession({
     resumeImplRef.current?.();
   }, []);
 
+  const retryConnect = useCallback(() => {
+    retryConnectImplRef.current?.();
+  }, []);
+
   const stop = useCallback(() => {
-    clearMintDeadline();
+    clearAttemptTimers();
     clearReconnectDeadline();
     // Detach BEFORE stop() — same belt as fallBack()/suspend()/the `!active`
     // branch/the effect cleanup (specs/caddie-realtime-double-emit-plan.md
@@ -654,7 +947,7 @@ export function useCaddieLiveSession({
     clientRef.current?.setEvents({});
     clientRef.current?.stop();
     clientRef.current = null;
-  }, [clearMintDeadline, clearReconnectDeadline]);
+  }, [clearAttemptTimers, clearReconnectDeadline]);
 
   return {
     liveState,
@@ -664,6 +957,7 @@ export function useCaddieLiveSession({
     muted,
     toggleMute,
     resume,
+    retryConnect,
     stop,
   };
 }

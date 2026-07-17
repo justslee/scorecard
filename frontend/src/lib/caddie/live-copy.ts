@@ -13,6 +13,16 @@
 
 import type { RealtimeStatus } from '@/lib/voice/realtime';
 
+/**
+ * Placeholder copy for the two new pre-connect states (specs/caddie-live-p0
+ * -connect-hole-plan.md §2.3) — the DESIGNER finalizes final wording; these
+ * are calm, non-alarming placeholders that ship correct behavior now.
+ * `LIVE_CONNECT_RETRYING_LABEL` — the one quiet auto-retry is in flight.
+ * `LIVE_CONNECT_FAILED_LABEL` — the honest terminal, tap-to-retry.
+ */
+export const LIVE_CONNECT_RETRYING_LABEL = 'Still connecting…';
+export const LIVE_CONNECT_FAILED_LABEL = "Couldn't connect — tap to retry";
+
 /** Every status label except `speaking` needs no persona name — `speaking`
  *  is resolved separately by `liveStatusLabel` below
  *  (specs/caddie-coherence-polish-plan.md §2: a generic "Caddie speaking…"
@@ -52,9 +62,22 @@ export function liveStatusLabel(status: RealtimeStatus, name: string): string {
  * suspend before either status is reached live, and the classic-mode
  * fallback swaps the whole body out within the same render — so those
  * statuses never actually reach this helper in practice.
+ *
+ * `retrying` (specs/caddie-live-p0-connect-hole-plan.md §2.3): true while
+ * `liveState === "retrying"` (the one quiet pre-connect auto-retry). The
+ * footer still renders `status`'s own "Connecting…" copy unchanged (a fresh
+ * retry client re-arms `status` to `'connecting'`) — this hint must agree
+ * with that, not contradict it, so it stays in the same "still waiting,
+ * calm" register rather than a distinct alarm-shaped claim.
  */
-export function liveEmptyStateHint(status: RealtimeStatus, paused: boolean, name: string): string {
+export function liveEmptyStateHint(
+  status: RealtimeStatus,
+  paused: boolean,
+  name: string,
+  retrying = false,
+): string {
   if (paused) return 'Paused — tap resume below to keep talking.';
+  if (retrying) return `Still connecting to ${name}…`;
   if (status === 'connecting' || status === 'idle') return `Connecting to ${name}…`;
   if (status === 'speaking') return `${name} is speaking.`;
   return `Go ahead — ${name} is listening.`;

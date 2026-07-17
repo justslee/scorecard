@@ -214,6 +214,7 @@ import CaddieSheet from "./CaddieSheet";
 import { useDetachedCaddieLive } from "@/hooks/useDetachedCaddieLive";
 import type { CaddiePersonalityInfo, VoiceCaddieMessage } from "@/lib/caddie/types";
 import { REALTIME_IDLE_DISCONNECT_MS } from "@/lib/voice/idle-timer";
+import { LIVE_MINT_BUDGET_MS } from "@/lib/caddie/transport";
 
 type FakeClient = InstanceType<typeof realtimeMock.FakeRealtimeCaddieClient>;
 
@@ -311,6 +312,7 @@ function buildProps(
       muted: false,
       toggleMute: vi.fn(),
       resume: vi.fn(),
+      retryConnect: vi.fn(),
       stop: vi.fn(),
     },
     liveOn: false,
@@ -540,7 +542,7 @@ describe("CaddieSheet live mode — mute", () => {
 });
 
 describe("CaddieSheet live mode — fallback (never a dead sheet)", () => {
-  it("mint-timeout: advancing past MINT_DEADLINE_MS before 'connected' falls to classic mode", async () => {
+  it("mint-timeout: advancing past LIVE_MINT_BUDGET_MS twice (one quiet retry, then the retry ALSO stalls) falls to classic mode via the honest connect-failed terminal (specs/caddie-live-p0-connect-hole-plan.md §2.2)", async () => {
     vi.useFakeTimers();
     renderSheet();
     // Let the cold-mint promise microtask settle (start() resolves, but no
@@ -549,29 +551,45 @@ describe("CaddieSheet live mode — fallback (never a dead sheet)", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    // First stall -> ONE quiet cold retry, not yet classic.
     await act(async () => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(LIVE_MINT_BUDGET_MS);
+    });
+    expect(screen.queryByLabelText("Start recording")).toBeNull();
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2);
+
+    // The retry ALSO stalls -> honest connect-failed terminal -> classic UI.
+    await act(async () => {
+      vi.advanceTimersByTime(LIVE_MINT_BUDGET_MS);
     });
 
     expect(screen.getByLabelText("Start recording")).toBeTruthy();
     expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
   });
 
-  it("connect-fail: status 'closed' before ever connecting falls to classic mode", async () => {
+  it("connect-fail: status 'closed' before ever connecting retries ONCE, then falls to classic mode on the second 'closed' (specs/caddie-live-p0-connect-hole-plan.md §2.2)", async () => {
     renderSheet();
     await flush();
-    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
-    act(() => client.emitStatus("closed"));
+    const client1 = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client1.emitStatus("closed"));
+    await flush();
+
+    // ONE quiet cold retry — still the live body, not classic.
+    expect(screen.queryByLabelText("Start recording")).toBeNull();
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2);
+    const client2 = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+
+    act(() => client2.emitStatus("closed"));
     await flush();
 
     expect(screen.getByLabelText("Start recording")).toBeTruthy();
     expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
   });
 
-  it("mic-deny: a rejected attachMic() on the adopted warm client falls to classic mode", async () => {
+  it("mic-deny: a rejected attachMic() on the adopted warm client falls to classic mode IMMEDIATELY, zero retries", async () => {
     const warm = new realtimeMock.FakeRealtimeCaddieClient({}, {}) as FakeClient;
     warm.currentStatus = "connected";
-    warm.attachMic.mockRejectedValue(new Error("NotAllowedError"));
+    warm.attachMic.mockRejectedValue(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
     warmSessionMock.takeWarm.mockReturnValue(warm);
 
     renderSheet();
@@ -579,6 +597,8 @@ describe("CaddieSheet live mode — fallback (never a dead sheet)", () => {
 
     expect(screen.getByLabelText("Start recording")).toBeTruthy();
     expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
+    // Zero retries — mic-deny is terminal, never retried.
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1);
   });
 });
 
@@ -758,7 +778,7 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2); // no third mint
   });
 
-  it("fallback-during-pending-start (Gap 2): no resurrection, no second mint", async () => {
+  it("fallback-during-pending-start (Gap 2): no resurrection of the ORIGINAL client past the retry it triggered (specs/caddie-live-p0-connect-hole-plan.md §2.2 — a pre-connected mint stall now retries ONCE before the honest connect-failed terminal, not an immediate classic fallback)", async () => {
     vi.useFakeTimers();
     let resolveStart: () => void = () => {};
     realtimeMock.FakeRealtimeCaddieClient.pendingStartImpls.push(
@@ -775,20 +795,30 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     expect(first.start).toHaveBeenCalledTimes(1);
     expect(first.attachMic).not.toHaveBeenCalled();
 
-    // Mint deadline fires while start() is still pending -> classic fallback.
+    // Mint budget fires while start() is still pending -> ONE quiet cold
+    // retry (client 2) — no classic fallback yet.
     await act(async () => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(LIVE_MINT_BUDGET_MS);
     });
-    expect(screen.getByLabelText("Start recording")).toBeTruthy();
-    expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
-    // Detach BEFORE stop() — the fallBack() belt
+    // Detach BEFORE stop() — the failPreConnect() belt
     // (specs/caddie-realtime-double-emit-plan.md §2 Part B): a zombie client
     // whose start() is still resolving must not keep this activation's
     // onMessage bound.
     expect(first.setEvents).toHaveBeenCalledWith({});
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2);
+    const second = realtimeMock.FakeRealtimeCaddieClient.instances[1];
 
-    // The long-pending start() now resolves — Gap 2 guard must stop the
-    // continuation from resurrecting the dead client.
+    // The retry client's own mint budget ALSO stalls (no 'connected' is ever
+    // emitted for it either) -> the honest connect-failed terminal.
+    await act(async () => {
+      vi.advanceTimersByTime(LIVE_MINT_BUDGET_MS);
+    });
+    expect(screen.getByLabelText("Start recording")).toBeTruthy();
+    expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
+
+    // The ORIGINAL client's long-pending start() now resolves — Gap 2 guard
+    // must stop the continuation from resurrecting it (it's a stale attempt
+    // by now — a fresh retry already superseded it).
     await act(async () => {
       resolveStart();
       await Promise.resolve();
@@ -797,17 +827,25 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     });
 
     expect(first.attachMic).not.toHaveBeenCalled(); // no resurrection
-    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1); // no second mint
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2); // no third mint
     expect(screen.getByLabelText("Start recording")).toBeTruthy(); // still classic mic
 
-    // A post-fallback message from the dead client must not surface — the
-    // onMessage gate (cancelled || fellBackRef.current) makes the detach
-    // belt-and-braces even if setEvents({}) were somehow bypassed.
+    // A post-fallback message from the dead ORIGINAL client must not
+    // surface — the onMessage gate (cancelled || fellBackRef.current) makes
+    // the detach belt-and-braces even if setEvents({}) were somehow bypassed.
     act(() => {
       first.emitMessage({ id: "zombie-1", role: "user", text: "Zombie turn", partial: false, order: 1 });
     });
     await flush();
     expect(screen.queryByText("Zombie turn")).toBeNull();
+
+    // Same belt for the retry client (also detached+stopped by the second
+    // failPreConnect call, which lands connect-failed).
+    act(() => {
+      second.emitMessage({ id: "zombie-2", role: "user", text: "Zombie turn 2", partial: false, order: 2 });
+    });
+    await flush();
+    expect(screen.queryByText("Zombie turn 2")).toBeNull();
   });
 
   it("close+reopen preserves the SAME live session — single client construction, no stop() on close, transcript intact (specs/caddie-detach-and-language-pin-plan.md Item B)", async () => {

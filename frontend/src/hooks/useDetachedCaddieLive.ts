@@ -30,6 +30,12 @@
  * — the transcript is preserved server-side/locally and reopening shows the
  * existing "Paused — tap to resume" affordance, exactly as it does today
  * while the sheet stays open across an idle window.
+ *
+ * `"connect-failed"` (specs/caddie-live-p0-connect-hole-plan.md §2.1-2.3)
+ * ALSO deliberately does NOT release `liveOn`, closed or open — that release
+ * IS the silent revert to "Ask caddie" this plan kills. It is the ONE
+ * pre-connect terminal state a golfer resolves by tapping (`retryConnect()`,
+ * threaded through below) rather than by the session quietly starting over.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -79,6 +85,12 @@ export interface DetachedCaddieLive {
   isSuspended: boolean;
   isListening: boolean;
   isSpeaking: boolean;
+  /** True while the one quiet pre-connect auto-retry is in flight (specs/
+   *  caddie-live-p0-connect-hole-plan.md §2.1). */
+  isRetrying: boolean;
+  /** True at the honest pre-connect terminal — `liveOn` stays true (see the
+   *  docblock above); resolved by tapping `session.retryConnect()`. */
+  isConnectFailed: boolean;
 }
 
 export function useDetachedCaddieLive({
@@ -144,5 +156,7 @@ export function useDetachedCaddieLive({
     isSuspended: liveOn && session.liveState === "suspended",
     isListening: liveOn && session.status === "listening",
     isSpeaking: liveOn && session.status === "speaking",
+    isRetrying: liveOn && session.liveState === "retrying",
+    isConnectFailed: liveOn && session.liveState === "connect-failed",
   };
 }

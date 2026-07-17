@@ -620,9 +620,9 @@ def _black11_right_like_bunkers() -> list[Hazard]:
 def _red1_like_trees_by_type() -> dict[str, list[tuple[str, int]]]:
     """`hazards_by_type` shape (the input `_side_and_carry_supported` takes
     directly), not a `Hazard` list — see the note on
-    `test_carry_span_passes_tree_line_mid_span` for why the tree-line cases
-    below call the predicate directly instead of going through
-    `validate_guide`."""
+    `test_carry_span_rejects_tree_claim_inside_open_gap` for why the
+    tree-line cases below call the predicate directly instead of going
+    through `validate_guide`."""
     return {"trees": [("left", 145), ("left", 360), ("right", 265), ("right", 355)]}
 
 
@@ -631,8 +631,8 @@ def _black7_like_mixed() -> list[Hazard]:
         Hazard(type="bunker", side="right", line_side="right", carry_yards=170),
         Hazard(type="bunker", side="right", line_side="right", carry_yards=430),
         Hazard(type="bunker", side="right", line_side="right", carry_yards=520),
-        Hazard(type="trees", side="right", line_side="right", carry_yards=20),
-        Hazard(type="trees", side="right", line_side="right", carry_yards=480),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=250),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=350),
     ]
 
 
@@ -646,11 +646,17 @@ def test_carry_span_passes_within_bridged_bunker_cluster():
     assert validate_guide(guide, _black11_right_like_bunkers()) is not None
 
 
-def test_carry_span_passes_tree_line_mid_span():
-    """RED 1-like trees L {145, 360}: the near/far bracket of ONE continuous
-    tree line bridges unconditionally into run [145, 360] — a carry falling
-    between the two bracket samples must be accepted, matching what
-    `format_hazards_line` already tells the caddie ("trees L 145-360y").
+def test_carry_span_rejects_tree_claim_inside_open_gap():
+    """RED 1-like trees L {145, 360}: 360-145 = 215y, > TREE_RUN_SPLIT_GAP_YDS
+    (120) — a REAL open gap (specs/caddie-tree-span-gap-plan.md §2b fail-
+    closed tightening), not a sampling artifact of one continuous line, so
+    the two samples stay split into single-sample runs {145} and {360}
+    (windows [120,170] and [335,385]). A carry of 250 sits deep in the
+    genuine gap between them and must now REJECT — this is the SAME open
+    zone `format_hazards_line` now speaks as two separate runs
+    ("trees L 145y and 360y"), never the old collapsed "145-360y" span; the
+    OLD unconditional-bridge behavior (superseded by this plan) wrongly
+    ACCEPTED a 250 claim here.
 
     Calls `_side_and_carry_supported` DIRECTLY rather than through
     `validate_guide`: `trees` is not currently a recognized hazard keyword in
@@ -659,10 +665,31 @@ def test_carry_span_passes_tree_line_mid_span():
     side_flip`'s keyword scan is untouched by this fix), that means a free-
     text "trees ..." claim never reaches the side/carry check via
     `validate_guide` at all yet. This test still pins the exact predicate the
-    plan fixes (`_side_and_carry_supported`'s trees-unconditional-bridge
-    rule); see the PR note flagging the keyword gap as a separate follow-up."""
+    plan fixes (`_side_and_carry_supported`'s trees bridge, now
+    `TREE_RUN_SPLIT_GAP_YDS` instead of unconditional); see the PR note
+    flagging the keyword gap as a separate follow-up."""
     hazards_by_type = _red1_like_trees_by_type()
-    assert _side_and_carry_supported("trees", "left", 250, hazards_by_type) is True
+    assert _side_and_carry_supported("trees", "left", 250, hazards_by_type) is False
+
+
+def test_carry_span_accepts_tree_claim_within_run_end_tolerance():
+    """Same fixture, left side: with the near/far samples now split into two
+    single-sample runs (see `test_carry_span_rejects_tree_claim_inside_open_
+    gap`), a claim of 165 sits within `_CARRY_TOLERANCE_YARDS` (25) of the
+    near run's own carry (145 -> window [120,170]) — accepted, same
+    point-window semantics a lone-sample bunker/water carry already gets."""
+    hazards_by_type = _red1_like_trees_by_type()
+    assert _side_and_carry_supported("trees", "left", 165, hazards_by_type) is True
+
+
+def test_carry_span_accepts_tree_claim_within_merged_run_end_tolerance():
+    """RED 1-like trees R {265, 355}: 355-265 = 90y <= TREE_RUN_SPLIT_GAP_YDS
+    (120), so both samples still bridge into ONE run [265, 355] — unchanged
+    from before this plan (mirrors the smaller Red 5/6 continuity gaps that
+    merge the same way). A claim of 375 sits 20y past the run's far end
+    (355), inside `_CARRY_TOLERANCE_YARDS` (25) — accepted."""
+    hazards_by_type = _red1_like_trees_by_type()
+    assert _side_and_carry_supported("trees", "right", 375, hazards_by_type) is True
 
 
 def test_carry_span_rejects_fabricated_carry_in_genuine_bunker_gap():
@@ -693,24 +720,25 @@ def test_carry_span_rejects_mid_gap_between_separate_runs():
 
 
 def test_carry_span_tree_bridge_does_not_leak_into_bunker_claims():
-    """`_black7_like_mixed()` adds trees R {20, 480} (bridged span [0, 505])
-    alongside the SAME bunker R {170, 430, 520}. A "bunker" claim must only
-    ever consult `hazards_by_type["bunker"]` — the trees run must never leak
-    into a bunker check, even though the fabricated 300 sits comfortably
-    inside the trees' bridged span. Proves per-type isolation: runs are built
-    within one `hazards_by_type[canonical_type]` group, never merged across
-    types."""
+    """`_black7_like_mixed()` adds trees R {250, 350} (gap 100 <=
+    TREE_RUN_SPLIT_GAP_YDS, bridged into one run [250, 350]) alongside the
+    SAME bunker R {170, 430, 520}. A "bunker" claim must only ever consult
+    `hazards_by_type["bunker"]` — the trees run must never leak into a bunker
+    check, even though the fabricated 300 sits comfortably inside the trees'
+    bridged run. Proves per-type isolation: runs are built within one
+    `hazards_by_type[canonical_type]` group, never merged across types."""
     guide = _guide(miss_side="Carry the right bunker at 300 off the tee.")
     assert validate_guide(guide, _black7_like_mixed()) is None
 
 
 def test_carry_span_tree_window_is_bounded():
-    """Tree bridging is span-BOUNDED, not an unconditional accept (plan §2b):
-    RED 1-like trees R {265, 355} -> window [240, 380]. A claimed carry of
-    200 is still below the window and must reject.
+    """Tree bridging is span-BOUNDED, not an unconditional accept
+    (specs/caddie-tree-span-gap-plan.md §2b): RED 1-like trees R {265, 355}
+    -> window [240, 380]. A claimed carry of 200 is still below the window
+    and must reject.
 
     Calls `_side_and_carry_supported` directly — see the note on
-    `test_carry_span_passes_tree_line_mid_span` (trees is not yet a
+    `test_carry_span_rejects_tree_claim_inside_open_gap` (trees is not yet a
     `_HAZARD_PATTERNS` keyword; pre-existing gap out of this plan's scope)."""
     hazards_by_type = _red1_like_trees_by_type()
     assert _side_and_carry_supported("trees", "right", 200, hazards_by_type) is False

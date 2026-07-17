@@ -20,7 +20,7 @@ import {
 import CaddieSheet from "@/components/CaddieSheet";
 import { useCaddiePersona, captionPersonaName } from "@/lib/caddie/persona";
 import { useDetachedCaddieLive } from "@/hooks/useDetachedCaddieLive";
-import { liveStatusLabel } from "@/lib/caddie/live-copy";
+import { liveStatusLabel, LIVE_CONNECT_RETRYING_LABEL, LIVE_CONNECT_FAILED_LABEL } from "@/lib/caddie/live-copy";
 import { buildClubMap } from "@/lib/caddie/clubs";
 import {
   startSession as startCaddieSession,
@@ -1560,13 +1560,23 @@ export default function RoundPage() {
   const pillIsLive = detachedCaddieLive.isLive;
   const pillIsSuspended = detachedCaddieLive.isSuspended;
   const pillStatus = detachedCaddieLive.session.status;
-  const pillConnecting = pillIsLive && (pillStatus === "connecting" || pillStatus === "idle");
+  // Connect-stall UX (specs/caddie-live-p0-connect-hole-plan.md §2.3) — the
+  // pill/orb sometimes stalled at "Connecting…" and silently reverted to
+  // "Ask caddie" (Bug A). These two derivations surface the honest
+  // intermediate states instead. `pillConnectFailed` is deliberately keyed
+  // off `pillIsLive` (== `liveOn && !fellBack`) too — `connect-failed`
+  // PERSISTS `liveOn` and is not `fellBack`, so it still counts as "live"
+  // for gating purposes even though the session never actually connected.
+  const pillRetrying = pillIsLive && detachedCaddieLive.session.liveState === "retrying";
+  const pillConnectFailed = pillIsLive && detachedCaddieLive.session.liveState === "connect-failed";
+  const pillConnecting = pillIsLive && (pillStatus === "connecting" || pillStatus === "idle" || pillRetrying);
   // Pulse PAUSES during the long-press "Release to end" confirm window
   // (pillEndConfirming, defined below near the hold-timer state) — the
   // concept couples them: a still-pulsing medallion next to "Release to
   // end" would visually disagree with the label about whether the session
   // is still normally live or about to end.
-  const pillPulsing = pillIsLive && !pillConnecting && !pillIsSuspended && !pillEndConfirming;
+  const pillPulsing =
+    pillIsLive && !pillConnecting && !pillIsSuspended && !pillEndConfirming && !pillRetrying && !pillConnectFailed;
   // Reduced-motion fix (§4e): today, reduceMotion turns a pulsing-eligible
   // live medallion into one byte-identical to idle — a live mic with no
   // indicator at all. This drives a static accent ring instead.
@@ -2400,13 +2410,17 @@ export default function RoundPage() {
             aria-label={
               pillEndConfirming
                 ? "Ask caddie — release to end"
-                : pillIsSuspended
-                  ? "Ask caddie — paused, tap to resume, hold to end"
-                  : pillConnecting
-                    ? "Ask caddie — connecting, tap to view, hold to end"
-                    : pillIsLive
-                      ? "Ask caddie — live, tap to view, hold to end"
-                      : "Ask caddie — tap to talk, hold to open chat"
+                : pillConnectFailed
+                  ? "Ask caddie — couldn't connect, tap to retry"
+                  : pillIsSuspended
+                    ? "Ask caddie — paused, tap to resume, hold to end"
+                    : pillRetrying
+                      ? "Ask caddie — reconnecting, tap to view, hold to end"
+                      : pillConnecting
+                        ? "Ask caddie — connecting, tap to view, hold to end"
+                        : pillIsLive
+                          ? "Ask caddie — live, tap to view, hold to end"
+                          : "Ask caddie — tap to talk, hold to open chat"
             }
             onClick={() => {
               if (pillEndHoldFiredRef.current) {
@@ -2421,9 +2435,20 @@ export default function RoundPage() {
                 pillOpenHoldFiredRef.current = false;
                 return;
               }
+              if (pillConnectFailed) {
+                // Honest terminal (specs/caddie-live-p0-connect-hole-plan.md
+                // §2.3) — a tap retries fresh instead of silently reverting
+                // to "Ask caddie" (the bug this plan kills).
+                haptic("light");
+                detachedCaddieLive.session.retryConnect();
+                return;
+              }
               if (pillIsLive) {
                 // Session already live+detached — reopen only, no voice.stop()
                 // (that stop is for a cold classic-path start, not a live tap).
+                // Also covers `pillRetrying` — tap while retrying just opens
+                // the sheet to view (today's behavior, unchanged); hold-to-end
+                // still works in both states (`pillIsLive` stays true).
                 setCaddieOpen(true);
                 return;
               }
@@ -2555,11 +2580,15 @@ export default function RoundPage() {
             >
               {pillEndConfirming
                 ? "Release to end"
-                : pillIsSuspended
-                  ? "Paused — tap to resume"
-                  : pillIsLive
-                    ? liveStatusLabel(detachedCaddieLive.session.status, personaLabel)
-                    : "Ask caddie"}
+                : pillConnectFailed
+                  ? LIVE_CONNECT_FAILED_LABEL
+                  : pillIsSuspended
+                    ? "Paused — tap to resume"
+                    : pillRetrying
+                      ? LIVE_CONNECT_RETRYING_LABEL
+                      : pillIsLive
+                        ? liveStatusLabel(detachedCaddieLive.session.status, personaLabel)
+                        : "Ask caddie"}
             </span>
           </motion.button>
 

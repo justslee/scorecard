@@ -40,6 +40,10 @@ export const CADDIE_EXPERIENCE_SUITE: CaddieExperienceSuiteEntry[] = [
   { file: "frontend/src/lib/voice/realtime-attribution.test.ts", dimensions: [1, 6] },
   { file: "frontend/src/lib/voice/realtime-dispatch.test.ts", dimensions: [8] },
   { file: "frontend/src/lib/voice/realtime-lifecycle.test.ts", dimensions: [6] },
+  // NEW (specs/caddie-live-p0-connect-hole-plan.md §4) — Bug A: the
+  // pre-connect connect state machine (stall -> retry -> connect-failed,
+  // mic-deny, dead-warm, telemetry).
+  { file: "frontend/src/hooks/useCaddieLiveSession.connect.test.tsx", dimensions: [6] },
   { file: "frontend/src/lib/voice/realtime-noinput.test.ts", dimensions: [1, 3] },
   { file: "frontend/src/lib/voice/realtime-ordering.test.ts", dimensions: [1, 3] },
   { file: "frontend/src/lib/voice/realtime-warm.test.ts", dimensions: [6, 7] },

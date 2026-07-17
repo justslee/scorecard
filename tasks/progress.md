@@ -3,6 +3,153 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 DONE — caddie live P0s A (connect-stall UX) + B (live-hole answers), BOTH NOTICEABLE, LANDED on origin/integration/next @ fbd2061 (rebased onto eba80ca, pushed); added to bundle PR #145
+Two owner v1.1.11 field P0s, one eng-lead pass (worktree agent-a23cf368966ee80ce). Fable plan
+specs/caddie-live-p0-connect-hole-plan.md, builder @3e030e7, designer copy fix @fbd2061.
+- Bug A ("orb doesn't go from connecting to listening"): per-phase connect budgets (LIVE_MINT_BUDGET_MS
+  =4000 via onMinted, LIVE_CONNECT_BUDGET_MS=8000 for ICE) + ONE quiet cold auto-retry; new honest
+  states "retrying"("Still connecting…") and "connect-failed"("Couldn't connect — tap to retry") that
+  PERSIST liveOn (never the silent revert to "Ask caddie"), mic torn down, tap-retries/hold-ends;
+  Slice-D reconnect/resume deadlines widened 3s→8s; key-free live_connect_* phase telemetry; realtime.ts
+  untouched for A. Mic-deny classification made UNCONDITIONAL (builder deviation, reviewer verified
+  load-bearing: realtime.ts fires onStatus/onError synchronously in attachMic's catch → the gated
+  version would strand a mic-deny in retrying→connect-failed instead of fallback).
+- Bug B ("on hole 2, answered hole 1"): getToolContext carries the LIVE currentHole (single snapshot,
+  read at dispatch/answer time); the six hole-scoped tools resolve ctx-first, overriding stale
+  args.hole_number (record_shot args-first). No backend / shared-types change; useVoiceCaddie byte-identical.
+VERDICTS on 399d6e6: reviewer SHIP (no blocking — retry can't zombie, late events inert, mic-deny →
+immediate honest fallback never a spinner, connect-failed tears down mic + has escapes, single-read
+triple can't mix across a swipe, no 0/NaN/null hole leak, telemetry PII-clean, guards intact, tests
+strengthened not weakened; one NON-BLOCKING nit below). qa PASS (7 local gates: tsc/lint/voice-278/
+vitest-2669/caddie-experience-271/build/ruff; DB tests → CI). designer BLOCKING→RESOLVED (one copy swap
+applied @fbd2061; retrying/failed states calm, pill never falsely pulses, no SaaS-toast drift, aria honest).
+NON-BLOCKING FOLLOW-UP (filed): cold mic-deny constructs one throwaway retry client (wasted mint +
+phantom live_connect_retry breadcrumb) before fallback wins — terminal state correct, rare once-per-user;
+reviewer suggested the fake emit onStatus('error') to pin real behavior. Ships HELD pending tree-distance
+verification lane — did NOT ship/ping; both items ride the eventual verified ship on bundle PR #145.
+
+## 2026-07-17 DONE — caddie-tree-span-gap (Bethpage Red P0), NOTICEABLE (caddie-audible), pushed @ 6feb8a4 on origin/integration/next
+Implemented specs/caddie-tree-span-gap-plan.md exactly (no re-plan) — owner P0, Bethpage Red tree
+distances "wrong off the tee." `format_hazards_line` (backend/app/caddie/hazards.py) now splits a
+trees group's sorted carries into gap-separated spoken RUNS instead of one collapsed min-max span:
+new public `TREE_RUN_SPLIT_GAP_YDS = 120` constant + new pure `_tree_runs` helper split wherever a
+consecutive delta exceeds 120y (justification comment on the constant, per plan §1b); near-tee
+suppression (`_TREE_NEAR_TEE_SUPPRESS_YDS = 100`) drops a tee-flanking first run iff the side has
+>=2 runs; >3-surviving-runs falls back to today's full span (honest superset). Bunker/water
+rendering is BYTE-FOR-BYTE unchanged (verified — all existing hazard tests pass unmodified).
+Verified on Red 1/5/6: Red 1 "trees R 5-475y, trees L 30-480y" -> "trees L 265-480y, trees R
+385-475y" (closes the owner's actual complaint — the old line hid the real ~200-300y open drive
+zones); Red 5/6 unchanged ("trees R 105-170y" / "trees R 40-310y", both intra-line gaps <=120y).
+`guide_writer._carry_runs`'s trees bridge moved from unconditional (bridge=None, deleted) to
+`TREE_RUN_SPLIT_GAP_YDS` (imported from hazards.py) — fail-closed tightening: a guide claim landing
+in a real open gap is now correctly REJECTED where it was wrongly accepted before; updated the
+stale docstrings + the now-flipped test_guide_writer.py assertions (renamed
+test_carry_span_passes_tree_line_mid_span -> _rejects_tree_claim_inside_open_gap, added two
+accept-within-tolerance companions) — this is a genuine spec-encoded defect fix, not a weakened
+assertion (the old test literally asserted the bug the plan exists to fix). tests/eval/checks.py
+`context_hazards_match` now scans ALL `type SIDE lo-hi` tokens via `finditer` (was
+search-first-match-only) so a split line's later run isn't false-failed. Two never-raise INFO logs
+added: `hole_hazards_intel` in /course-intel's hole loop (routes/caddie.py, right after
+`intel.hazards = extract_hole_hazards(...)`) and `caddie_reco_context` in `/session/recommend`
+(numbers/geometry only, no PII/GPS/keys) — placed the Site-B log directly in `session_recommend`
+itself (not inside `caddie_tools.recommend_payload`) per the plan's literal "routes/caddie.py:611
+path" wording, using the returned recommendation dict's `tee_shot_numbers` block.
+
+Fixture `backend/tests/fixtures/bethpage_red_trees.json` built from the scratchpad geodesic-verified
+dumps (holes 1/5/6, tee/green/hole-line/tree geometry + already-deployed carries) — §4a reconstruction
+recipe VERIFIED to reproduce the deployed engine carries EXACTLY (hole 1 R [5,35,65,85,385,420,450,475]
+L [30,65,265,285,310,355,390,430,475,480]; hole 5 R [105,155,170]; hole 6 R [40,135,195,225,255,310] —
+all bit-for-bit). New `backend/tests/test_tree_span_gap.py` (7 tests: reconstruction invariance,
+hole-1 exact split + structural drive-zone-clear, hole-6 continuity anti-overfit, hole-5 merge) +
+extended `test_hazards.py`/`test_tree_hazards.py` with synthetic boundary tests (120/125 delta,
+non-trees never split, group-cap-counts-once x2, >3-runs fallback, suppression edges incl.
+only-run-never-suppressed, 8-bearing invariant sweep for split+suppress).
+
+One deviation from the plan's literal wording, judged minimal/sound: plan §1c says "if more than 3
+runs SURVIVE" for the fallback — implemented as post-suppression (suppress first, then check >3),
+the more literal reading of "survive"; documented in the synthetic fallback test with a fixture that
+avoids triggering suppression so the >3 path is exercised cleanly. Also fixed a self-contradictory
+sub-assertion in my own §4b test 2 draft (`"5-475" not in line` is mathematically impossible to
+satisfy alongside the plan's own exact-match `"...trees R 385-475y"`, since "385-475y" contains
+"5-475" as a raw substring) — used a word-boundary regex (`\b5-475y\b`) instead, which correctly
+encodes the intended guard (the OLD full collapsed token is absent) without false-failing on the
+verified-correct new output; not a weakened assertion, the primary exact-match (independently
+verified against the fixture) is the load-bearing check and was never touched.
+
+Gates: `ruff check .` clean. `pytest tests/test_hazards.py tests/test_tree_hazards.py
+tests/test_tree_span_gap.py tests/test_guide_writer.py tests/eval/test_harness_has_teeth.py
+tests/eval/test_golden_tier1.py -q` -> 321 passed, 0 failed. Also spot-checked
+test_bethpage_validation.py + test_realtime_tools.py + test_miss_side_grounding.py (non-DB,
+touched by the guide_writer/checks.py changes) -> 50 passed, no regressions. No DB/Postgres spun up
+locally (backend integration/DB gate runs in CI per policy). NEXT: eng-lead review — this is
+NOTICEABLE (the caddie will now speak materially different, more accurate hazard lines on any hole
+with a real tree-line gap, most visibly Bethpage Red 1) and is the owner's live P0, so likely wants
+prompt QA + a push once bundled.
+## 2026-07-17 AWAITING Plan(fable) — caddie live P0s A+B (owner field bugs, v1.1.11), in worktree agent-a23cf368966ee80ce (tracks integration/next @ 8579326)
+Two owner P0 field bugs, ONE eng-lead pass, land on integration/next (REBASE before push), bundle PR
+(both NOTICEABLE). Ships HELD pending tree-distance verification lane — do NOT ship/ping.
+
+ROOT-CAUSE TRACE (done, handed to Plan agent):
+- Bug A (orb stuck "Connecting…"→never "Listening"): on-course surface = the round-page floating
+  "Ask caddie" pill (RoundPageClient.tsx ~L2399, shouldShowCaddieOrb('/round/[id]')=false so the
+  omnipresent CaddieOrb defers). Path = pill tap → detachedCaddieLive.start() → useDetachedCaddieLive
+  → useCaddieLiveSession → RealtimeCaddieClient.start(). State machine: hook arms ONE 3s MINT_DEADLINE_MS
+  (transport.ts=3000) covering the ENTIRE connect (mint HTTP + WebRTC ICE + SDP), cleared only on
+  onStatus('connected') (set by pc.onconnectionstatechange==='connected'). Problems: (1) the single 3s
+  budget is too tight for mint+ICE on a course cell → intermittent false timeouts; (2) NO onMinted seam
+  used in this hook (useVoiceCaddie DOES use it) so mint vs ICE aren't separated; (3) NO per-phase
+  timeout on the SDP fetch (REALTIME_CALLS_URL) or ICE; (4) on timeout it fallBack()s to classic which,
+  while sheet CLOSED, useDetachedCaddieLive auto-releases liveOn → pill silently reverts to "Ask caddie"
+  = the owner's "didn't go to listening" with no retry/honest-fail UX; (5) NO auto-retry; (6) warm-pool
+  dead-session handover not detected. Copy: live-copy.ts LIVE_STATUS_LABEL (idle/connecting→"Connecting…",
+  connected→"Ready — go ahead", listening→"Listening…"). NEED: per-phase timeouts (mint via onMinted +
+  longer ICE budget), ONE quiet auto-retry (fresh cold mint; dead warm → re-mint), honest tap-to-retry
+  state after retry fails (never indefinite spinner, never silent revert), key-free phase telemetry.
+- Bug B (hole context stale: on hole 2, answered hole 1): detachedCaddieLive DOES receive live
+  holeNumber:currentHole (RoundPageClient L1362) and useCaddieLiveSession re-anchors via anchorHole()→
+  RealtimeCaddieClient.sendContext(buildHoleContextText) on connect + hole/basis change (opening-turn.ts:
+  "player is now on hole N, disregard earlier hole"). GAP: the re-anchor only STEERS the model (system
+  msg) — dispatchTool (realtime.ts) still resolves hole from MODEL-supplied args.hole_number, and the
+  backend defaults omitted hole to session.current_hole (minted, never updated on swipe). So a lagging/
+  stale model passes hole=1 → hole-1 answer, INCOHERENT with the client's live hole (same class as the
+  shipped "125" yardage-incoherence fix, which already made get_recommendation carry the CLIENT's
+  resolved yards/basis via getToolContext). STRUCTURAL FIX: extend getToolContext (useCaddieLiveSession
+  L199) + dispatchTool ctx to carry the LIVE currentHole (read off holeContextRef at dispatch time) and
+  use it as the authoritative hole for hole-scoped tools (get_recommendation/get_conditions/get_carries/
+  get_bend/get_shot_distance/get_green_read), overriding stale args.hole_number — mirrors the yards/basis
+  override already there; structurally cannot go stale.
+
+PLAN DONE (fable) → specs/caddie-live-p0-connect-hole-plan.md (confirmed both traces w/ exact seams).
+Bug A fix: new liveState "retrying"/"connect-failed" + retryConnect(); per-phase budgets in transport.ts
+(LIVE_MINT_BUDGET_MS=4000, LIVE_CONNECT_BUDGET_MS=8000); one quiet cold auto-retry; honest tap-to-retry
+that PERSISTS liveOn (connect-failed != fallback, so useDetachedCaddieLive auto-release untouched);
+key-free voiceEvent phase telemetry; realtime.ts UNTOUCHED for A. Bug B fix: getToolContext +
+dispatchTool ctx carry live currentHole; six hole-scoped tools override stale args.hole_number
+(record_shot args-first); no backend/shared-types change.
+
+## 2026-07-17 BUILDER DONE @399d6e6 (worktree branch) — all gates green
+tsc/lint clean; voice-smoke 278/278; vitest 137 files/2669; caddie-experience 18/271; next build ok;
+ruff clean (no backend edits). 16 files, +1198/-118. Deviation (good catch, in commit msg): mic-deny
+classification made UNCONDITIONAL (only cancelled/fellBackRef-gated) because realtime.ts fires
+onStatus/onError synchronously inside its own attachMic/start catch and a warm-adopted client can read
+'connected' before its first real getUserMedia deny — the plan's everConnectedRef-gated version silently
+suppressed the mic-deny fallback in that combo. Caught by pre-existing CaddieSheet.realtime mic-deny test
+(synthetic Error updated to real DOMException name:NotAllowedError to exercise the path — not a weakened
+assertion). Also updated 3 pre-existing realtime.test.tsx cases for the retry-then-connect-failed sequence.
+
+## 2026-07-17 AWAITING reviewer + qa + designer (parallel) on 399d6e6
+reviewer: fresh adversarial — retry mint zombies? rapid hole-swipe race? stall-fix masking real net
+errors? connect-failed persistence (liveOn held) safe / no stuck-forever? mic-deny unconditional branch
+correct? Bug B override coherent, no other-hole regression beyond the flagged owner-decision? Run
+/security-review + /code-review (noticeable change).
+qa: independently run all gates to SUCCESS + all caddie suites green on 399d6e6 (no local Postgres — DB
+tests are CI).
+designer: BLOCKING — review the connecting/retrying/connect-failed pill+sheet states vs NORTHSTAR
+(calm, yardage-book, not alarming); the labels in live-copy.ts are PLACEHOLDERS awaiting his copy.
+On return: BLOCKING issues → re-dispatch builder; all green → rebase onto origin/integration/next, push,
+add both items (NOTICEABLE) to bundle PR. Ships HELD (tree-distance lane) — do NOT ship/ping.
+On resume: reconcile from worktree git log; children are read-only reviews — safe to re-dispatch if unsure.
+
 ## 2026-07-16 DONE — caddie-advice-model-decoupling, SILENT, committed @ a323851 (on worktree branch tracking integration/next, NOT pushed — eng-lead rebases+pushes)
 Implemented specs/caddie-advice-model-plan.md Steps 1-3 exactly (no re-plan). `_advice_model()`
 helper added in backend/app/routes/caddie.py (CADDIE_ADVICE_MODEL -> ANTHROPIC_MODEL ->
@@ -18547,3 +18694,246 @@ if not, re-dispatch builder per the spec. Builder commits to the worktree branch
 eng-lead reviews (reviewer fresh + qa gates) then lands on integration/next as NOTICEABLE on PR #144.
 Latency/eval are gated-live (no OPENAI/ANTHROPIC key locally) → honest note, not fabricated numbers.
 Do NOT ship/ping (caller INERT).
+
+## SHIPPED 2026-07-17 — Bundle #144: tap-to-talk + caddie spatial-trust fixes + multi-user foundation complete (dark)
+Owner approval (verbatim, main session, standing process): presented the bundle (tap-to-talk +
+hazard-side/reach fixes + multi-user foundation + intelligence groundwork) and he replied "Ship it."
+Approval bound to pinned head `0805faeb55d919119b3953ca944a59fa5adbf357`.
+
+MID-SHIP HEAD MOVEMENT (verified, not a violation): the smart-strategy lane pushed twice more while
+gates were running — `5145fea` (`specs/caddie-smart-strategy-tool-plan.md`, new file) and `424e41f`
+(`tasks/progress.md` update). Both independently confirmed docs/records-only via
+`git diff --name-only bc87d0c..424e41f` (zero product code touched) — same records-rider class the
+owner's approval already covered. The lane was explicitly frozen by the coordinator before the final
+merge to stop further drift. Merged at the frozen head `424e41f` after both required gates (Frontend,
+Backend, E2E advisory) went SUCCESS on it.
+
+**VERSION bump:** 1.1.10 -> 1.1.11 (`bc87d0c`), sorts above the last upload (v1.1.10).
+
+**Merge:** PR #144 retitled "Bundle #144: tap-to-talk + caddie spatial-trust fixes + multi-user
+foundation complete (dark)", `integration/next` -> `main`, merge commit
+`a84782599a641b7a81314ec3940abde2a448f245`.
+
+**Post-merge main CI:** green on `a847825` (Frontend + Backend both SUCCESS).
+
+**Backend deploy + confirms** (key-free SSM probe, instance `i-0826ae70df62d9fe8`):
+- `Deploy backend (SSM)` GH Actions workflow auto-triggered on merge, SUCCESS.
+- `/health` -> `{"status":"ok"}` both on-box and external (`https://api.looperapp.org/health`).
+- `APP_ACCESS_MODE` confirmed fully dark: absent from on-box `backend/.env` AND the live uvicorn
+  process's `/proc/<pid>/environ` (never set, not unset-and-defaulting).
+- Caller inert: zero `TWILIO_*` keys in the on-box `.env`.
+
+**TestFlight:** `bash ops/ios/ship.sh` from the worktree, ARCHIVE SUCCEEDED, EXPORT SUCCEEDED —
+"Uploaded v1.1.11 (build 202607170941) to TestFlight". Polled App Store Connect
+(`poll_build.py 1.1.11 202607170941`): `processingState=VALID` on first poll.
+
+**Fresh integration/next:** cut from new main and pushed as a fast-forward (`424e41f..a847825`).
+The frozen smart-strategy lane resumes and lands its next commit on the fresh branch — expected.
+
+**Records:** Notion board card created (`Bundle #144`, Status=Shipped) —
+https://app.notion.com/p/3a01c52592e08187a507cd39688f199b . `backlog.json` top-level `note` ledger
+updated with the full terminal SHIPPED entry (targeted edit, validated JSON after, `items` count
+unchanged at 97 — no data loss).
+
+Primary checkout (`/Users/justinlee/projects/scorecard`) was never touched; all work done in the
+dedicated worktree `/Users/justinlee/projects/.scorecard-ship-v1111`, now being removed.
+
+## 2026-07-17 IN-PROGRESS (eng-lead) — tree-distance ground-truth verification (P0, NOTICEABLE, SHIPS HELD)
+Owner P0 re-escalation: on v1.1.11 (side/reach fixes) Bethpage RED tree DISTANCES still wrong.
+Measurement-first per brief. Base @ 8579326 (post-#144 recut; local hazards.py == deployed v1.1.11).
+Red course id = 269e1f2e-65cc-5cf6-a9b0-f5908e298155.
+
+CODE-READ FINDING (narrows the search): the base measurement math looks CORRECT on inspection —
+- `_xy_m` (hazards.py:182) DOES scale longitude by cos(mean lat) — the cos-lat suspect is NOT a
+  naive-unscaled bug in this frame. (`_ring_area`/`_ring_shoelace_area` unscaled only affects
+  LARGEST-member selection, not carry.)
+- trees use PER-VERTEX observations (`_tree_observations`) projected via `_project_onto_polyline`
+  against the mapped `hole` LineString, drop behind-tee + >70y-lateral → near-EDGE, not centroid.
+- bunkers & trees share the SAME `_classify` frame (extract_hole_hazards:699). Owner says bunkers
+  are ~right → same frame → suspicion REDIRECTS from projection arithmetic to the DATA layer:
+  (a) per-hole TEE anchoring on Red (forward/back tee, reversed way), (b) the mapped polyline used,
+  (c) WOODS-polygon SCOPING — OSM woods are area-global; a polygon spanning multiple holes injects
+  vertices that fall within 70y of THIS hole's line at a WRONG carry. These are the prime suspects
+  to prove/refute with independent ground truth.
+
+METHOD: fetch STORED Red hole 1-9 FeatureCollections on-box (SSM, read-only, key-free) = faithful
+repro of what owner heard; run deployed engine locally (== on-box) + INDEPENDENT geodesic ground
+truth (fresh script, pyproj/haversine per-vertex, NOT reusing hazards.py projection) → diff → root
+cause → fix + fixtures (±5y) → on-box before/after → observability. reviewer + qa. SHIPS HELD until proven.
+
+## AWAITING — on-box dump of Red hole 1-9 stored FeatureCollections (fixture + engine repro)
+Running scratchpad/dump_red.sh via run_ssm.sh; output saved to scratchpad/red_fc_dump.json.
+On resume: if the dump exists & valid, proceed to Plan(fable) measurement-design with the fixture;
+do NOT re-run the dump. Next steps: Plan(fable) → builder (independent ground-truth + diff + fix +
+fixtures + observability) → reviewer → qa. Do NOT ship/ping.
+
+## 2026-07-17 PROVEN (eng-lead measurement pass) — tree-distance root cause = FORMATTER gap-collapse, NOT measurement
+On-box (SSM read-only, key-free) dumped stored Red hole 1-9 FeatureCollections + deployed-engine
+extract_hole_hazards + full hole polylines (scratchpad: red_fc_dump.json, red_lines.json, dump_red.sh,
+dump_lines.sh). Built an INDEPENDENT geodesic polyline-frame ground truth (fresh per-vertex haversine/ENU
+cumulative-along-path projection — NOT reusing hazards.py). RESULT — engine carries match independent
+truth within ±5y on EVERY tested hole, including the steepest doglegs:
+  Hole 1 (dev 6y):  indep near-tee R [7,23,33,54,60,67,85] + greenside L woods [264,284,308,355,..,481]
+                    == engine chain (R 5..85, L 265..480). MATCH.
+  Hole 5 (dev 64y right): indep R trees [106,155,171] == engine R [105,155,170]. EXACT.
+  Hole 6 (dev 83y left):  indep R trees [41,137,196,224,250,256,311] == engine R [40,135,195,225,255,310]. EXACT.
+=> MEASUREMENT LAYER IS PROVEN CORRECT (cos-lat scaling, polyline projection, tee-anchor, near-edge all right;
+   bunkers use the same frame and owner confirmed those are right). Ship-bar geometry gate: PASSES.
+
+ROOT CAUSE of the owner's "wrong distance to trees off the tee" = `format_hazards_line` (hazards.py:958-965)
+groups tree entries by (type, line_side) and renders min...max, DISCARDING the gaps the gap-bounded chain
+(`_gap_bounded_tree_chain`) deliberately preserved. Hole 1 LEFT trees [30,65, 265,285,...,480] collapse to
+"trees L 30-480y", HIDING the ~200y OPEN drive zone (65->265y). The model narrates "5-475y"/"30-480y"
+verbatim -> golfer hears trees spanning the whole hole incl. "trees at 5y off the tee." Fed to the model at
+3 sites: tools.py:432, voice_prompts.py:370, caddie.py:764 (all format_hazards_line(intel.hazards)).
+Secondary product judgment to flag: near-tee trees at 5-85y (beside/behind the tee box) read as absurd
+tee-shot hazards even once gaps are shown.
+
+FIX DIRECTION (bounded, representational — measurement UNTOUCHED): make the model-facing tree representation
+PRESERVE gap-separated stands (split each (type,side) tree group into contiguous sub-runs separated by a real
+gap and render each as its own range, e.g. "trees L 30-65y and 265-480y"), so the caddie can honestly say the
+drive zone is clear. Regression-pin with the Red ground-truth fixtures (this dump). Add payload observability.
+
+## AWAITING — Plan(fable) tree-representation fix design, then builder
+Diagnosis PROVEN & committed. Next: Plan(fable) -> specs/caddie-tree-span-gap-plan.md (gap-preserving
+formatter + how it threads the 3 caddie call-sites + guide_writer + fixtures + observability + the near-tee
+product flag); then builder implements; reviewer (hand-check a hole trig + verify fix not fixture-calibrated);
+qa gates. SHIPS HELD until reviewer+qa green. Do NOT ship/ping.
+
+## 2026-07-17 PLAN(fable) DONE — specs/caddie-tree-span-gap-plan.md; AWAITING builder
+Fable plan verified against real ground truth (reconstruction reproduces deployed carries bit-for-bit;
+split prototyped at 40/100/120 on real chains). Fix = trees-only run-split in format_hazards_line at new
+TREE_RUN_SPLIT_GAP_YDS=120 (3x the chain's 40y gap bound; splits only real preserved gaps; 40 rejected as
+over-fragmenting Red 5/6). Red 1 -> "trees L 265-480y, trees R 385-475y" (drive zone shown clear). Near-tee
+suppression (<=100y first run when a farther run exists). guide_writer validator bridge=None -> 120 (was
+accepting hallucinated open-zone tree carries). Fixtures backend/tests/fixtures/bethpage_red_trees.json
+(holes 1/5/6). Observability: hole_hazards_intel + caddie_reco_context log.info. Measurement geometry
+UNTOUCHED. Dispatching builder now (commit + push before await). Do NOT ship/ping.
+
+## 2026-07-17 AWAITING reviewer + qa on 7be7c37 (parallel) — caddie-tree-span-gap (P0, NOTICEABLE)
+Builder DONE @ 6feb8a4 (impl) / 7be7c37 (progress), pushed to origin/integration/next, FF clean (linear
+history, plan b3c1176 preserved). Gates green locally: ruff clean, 321 passed / 0 failed on the 6 targeted
+files. Protected geometry funcs confirmed untouched (diff-check). Red 1 line now "trees L 265-480y, trees R
+385-475y" (drive zone shown clear); Red 5/6 unchanged. Fixture reconstruction reproduces deployed carries
+exactly. NOW awaiting: reviewer (adversarial — verify fix not fixture-calibrated, hand-check one hole's
+geometry trig independently, confirm geometry untouched, scrutinize near-tee suppression + >3-run fallback +
+guide_writer validator tightening) + qa (all gates SUCCESS; caddie-experience if present; on-box before/after
+sanity). On resume: reviewer SHIP + qa PASS -> update bundle PR checklist (NOTICEABLE) + on-box post-fix
+proof + observability confirmed -> then this is the ship-bar-cleared P0, offer to release-manager (but SHIPS
+STILL HELD until owner "ship it"). BLOCKING -> re-dispatch builder. Do NOT ship/ping without owner.
+
+## 2026-07-17 LANE: course-discovery-intel (Augusta descriptions + stars/stats + map slide-up card)
+Owner directive (2026-07-17, 2 screenshots): improve search + course finding; every course seeded with an
+Augusta-styled description + user-reviewed stars/stats; map pin opens a slide-up detail card (not just a marker).
+Isolated worktree agent-a1cf848b762f30fae; DISJOINT from the two parallel lanes (tree-distance backend caddie,
+orb session-lifecycle frontend). Ships HELD pending tree-distance verification — do NOT ship/ping this pass.
+
+STORAGE CRUX (verified): public.courses (supabase 001_course_mapping_schema.sql) = id,name,address,location,
+timestamps — NO JSONB. Only durable mapped-schema JSONB = per-hole hole_features.properties (where strategy_guide
+lives, served via courses_mapped.update_green_feature_properties). course_search/golfapi caches are FILE-backed
+JSON (backend/data/*.json), not a per-course durable home. => a CLEAN course-level `description` home genuinely
+needs an additive migration (ALTER TABLE courses ADD COLUMN course_intel jsonb) -> brief routes that to
+"design + STOP for approval". Reviews: course_reviews is OWNER-SCOPED (caller's own only), keyed by course_key
+(GolfAPI id or name:<slug>) — a mismatch vs mapped-course UUID; no aggregate endpoint yet. Stars today = owner's
+own reviews avg+count (honest); external Google ratings OUT (budget).
+
+Surfaces: map card = CourseScoutMap.tsx "Tap card" (thin one-row name+subline+Add, lines 402-481; data via
+fetchCoursesInBounds -> /api/courses/in-bounds, OSM+DB only, budget-safe). Detail page =
+frontend/src/app/courses/[id]/CourseDetailClient.tsx (698 lines, the spec-sheet from screenshot 1). Pipeline
+pattern to copy = backend/app/caddie/guide_writer.py (grounded writer + fail-closed validator) +
+backend/app/services/course_guides.py (idempotent per-course precompute, negative cache, env-gated bounded backfill).
+
+PLAN OF RECORD this pass: (1) PM spec + designer concept for all 3 surfaces incl. ONE Bethpage Black exemplar
+description + the register; (2) fable plan = full feature incl. the additive course_intel migration DESIGN +
+confidence-gated validator (rejects unverifiable architect/year claims, falls back to geometry-grounded landscape
+prose) + stars/stats aggregation + both frontend surfaces; (3) BUILD the migration-free NOTICEABLE slice now
+(stars+stats surfacing from existing course_reviews + live DB stats; the slide-up map card + detail-page
+sections; description slot empty-safe until seeded) -> land on integration/next (accumulates, does NOT ship);
+(4) STOP the migration + description pipeline + 3-course seed for owner approval (rides the held ship).
+
+## AWAITING — Explore(frontend map/detail/types), then PM + designer concept (parallel)
+Next: dispatch product-manager (spec) + designer (concept + Bethpage Black exemplar) in parallel; then fable Plan;
+then builder on the no-migration slice. If I die: reconcile from origin/integration/next; no code landed yet.
+
+## 2026-07-17 DONE — caddie-tree-span-gap LANDED on integration/next @ 6feb8a4 (P0, NOTICEABLE) — SHIP-BAR CLEARED, ships HELD
+reviewer SHIP + qa PASS. MEASUREMENT LAYER PROVEN CORRECT BY TWO INDEPENDENT METHODS:
+  1. eng-lead independent geodesic polyline ground truth: engine carries within ±5y on Red 1/5/6 incl 83y dogleg.
+  2. reviewer wrote its OWN from-scratch equirectangular + point-to-polyline projection and reproduced Red 6's
+     dogleg chain [40,135,195,225,255,310] EXACTLY + confirmed Red 1 open drive zones (65-264L / 85-387R) are REAL.
+Root cause was purely representational: format_hazards_line min-max collapse hid the real gaps the gap-bounded
+chain preserved. Fix = trees-only run-split @ TREE_RUN_SPLIT_GAP_YDS=120 + near-tee suppression (<=100y first run
+when a farther run exists). Red 1 now "trees L 265-480y, trees R 385-475y" (drive zone clear). Red 5/6 byte-identical.
+Geometry funcs byte-identical (diff-verified, both eng-lead + reviewer). guide_writer validator tightened
+None->120 (was accepting hallucinated open-zone tree carries; test assertion correctly inverted, not weakened).
+Observability added (hole_hazards_intel + caddie_reco_context, no PII/GPS/keys, never-raise). qa: ruff clean;
+321/321 targeted + 592/592 broad (+24 CI-deferred Postgres skips); tsc clean; voice-tests 278/278; functional
+check reproduces corrected lines + unchanged carries on the real Red fixture.
+NON-BLOCKING debt (filed backlog): tests/eval/checks.py:322 finditer only matches the FIRST trees run on a split
+line — no production impact, no current golden scenario splits; fix = match "trees SIDE" once then scan all
+"\d+(-\d+)?y" segments to the next side letter.
+SHIPS HELD per brief — did NOT ping owner. Bundle PR opened (integration/next -> main), item on checklist as
+NOTICEABLE. The combined ship (with the smart-brain lane) is the coordinator's/owner's call; this pass only
+clears the measurement ship-bar gate.
+
+## 2026-07-17 CONCEPT DONE (PM spec + designer) — AWAITING fable Plan
+PM spec specs/course-discovery-intel.md + backlog item course-discovery-intel (p1, noticeable). Locked:
+courseId == public.courses.id (reviews already key on it — ZERO new identity bridging); description writer =
+parametric-knowledge-only (NO web_search: kills injection+search cost); per-fact confidence gate (drop < high ->
+geometry-grounded landscape fallback); one DB-only endpoint GET /api/courses/{id}/intel feeds both surfaces;
+map card reuses CaddiePanel sheet idiom. Designer delivered the Bethpage Black exemplar (126w, grounded
+Tillinghast/US-Open facts) + a low-confidence fallback voice + the floating-paper slide-up card concept (NOT a
+docked SaaS sheet) + detail-page About/rating sections; HARD constraints: typographic ink stars never colored,
+no shimmer skeletons, cap card clutter, wire exemplar as VERBATIM few-shot anchor.
+
+fable Plan (a453afe40587ead0c) -> specs/course-discovery-intel-plan.md: resolving the storage fork decisively
+(A additive courses.course_intel migration [STOP-for-approval] vs B reuse hole_features [no migration, ships real
+output now]), designing writer+confidence-validator (offline-testable crux), CourseIntel shape, endpoint, both
+frontend surfaces, seed. Ships HELD; do NOT ship/ping.
+
+## AWAITING — fable Plan a453afe40587ead0c (specs/course-discovery-intel-plan.md)
+On completion: dispatch builder on the no-migration-safe slice + whatever the plan's storage verdict authorizes.
+If I die: reconcile from origin/integration/next; concept+spec landed; plan pending; no feature code yet.
+## ✅ LANDED — caddie-smart-strategy-tool on bundle #145 @4bbe0e3 (NOTICEABLE) — 2026-07-17
+Freeze lifted; landed. get_strategy realtime-only tool → POST /caddie/session/strategy → OpenAI
+gpt-5.6-sol (OWNER DIRECTIVE, not Sonnet 5) via Responses API/raw httpx (reasoning effort low,
+max_output_tokens 1024, no temperature, env CADDIE_STRATEGY_MODEL, same OPENAI_API_KEY as realtime).
+Fail-closed validator (guide_writer hazard/side-flip + shared GUIDE_INJECTION_PATTERN) → deterministic
+engine-numbers degrade on any failure; cached per sha256(ground_truth+model). STRATEGY_TOOL_RULE routing;
+parity-test amended; frontend dispatch+api. Reviewer SHIP + QA PASS; both follow-up nits (route-handler
+tests + regex de-fork) closed. Fable plan specs/caddie-smart-strategy-tool-plan.md.
+LANDING: collapsed my worktree branch to ONE code-only commit (dropped local progress churn to avoid
+5x progress.md conflicts), rebased onto origin/integration/next (auto-merged clean with the tree-span fix
++ caddie-live P0s — guide_writer/routes/caddie/realtime.ts 3-way merged, NOT overwritten), re-verified
+(ruff clean; eval 155; guide/strategy/hazard/parity 354/1), re-rebased over a concurrent d9842fb, pushed
+FF. Landed head integration/next @4bbe0e3. PR #145 checklist updated (NOTICEABLE item added). backlog
+caddie-smart-strategy-tool → done-on-bundle (targeted 2-line edit, JSON validated, 100 items intact).
+CI: pending on the pushed head (Backend + Frontend gates) — release verifies SUCCESS at ship time.
+LATENCY: gated-live, NOT run (no key; guard) → runs at PRE-SHIP verification per the owner's evidence
+ship-bar. Did NOT ship/ping (caller INERT; landing != shipping). Model-snapshot pin needs owner-approved
+on-box /v1/models probe. NEXT levers: caddie-vision-visual-read (c, AFTER this), caddie-advice-sonnet5-flip
+(a, gated on live eval).
+
+## 2026-07-17 PLAN(fable) DONE — specs/course-discovery-intel-plan.md; AWAITING builder
+Fable verdict (evidence-based): STORAGE = OPTION A, additive Alembic migration 0012_015_course_intel.py
+(courses.course_intel jsonb). Clincher = VERIFIED code: courses_mapped.upsert_course HARD-DELETES all
+hole_features on every re-map (courses_mapped.py:436-439), so Option B (park description on a green's
+properties) would silently destroy paid-for LLM output + its negative-cache marker on any course edit; and
+write-through OSM rows have NO holes/features to write to. Alembic already alters public.courses
+(0008_011_courses_trgm_index). BUILD-NOW = EVERYTHING (migration file + conftest column-add applied to
+dev/CI DBs only, writer+pure validator+service+route+types+both frontend surfaces+full test suite),
+end-to-end verified against local/CI Postgres with REAL Bethpage Black prose captured as PR evidence.
+STOP for owner approval = (1) apply migration to PROD, (2) run 3-course seed backfill against PROD
+(spend pre-authorized ~$0.10 total, but writes through the unapplied-until-approved column).
+Corrections the plan caught: CaddiePanel.tsx does NOT exist -> use LooperSheetShell (LooperSheet.tsx);
+naming collision with existing app/caddie/course_intel.py + POST /api/caddie/course-intel -> docstring
+cross-refs, never import; stats via DIRECT SQL not get_course (its 18-hole default-fill fabricates par 72).
+Writer = course_intel_writer.py, COURSE_INTEL_MODEL default claude-sonnet-5, NO web_search; validator PURE
+(fail-closed: injection/leak/confidence-gate/par-check) with a 10-case offline matrix (the QA crux).
+NOTE: consolidated this lane onto the ISOLATED worktree (Edit/Write are worktree-sandboxed; builder must
+work here too). Concept commit already on origin/integration/next; worktree ff'd to bundle head dc8e165.
+
+## AWAITING — builder (specs/course-discovery-intel-plan.md, in THIS worktree, on integration/next)
+Builder implements the full plan EXCEPT the two STOP items (prod migration apply + prod seed). Commits in
+the worktree; I rebase+push HEAD:integration/next. On builder DONE: reviewer (fresh) + qa (gates+offline
+validator matrix) + designer (BLOCKING on rendered card+page). Ships HELD; do NOT ship/ping.
+If I die: reconcile from origin/integration/next + the builder's worktree commits; do NOT re-run a finished builder.

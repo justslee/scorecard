@@ -144,6 +144,53 @@ _TREE_SPAN_MAX_GAP_YDS: float = 40.0
 # stays bounded while near/far endpoints always survive.
 _TREE_CHAIN_SAFETY_CAP: int = 12
 
+# ── Gap-preserving tree-line rendering (specs/caddie-tree-span-gap-plan.md) ──
+# format_hazards_line groups a side's chain by (type, side) and used to render
+# the full min...max spread as one range — collapsing any real preserved gap
+# the chain carries (Red 1 left: [30,65, 265,285,310,355,390,430,475,480]
+# rendered as "trees L 30-480y", hiding the real ~200y open drive zone
+# between 65 and 265). TREE_RUN_SPLIT_GAP_YDS splits a side's SORTED carries
+# into separate rendered runs wherever the delta between consecutive carries
+# exceeds this value; deltas at or below it stay in the same run.
+#
+# Public (no underscore) because guide_writer imports it for its own trees
+# bridge (the validator must accept a claim within tolerance of a run, not
+# the old collapsed min-max span).
+#
+# Why 120, not 40 (_TREE_SPAN_MAX_GAP_YDS):
+#   - Only REAL gaps can split: inside a bridged chain section, consecutive
+#     entries are <= _TREE_SPAN_MAX_GAP_YDS (40y) apart by construction
+#     (_gap_bounded_tree_chain jumps to the farthest observation within 40y
+#     of the current vertex). Any inter-entry delta > 40y is therefore a real
+#     preserved mapped gap — any threshold > 40 only ever splits at a real
+#     gap, never at interpolation.
+#   - Exactly 40 over-fragments: measured on the real deployed chains, Red 6
+#     right deltas are 95/60/55 -> four runs on a genuinely continuous tree
+#     line; Red 5 right delta 50 -> two runs. Rejected.
+#   - The ground-truth gap distribution is bimodal across Red 1/5/6:
+#     intra-line gaps (sparse mapping / small clearings) span 45-95y; genuine
+#     open zones are 200y (hole 1 left) and 300y (hole 1 right). 120 (= 3x
+#     _TREE_SPAN_MAX_GAP_YDS) sits between the populations with margin both
+#     ways — +25y above the largest observed continuous gap (95) and -80y
+#     below the smallest genuine open zone (200) — and stays >= one safety-
+#     cap doubling (_TREE_CHAIN_SAFETY_CAP rebuild at gap 80), so a doubled-
+#     gap chain can never spuriously split.
+#   - Product framing: an open window is only worth narrating separately when
+#     it is a usable full-shot landing zone (~120y+).
+#   - Not single-fixture calibrated: any value in (95, 200) reproduces
+#     identical output on hole 1; the choice is pinned by the hole 5/6
+#     continuity population plus the doubling bound, and synthetic boundary
+#     tests exercise 120/125 independently of Red data.
+TREE_RUN_SPLIT_GAP_YDS: int = 120
+
+# Trees flanking/behind the tee box (e.g. "trees R 5-85y") read as an absurd
+# tee-shot hazard once split correctly. Drop the FIRST run on a side iff the
+# side has >= 2 runs (so a side never silently loses ALL its tree
+# information) AND that run's far end is <= this value (still spoken via a
+# farther, real tree section on the same side). The suppressed entries stay
+# in intel.hazards/conditions_payload — only the spoken line drops them.
+_TREE_NEAR_TEE_SUPPRESS_YDS: int = 100
+
 # format_hazards_line's group cap (bunker/water/trees combined). Named
 # constant (was a literal 5) so the trees-headroom decision is documented at
 # the definition site — see module docstring "decision 6" in the plan.
@@ -924,21 +971,61 @@ def _extract_tree_line_hazards(
     return hazards
 
 
+def _tree_runs(yards: list[int]) -> list[tuple[int, int]]:
+    """Split SORTED carries into maximal runs; a new run starts where the
+    delta to the previous carry exceeds TREE_RUN_SPLIT_GAP_YDS. Mirrors
+    ``guide_writer._carry_runs`` with a finite bridge (that helper's
+    ``bridge=None`` case is the OLD unconditional-bridge behavior this
+    formatter change replaces for trees)."""
+    if not yards:
+        return []
+    runs: list[tuple[int, int]] = []
+    run_start = run_end = yards[0]
+    for c in yards[1:]:
+        if c - run_end <= TREE_RUN_SPLIT_GAP_YDS:
+            run_end = c
+        else:
+            runs.append((run_start, run_end))
+            run_start = run_end = c
+    runs.append((run_start, run_end))
+    return runs
+
+
 def format_hazards_line(hole_number: int, hazards: list[Hazard]) -> str:
     """Compact spoken-style hazard line for a hole, e.g.:
 
         "Hole 4 hazards: bunker L 245y, water R 190-230y, trees R 220-300y"
+        "Hole 1 hazards: trees L 265-480y, trees R 385-475y"
 
-    Hazards sharing a (type, line_side) are merged into a single entry — a
-    single hazard renders as ``bunker L 245y``, multiple as a range
-    ``bunker L 230-260y`` (a tree line's min/max-carry pair renders the same
-    way, no dedicated tree formatter). Groups sort bunker-before-water-
-    before-trees, nearer-first, and are capped at ``_FORMAT_GROUP_CAP`` (6) —
-    type order sorts first, so bunker/water groups always occupy the front;
-    a tree group can only fill trailing slots and can never displace a
-    bunker/water group. Returns "" for an empty hazard list — the caller
-    should omit the line entirely, which triggers the generic-language
-    directive in HAZARD_GROUNDING_RULE.
+    Hazards sharing a (type, line_side) are merged into one entry. Bunker/
+    water groups ALWAYS render as one min-max span (single -> ``bunker L
+    245y``, multi -> ``bunker L 230-260y``) — byte-for-byte unchanged;
+    bunker/water are single-centroid observations with no chain structure.
+
+    Trees groups instead split their sorted carries into gap-separated runs
+    wherever a delta exceeds ``TREE_RUN_SPLIT_GAP_YDS`` (``_tree_runs``) —
+    collapsing a tree line's real chain gaps into one span used to hide a
+    genuinely open drive zone (specs/caddie-tree-span-gap-plan.md). Runs
+    render as ``loy`` (single-sample run) or ``lo-hiy``, joined with
+    ``" and "``, e.g. ``trees L 30-65y and 265-480y``. Two bounded
+    adjustments apply before rendering: near-tee suppression drops the FIRST
+    run iff the side has >= 2 runs AND that run's far end is
+    <= ``_TREE_NEAR_TEE_SUPPRESS_YDS`` (a tee-flanking tree cluster reads as
+    an absurd tee-shot hazard once split out on its own); and if more than 3
+    runs would survive, the group falls back to today's single full min-max
+    span (an honest superset — worst case degrades to exactly the old
+    behavior, never a fragmented line). With the pinned threshold no real
+    mapped Bethpage hole exceeds 2 runs.
+
+    Groups sort bunker-before-water-before-trees, nearer-first (the min of
+    the carries that will actually RENDER, post tree-suppression, so spoken
+    order matches spoken numbers — identical to today whenever nothing is
+    suppressed), and are capped at ``_FORMAT_GROUP_CAP`` (6) — type order
+    sorts first, so bunker/water groups always occupy the front; a tree
+    group (split or not) counts as ONE slot toward the cap and can never
+    displace a bunker/water group. Returns "" for an empty hazard list — the
+    caller should omit the line entirely, which triggers the generic-
+    language directive in HAZARD_GROUNDING_RULE.
     """
     if not hazards:
         return ""
@@ -952,17 +1039,42 @@ def format_hazards_line(hole_number: int, hazards: list[Hazard]) -> str:
             order.append(key)
         groups[key].append(hz.carry_yards)
 
-    order.sort(key=lambda k: (_TYPE_ORDER.get(k[0], 99), min(groups[k])))
+    sorted_yards: dict[tuple[str, str], list[int]] = {k: sorted(v) for k, v in groups.items()}
+
+    # Pre-render each group's run list ONCE — non-trees groups are always a
+    # single (min, max) span; trees groups split/suppress/fall back per the
+    # docstring above. Needed before sorting so the sort key can use the min
+    # of the carries that will actually render (post-suppression).
+    rendered: dict[tuple[str, str], list[tuple[int, int]]] = {}
+    for key in order:
+        ftype, _side = key
+        yards = sorted_yards[key]
+        if ftype != "trees":
+            rendered[key] = [(yards[0], yards[-1])]
+            continue
+        runs = _tree_runs(yards)
+        if len(runs) >= 2 and runs[0][1] <= _TREE_NEAR_TEE_SUPPRESS_YDS:
+            runs = runs[1:]
+        if len(runs) > 3:
+            runs = [(yards[0], yards[-1])]
+        rendered[key] = runs
+
+    order.sort(key=lambda k: (_TYPE_ORDER.get(k[0], 99), rendered[k][0][0]))
     order = order[:_FORMAT_GROUP_CAP]
 
     parts: list[str] = []
-    for ftype, side in order:
-        yards = sorted(groups[(ftype, side)])
+    for key in order:
+        ftype, side = key
+        yards = sorted_yards[key]
         abbrev = _SIDE_ABBREV.get(side, side[:1].upper())
-        if len(yards) == 1:
-            parts.append(f"{ftype} {abbrev} {yards[0]}y")
+        if ftype != "trees":
+            if len(yards) == 1:
+                parts.append(f"{ftype} {abbrev} {yards[0]}y")
+            else:
+                parts.append(f"{ftype} {abbrev} {yards[0]}-{yards[-1]}y")
         else:
-            parts.append(f"{ftype} {abbrev} {yards[0]}-{yards[-1]}y")
+            run_strs = [f"{lo}y" if lo == hi else f"{lo}-{hi}y" for lo, hi in rendered[key]]
+            parts.append(f"{ftype} {abbrev} " + " and ".join(run_strs))
 
     return f"Hole {hole_number} hazards: " + ", ".join(parts)
 

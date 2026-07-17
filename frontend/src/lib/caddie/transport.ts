@@ -25,6 +25,20 @@ import type { VoiceState, VoiceTurn } from '@/components/yardage/Voice';
 /** If the backend hasn't returned a mint within this budget, drop to tier 2. */
 export const MINT_DEADLINE_MS = 3000;
 
+/**
+ * Live caddie sheet/pill connect budgets (specs/caddie-live-p0-connect-hole
+ * -plan.md §2.2) — deliberately separate from `MINT_DEADLINE_MS` above
+ * (unchanged, still used by useVoiceCaddie/warm-session's own single-shot
+ * mint-or-degrade ladder). `useCaddieLiveSession` arms BOTH per connect
+ * attempt: `LIVE_MINT_BUDGET_MS` bounds attempt-start → `onMinted`;
+ * `LIVE_CONNECT_BUDGET_MS` bounds attempt-start → first `'connected'`
+ * (the overall per-attempt deadline — ICE effectively gets the remainder).
+ * Worst case to an honest `connect-failed`: one quiet auto-retry, so up to
+ * `2 * LIVE_CONNECT_BUDGET_MS` = 16s, each phase visibly surfaced.
+ */
+export const LIVE_MINT_BUDGET_MS = 4000;
+export const LIVE_CONNECT_BUDGET_MS = 8000;
+
 export type TransportTier = 'realtime' | 'text' | 'offline';
 
 /** Connection phase within the realtime tier (idle between bursts is normal). */

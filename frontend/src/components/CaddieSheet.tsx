@@ -275,11 +275,16 @@ export default function CaddieSheet({
   // Eligible for live AND hasn't fallen back this activation — gates both
   // the render swap and the classic effects below. `open` still gates the
   // RENDER (a detached-but-live session shows the live footer/body only
-  // while the sheet is actually open).
-  const liveActive = open && liveOn && !live.fellBack;
+  // while the sheet is actually open). `connect-failed` (specs/caddie-live
+  // -p0-connect-hole-plan.md §2.3) is excluded too — while open, it swaps to
+  // the classic tap-to-talk body exactly like `fellBack`, an honest, visible,
+  // usable state instead of a dead/stalled live view.
+  const liveActive = open && liveOn && !live.fellBack && live.liveState !== "connect-failed";
   // Live was attempted but degraded (mint-timeout / connect-fail / mic-deny)
-  // — render the classic voice UI plus a calm, honest mode label.
-  const showFallbackIndicator = liveOn && live.fellBack;
+  // — render the classic voice UI plus a calm, honest mode label. Also true
+  // for `connect-failed` — the chip mechanism is reused (designer may want
+  // distinct copy for it later).
+  const showFallbackIndicator = liveOn && (live.fellBack || live.liveState === "connect-failed");
   // Ref mirror so callbacks defined before `live` exists (handlePlaybackEnd,
   // below) can read the current value without being recreated on every
   // liveActive flip — mirrors the ttsEnabledRef/loopDroppedOutRef pattern.
@@ -1610,6 +1615,7 @@ export default function CaddieSheet({
                   status={live.status}
                   caddy={caddy}
                   paused={live.liveState === "suspended"}
+                  retrying={live.liveState === "retrying"}
                 />
               ) : (
                 <VoiceBody
@@ -1767,6 +1773,7 @@ function LiveVoiceBody({
   status,
   caddy,
   paused,
+  retrying = false,
 }: {
   messages: RealtimeMessage[];
   status: RealtimeStatus;
@@ -1776,6 +1783,12 @@ function LiveVoiceBody({
    *  empty-state hint must not contradict it by claiming the caddy is
    *  actively listening (no-fake-data / honest-states). */
   paused: boolean;
+  /** True when `liveState === "retrying"` (specs/caddie-live-p0-connect-hole
+   *  -plan.md §2.3) — the one quiet pre-connect auto-retry is in flight. The
+   *  footer still renders `status`'s own "Connecting…" copy (a fresh retry
+   *  client re-arms `status` to `'connecting'`); this empty-state hint must
+   *  agree with it. */
+  retrying?: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1794,7 +1807,7 @@ function LiveVoiceBody({
             lineHeight: 1.5,
           }}
         >
-          {liveEmptyStateHint(status, paused, captionPersonaName(caddy.name))}
+          {liveEmptyStateHint(status, paused, captionPersonaName(caddy.name), retrying)}
         </div>
       )}
       {messages.length === 0 && !paused && (
@@ -1808,7 +1821,7 @@ function LiveVoiceBody({
             lineHeight: 1.5,
           }}
         >
-          {liveEmptyStateHint(status, paused, captionPersonaName(caddy.name))}
+          {liveEmptyStateHint(status, paused, captionPersonaName(caddy.name), retrying)}
         </div>
       )}
       {/* render as-is — messages arrive PRE-SORTED by `order` from

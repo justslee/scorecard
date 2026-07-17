@@ -16,6 +16,8 @@ import pytest
 
 from app.caddie.hazards import (
     HAZARD_GROUNDING_RULE,
+    TREE_RUN_SPLIT_GAP_YDS,
+    _TREE_NEAR_TEE_SUPPRESS_YDS,
     extract_hole_bend,
     extract_hole_hazards,
     format_hazards_line,
@@ -764,6 +766,123 @@ class TestFormatHazardsLine:
         # group (the only trees group, min carry 160) is the one dropped.
         assert line.count("y") == 6
         assert "160y" not in line
+
+    def test_groups_capped_at_six_split_trees_group_counts_once(self):
+        """specs/caddie-tree-span-gap-plan.md §4c: extending the 7-group cap
+        test above — a SPLIT trees group (two rendered runs) still occupies
+        exactly ONE of the six (type, side) slots, not two. Trees carries
+        160 and 400 (delta 240y, > TREE_RUN_SPLIT_GAP_YDS) split into two
+        spoken runs on the SAME (trees, left) group key; the group still
+        sorts/caps as a single entry, so it's still the 7th group dropped."""
+        hazards = [
+            Hazard(type="bunker", side="left", carry_yards=100, line_side="left"),
+            Hazard(type="bunker", side="right", carry_yards=110, line_side="right"),
+            Hazard(type="bunker", side="center", carry_yards=120, line_side="center"),
+            Hazard(type="water", side="left", carry_yards=130, line_side="left"),
+            Hazard(type="water", side="right", carry_yards=140, line_side="right"),
+            Hazard(type="water", side="center", carry_yards=150, line_side="center"),
+            Hazard(type="trees", side="left", carry_yards=160, line_side="left"),
+            Hazard(type="trees", side="left", carry_yards=400, line_side="left"),
+        ]
+        line = format_hazards_line(6, hazards)
+        assert "trees" not in line
+        assert "160y" not in line and "400y" not in line
+        # Still exactly the 6 non-trees group numbers.
+        assert line.count("y") == 6
+
+
+class TestTreeRunSplitFormatting:
+    """specs/caddie-tree-span-gap-plan.md §4c — synthetic (NOT Red-derived)
+    boundary tests for the trees run-split/suppression/fallback rendering."""
+
+    def test_delta_exactly_at_threshold_merges(self):
+        """Consecutive carries whose delta is EXACTLY TREE_RUN_SPLIT_GAP_YDS
+        (120) stay in the same run."""
+        hazards = [
+            Hazard(type="trees", side="right", carry_yards=100, line_side="right"),
+            Hazard(type="trees", side="right", carry_yards=100 + TREE_RUN_SPLIT_GAP_YDS, line_side="right"),
+        ]
+        line = format_hazards_line(7, hazards)
+        assert line == f"Hole 7 hazards: trees R 100-{100 + TREE_RUN_SPLIT_GAP_YDS}y"
+
+    def test_delta_one_past_threshold_splits(self):
+        """A delta of TREE_RUN_SPLIT_GAP_YDS + 5 (125 at the pinned 120
+        threshold) starts a new run. Both runs' far ends sit well past
+        `_TREE_NEAR_TEE_SUPPRESS_YDS`, so neither is suppressed."""
+        lo = 200
+        hi = lo + TREE_RUN_SPLIT_GAP_YDS + 5
+        hazards = [
+            Hazard(type="trees", side="right", carry_yards=lo, line_side="right"),
+            Hazard(type="trees", side="right", carry_yards=hi, line_side="right"),
+        ]
+        line = format_hazards_line(7, hazards)
+        assert line == f"Hole 7 hazards: trees R {lo}y and {hi}y"
+
+    def test_non_trees_group_never_splits_on_a_large_internal_gap(self):
+        """Bunker/water groups always render one min-max span, regardless of
+        how large the internal gap is — byte-for-byte unchanged rendering,
+        no run-splitting for non-trees types."""
+        hazards = [
+            Hazard(type="bunker", side="left", carry_yards=100, line_side="left"),
+            Hazard(type="bunker", side="left", carry_yards=250, line_side="left"),
+        ]
+        line = format_hazards_line(8, hazards)
+        assert line == "Hole 8 hazards: bunker L 100-250y"
+        assert " and " not in line
+
+    def test_more_than_three_runs_falls_back_to_full_span(self):
+        """Four widely-separated single-sample carries (none near the tee, so
+        near-tee suppression never fires) would split into 4 runs — over the
+        >3-runs-survive fallback threshold — so the group instead renders
+        today's single collapsed min-max span (honest superset, never a
+        fragmented line)."""
+        carries = [200, 400, 600, 800]
+        assert len(carries) - 1 == 3  # 3 gaps, each > TREE_RUN_SPLIT_GAP_YDS -> 4 runs
+        hazards = [
+            Hazard(type="trees", side="right", carry_yards=c, line_side="right") for c in carries
+        ]
+        line = format_hazards_line(9, hazards)
+        assert line == "Hole 9 hazards: trees R 200-800y"
+        assert " and " not in line
+
+    def test_near_tee_suppression_drops_first_run_when_two_runs_exist(self):
+        """A near-tee run (far end <= _TREE_NEAR_TEE_SUPPRESS_YDS) is dropped
+        from the spoken line when a farther, real run also exists on the
+        same side — the suppressed carries never surface as an absurd
+        tee-shot hazard."""
+        hazards = [
+            Hazard(type="trees", side="right", carry_yards=10, line_side="right"),
+            Hazard(type="trees", side="right", carry_yards=_TREE_NEAR_TEE_SUPPRESS_YDS, line_side="right"),
+            Hazard(type="trees", side="right", carry_yards=_TREE_NEAR_TEE_SUPPRESS_YDS + TREE_RUN_SPLIT_GAP_YDS + 5, line_side="right"),
+        ]
+        line = format_hazards_line(10, hazards)
+        far = _TREE_NEAR_TEE_SUPPRESS_YDS + TREE_RUN_SPLIT_GAP_YDS + 5
+        assert line == f"Hole 10 hazards: trees R {far}y"
+        assert "10y" not in line
+        assert str(_TREE_NEAR_TEE_SUPPRESS_YDS) not in line.replace(str(far), "")
+
+    def test_near_tee_only_run_is_never_suppressed(self):
+        """A near-tee run is kept when it is the ONLY run on that side — a
+        side must never silently lose all its tree information."""
+        hazards = [
+            Hazard(type="trees", side="right", carry_yards=10, line_side="right"),
+            Hazard(type="trees", side="right", carry_yards=40, line_side="right"),
+        ]
+        line = format_hazards_line(11, hazards)
+        assert line == "Hole 11 hazards: trees R 10-40y"
+
+    def test_near_tee_run_just_past_suppression_threshold_is_kept(self):
+        """A first run whose far end is ONE past `_TREE_NEAR_TEE_SUPPRESS_
+        YDS` (105 at the pinned 100y threshold) is kept — the suppression
+        boundary is <=, not <."""
+        near_far = _TREE_NEAR_TEE_SUPPRESS_YDS + 5
+        far_run = near_far + TREE_RUN_SPLIT_GAP_YDS + 5
+        hazards = [
+            Hazard(type="trees", side="right", carry_yards=near_far, line_side="right"),
+            Hazard(type="trees", side="right", carry_yards=far_run, line_side="right"),
+        ]
+        line = format_hazards_line(12, hazards)
+        assert line == f"Hole 12 hazards: trees R {near_far}y and {far_run}y"
 
 
 # ── HAZARD_GROUNDING_RULE ─────────────────────────────────────────────────────

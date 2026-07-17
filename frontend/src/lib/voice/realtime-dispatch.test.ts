@@ -222,3 +222,131 @@ describe('dispatchTool — Realtime tool surface v1', () => {
     expect(out).toEqual({ error: 'Unknown tool: summon_helicopter' });
   });
 });
+
+// specs/caddie-live-p0-connect-hole-plan.md §3 — Bug B: the live caddie
+// answered about hole 1 while the golfer was on hole 2 because dispatchTool
+// resolved the hole from the model's (possibly stale) `hole_number` arg
+// instead of the live session's actual current hole. `ctx.currentHole` is a
+// SINGLE snapshot read fresh per dispatch (useCaddieLiveSession's
+// `getToolContext`) — ctx-first override for the six hole-scoped tools below,
+// args-first-with-live-fallback for `record_shot`.
+describe('dispatchTool — Bug B: ctx.currentHole overrides a stale args.hole_number', () => {
+  const liveCtx = { roundId: 'round-42', currentHole: 2 };
+
+  it('get_recommendation: ctx.currentHole wins over args.hole_number', async () => {
+    await dispatchTool('get_recommendation', { hole_number: 1, distance_yards: 142 }, liveCtx);
+    expect(sessionRecommend).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 2,
+      distance_yards: 142,
+    });
+  });
+
+  it('get_conditions: ctx.currentHole wins over args.hole_number', async () => {
+    await dispatchTool('get_conditions', { hole_number: 1 }, liveCtx);
+    expect(getSessionConditions).toHaveBeenLastCalledWith('round-42', 2);
+  });
+
+  it('get_carries: ctx.currentHole wins over args.hole_number', async () => {
+    await dispatchTool('get_carries', { hole_number: 1 }, liveCtx);
+    expect(getSessionCarries).toHaveBeenLastCalledWith('round-42', 2);
+  });
+
+  it('get_bend: ctx.currentHole wins over args.hole_number', async () => {
+    await dispatchTool('get_bend', { hole_number: 1 }, liveCtx);
+    expect(getSessionBend).toHaveBeenLastCalledWith('round-42', 2);
+  });
+
+  it('get_shot_distance: ctx.currentHole wins over args.hole_number', async () => {
+    await dispatchTool('get_shot_distance', { hole_number: 1, club: 'driver' }, liveCtx);
+    expect(getSessionShotDistance).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 2,
+      club: 'driver',
+      target_yards: undefined,
+    });
+  });
+
+  it('get_green_read: ctx.currentHole wins over args.hole_number', async () => {
+    await dispatchTool('get_green_read', { hole_number: 1 }, liveCtx);
+    expect(getSessionGreenRead).toHaveBeenLastCalledWith({ round_id: 'round-42', hole_number: 2 });
+  });
+
+  it('record_shot: ARGS win over ctx.currentHole (the shot is a statement about a hole the player often names)', async () => {
+    await dispatchTool(
+      'record_shot',
+      { hole_number: 1, club: '7iron', distance_yards: 155 },
+      liveCtx,
+    );
+    expect(recordShot).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 1,
+      club: '7iron',
+      distance_yards: 155,
+      result: undefined,
+    });
+  });
+
+  it('record_shot: falls back to ctx.currentHole ONLY when args.hole_number is omitted', async () => {
+    await dispatchTool('record_shot', { club: 'pw', distance_yards: 90 }, liveCtx);
+    expect(recordShot).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 2,
+      club: 'pw',
+      distance_yards: 90,
+      result: undefined,
+    });
+  });
+
+  it('record_shot: NaN when BOTH args and ctx.currentHole are absent — today\'s behavior, unchanged', async () => {
+    await dispatchTool('record_shot', { club: 'pw', distance_yards: 90 }, { roundId: 'round-42' });
+    const call = (recordShot as unknown as { mock: { calls: Array<[{ hole_number: number }]> } }).mock.calls.at(-1)!;
+    expect(Number.isNaN(call[0].hole_number)).toBe(true);
+  });
+
+  it('ctx.currentHole absent: byte-identical to today\'s args-only behavior for all six hole-scoped tools', async () => {
+    const noCurrentHoleCtx = { roundId: 'round-42' };
+
+    await dispatchTool('get_recommendation', { hole_number: 3, distance_yards: 142 }, noCurrentHoleCtx);
+    expect(sessionRecommend).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 3,
+      distance_yards: 142,
+    });
+
+    await dispatchTool('get_conditions', { hole_number: 5 }, noCurrentHoleCtx);
+    expect(getSessionConditions).toHaveBeenLastCalledWith('round-42', 5);
+    await dispatchTool('get_conditions', {}, noCurrentHoleCtx);
+    expect(getSessionConditions).toHaveBeenLastCalledWith('round-42', undefined);
+
+    await dispatchTool('get_carries', { hole_number: 4 }, noCurrentHoleCtx);
+    expect(getSessionCarries).toHaveBeenLastCalledWith('round-42', 4);
+
+    await dispatchTool('get_bend', { hole_number: 4 }, noCurrentHoleCtx);
+    expect(getSessionBend).toHaveBeenLastCalledWith('round-42', 4);
+    await dispatchTool('get_bend', {}, noCurrentHoleCtx);
+    expect(getSessionBend).toHaveBeenLastCalledWith('round-42', undefined);
+
+    await dispatchTool('get_shot_distance', { hole_number: 14, club: 'driver' }, noCurrentHoleCtx);
+    expect(getSessionShotDistance).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 14,
+      club: 'driver',
+      target_yards: undefined,
+    });
+
+    await dispatchTool('get_green_read', { hole_number: 7 }, noCurrentHoleCtx);
+    expect(getSessionGreenRead).toHaveBeenLastCalledWith({ round_id: 'round-42', hole_number: 7 });
+    await dispatchTool('get_green_read', {}, noCurrentHoleCtx);
+    expect(getSessionGreenRead).toHaveBeenLastCalledWith({ round_id: 'round-42', hole_number: undefined });
+  });
+
+  it('ctx.currentHole null (not just undefined) also falls through to args — the tool-context type is number | null | undefined', async () => {
+    await dispatchTool('get_recommendation', { hole_number: 9 }, { roundId: 'round-42', currentHole: null });
+    expect(sessionRecommend).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 9,
+      distance_yards: undefined,
+    });
+  });
+});

@@ -253,7 +253,7 @@ describe("useDetachedCaddieLive — start/stop lifecycle", () => {
     expect(result.current.liveOn).toBe(false);
   });
 
-  it("fellBack while closed releases liveOn (next open retries live fresh)", async () => {
+  it("pre-connected close retries ONCE then lands connect-failed — persists liveOn (no silent revert), even while closed (specs/caddie-live-p0-connect-hole-plan.md §2.1: a plain pre-connected 'closed' is no longer an immediate fallback — the one quiet auto-retry runs first)", async () => {
     const { result, rerender } = renderHook((props) => useDetachedCaddieLive(props), {
       initialProps: baseOptions({ sheetOpen: true }),
     });
@@ -265,32 +265,71 @@ describe("useDetachedCaddieLive — start/stop lifecycle", () => {
     rerender(baseOptions({ sheetOpen: false }));
     await flush();
 
-    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
-    // Never connected + 'closed' -> classic fallback (fellBack) -> the
-    // wrapper's auto-release effect flips liveOn off in the same flush pass,
-    // which also resets the inner hook's fellBack/liveState for the NEXT
-    // activation — so the observable, durable postcondition here is liveOn,
-    // not a fellBack snapshot that gets wiped by the very reset it causes.
-    act(() => client.emitStatus("closed"));
+    const client1 = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    // Never connected + 'closed' -> ONE quiet auto cold-mint retry — a
+    // fresh SECOND client, not an immediate fallback.
+    act(() => client1.emitStatus("closed"));
     await flush();
 
-    expect(result.current.liveOn).toBe(false); // auto-released
-    expect(client.stop).toHaveBeenCalled(); // fallBack()'s own teardown ran
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2);
+    expect(result.current.session.liveState).toBe("retrying");
+    expect(result.current.liveOn).toBe(true);
+    expect(client1.stop).toHaveBeenCalled();
+
+    const client2 = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => client2.emitStatus("closed"));
+    await flush();
+
+    // The retry ALSO failed -> the honest terminal `connect-failed`, which
+    // deliberately PERSISTS liveOn (the silent revert to "Ask caddie" this
+    // plan kills) — no auto-release even though the sheet is closed.
+    expect(result.current.session.liveState).toBe("connect-failed");
+    expect(result.current.liveOn).toBe(true); // NOT released
+    expect(client2.stop).toHaveBeenCalled();
   });
 
-  it("fellBack while OPEN does not auto-release liveOn (CaddieSheet renders the classic body in place)", async () => {
+  it("connect-failed while OPEN also does not auto-release liveOn (CaddieSheet renders the classic body in place)", async () => {
     const { result } = renderHook((props) => useDetachedCaddieLive(props), {
       initialProps: baseOptions({ sheetOpen: true }),
     });
 
     act(() => result.current.start());
     await flush();
-    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
-    act(() => client.emitStatus("closed"));
+    const client1 = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client1.emitStatus("closed"));
+    await flush();
+    const client2 = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => client2.emitStatus("closed"));
     await flush();
 
-    expect(result.current.session.fellBack).toBe(true);
-    expect(result.current.liveOn).toBe(true); // NOT auto-released while open
+    expect(result.current.session.liveState).toBe("connect-failed");
+    expect(result.current.liveOn).toBe(true); // NOT auto-released
+  });
+
+  it("true fallback (mic-deny) still auto-releases liveOn while closed (next open retries live fresh) — unlike connect-failed above", async () => {
+    const { result, rerender } = renderHook((props) => useDetachedCaddieLive(props), {
+      initialProps: baseOptions({ sheetOpen: true }),
+    });
+
+    act(() => result.current.start());
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    // Set up the mic-permission denial BEFORE flushing so it's in place
+    // when the connect IIFE reaches `await client.attachMic()`.
+    client.attachMic.mockRejectedValueOnce(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
+    await flush();
+
+    expect(result.current.session.liveState).toBe("fallback");
+    // fellBack while OPEN does not auto-release (CaddieSheet renders the
+    // classic body in place) — same contract as before this plan.
+    expect(result.current.liveOn).toBe(true);
+
+    rerender(baseOptions({ sheetOpen: false }));
+    await flush();
+
+    expect(result.current.liveOn).toBe(false); // auto-released
+    expect(client.stop).toHaveBeenCalled();
+    // Mic-deny is never retried — exactly one client ever constructed.
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1);
   });
 
   it("suspended (idle) persists across a sheet close — liveOn stays true", async () => {
@@ -318,6 +357,32 @@ describe("useDetachedCaddieLive — start/stop lifecycle", () => {
 
     expect(result.current.liveOn).toBe(true);
     expect(result.current.isSuspended).toBe(true);
+  });
+
+  it("hole-swipe mid-session: the tool-context provider reads the LIVE hole, not the one captured at connect (specs/caddie-live-p0-connect-hole-plan.md §3.1 — Bug B)", async () => {
+    const { result, rerender } = renderHook((props) => useDetachedCaddieLive(props), {
+      initialProps: baseOptions({ holeNumber: 1, holeYards: 350, sheetOpen: true }),
+    });
+
+    act(() => result.current.start());
+    await flush();
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client.emitStatus("connected"));
+    await flush();
+
+    expect(client.setToolContext).toHaveBeenCalledTimes(1);
+    const getCtx = client.setToolContext.mock.calls[0][0] as () => {
+      holeYards: number | null;
+      yardageBasis: string | null;
+      currentHole: number;
+    };
+    expect(getCtx()).toEqual({ holeYards: 350, yardageBasis: null, currentHole: 1 });
+
+    // Swipe to hole 2 — no reconnect, SAME client/provider.
+    rerender(baseOptions({ holeNumber: 2, holeYards: 402, sheetOpen: true }));
+    await flush();
+
+    expect(getCtx()).toEqual({ holeYards: 402, yardageBasis: null, currentHole: 2 });
   });
 });
 

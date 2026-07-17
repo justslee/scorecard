@@ -39,7 +39,7 @@ from typing import Optional
 import anthropic
 from pydantic import BaseModel, Field
 
-from app.caddie.hazards import HAZARD_GROUNDING_RULE
+from app.caddie.hazards import HAZARD_GROUNDING_RULE, TREE_RUN_SPLIT_GAP_YDS
 from app.caddie.physics import elevation_only_plays_like
 from app.caddie.types import Hazard, HoleStrategyGuide
 
@@ -357,6 +357,19 @@ _HAZARD_PATTERNS: dict[str, "re.Pattern[str]"] = {
 _MAX_FIELD_CHARS = 240
 _MAX_MISTAKES = 3
 
+# Defense-in-depth (security review): researched/synthesized text is DATA — a
+# field that reads like an instruction, meta-prompt, or link is not golf
+# advice. Hazard grounding alone wouldn't catch "ignore previous
+# instructions". Compiled once at module load, shared by `validate_guide`
+# below AND `app.caddie.strategy.validate_strategy_text` (same anti-injection
+# bar for the strategy-tool narrative — see specs/caddie-smart-strategy-tool-
+# plan.md) so the two validators can never drift out of a byte-copy fork.
+GUIDE_INJECTION_PATTERN = re.compile(
+    r"(?:\bignore\b|\binstructions?\b|\byou are\b|\bsystem prompt\b|"
+    r"https?://|\bwww\.|<[a-z/!]|\bdisregard\b)",
+    re.IGNORECASE,
+)
+
 
 # ── Side-flip validation (hazard-side-flip incident, 2026-07-08) ────────────
 #
@@ -403,15 +416,19 @@ _MIN_PLAUSIBLE_CARRY = 100  # below this, "hole 12"/"par 4"-style numbers, never
 _MAX_PLAUSIBLE_CARRY = 650
 
 # Contiguous-run span acceptance (guide-validator-carry-span-plan.md). A
-# stored `carry_yards` is a DISCRETE SAMPLE of an extended feature (a bunker
-# polygon's centroid; a tree line's near/far bracket pair) — not the whole
-# feature. Bridging same-(type, side) samples that sit within
-# `_CARRY_BRIDGE_YARDS` of each other into one run before applying the
-# `_CARRY_TOLERANCE_YARDS` margin closes the false-reject gap where a
-# legitimately-grounded carry falls in the sampled gap between two points of
-# ONE real feature. See the plan for the numeric derivation: 60 bridges the
-# smallest observed same-complex cluster gap (55y) while staying well below
-# the smallest observed genuinely-separate gap (90y).
+# stored `carry_yards` is a DISCRETE SAMPLE of an extended feature (e.g. a
+# bunker polygon's centroid) — not the whole feature. Bridging same-(type,
+# side) samples that sit within `_CARRY_BRIDGE_YARDS` of each other into one
+# run before applying the `_CARRY_TOLERANCE_YARDS` margin closes the
+# false-reject gap where a legitimately-grounded carry falls in the sampled
+# gap between two points of ONE real feature. See the plan for the numeric
+# derivation: 60 bridges the smallest observed same-complex cluster gap (55y)
+# while staying well below the smallest observed genuinely-separate gap
+# (90y). `trees` uses its own, larger bridge — `TREE_RUN_SPLIT_GAP_YDS`, see
+# `_carry_runs`/`_side_and_carry_supported` — because a tree line's
+# gap-bounded chain (unlike a bunker's single centroid sample) is dense
+# enough that its own real-gap semantics (specs/caddie-tree-span-gap
+# -plan.md) apply directly.
 _CARRY_BRIDGE_YARDS = 60
 _CARRY_NUMBER_PATTERN = re.compile(
     r"\b(\d{2,3})(?!\d)(?:\s*[-–]\s*\d{2,3}(?!\d))?\s*(?:y(?:ds?)?|yards?)?\b"
@@ -441,25 +458,29 @@ def _acceptable_sides(canonical_type: str, sides_by_type: dict[str, set[str]]) -
     return sides | ({"left", "right"} if "center" in sides else set())
 
 
-def _carry_runs(carries: list[int], bridge: Optional[int]) -> list[tuple[int, int]]:
+def _carry_runs(carries: list[int], bridge: int) -> list[tuple[int, int]]:
     """Split SORTED `carries` into maximal contiguous runs and return each
     run's `(min, max)` span.
 
-    `bridge=None` means "unconditional bridge" — always one run spanning
-    `[carries[0], carries[-1]]` (used for `trees`: `_extract_tree_line_hazards`
-    emits at most a near/far PAIR per side, and those two samples ARE the
-    endpoints of one continuous line — `format_hazards_line` already asserts
-    that same span as a range, e.g. "trees L 145-360y").
-
-    Otherwise, consecutive samples join the same run iff their gap is `<=
-    bridge`; a gap larger than `bridge` starts a new run. A single-sample run
-    yields `(c, c)` — combined with the `_CARRY_TOLERANCE_YARDS` margin in
+    Consecutive samples join the same run iff their gap is `<= bridge`; a gap
+    larger than `bridge` starts a new run. A single-sample run yields `(c,
+    c)` — combined with the `_CARRY_TOLERANCE_YARDS` margin in
     `_side_and_carry_supported`, that reproduces the old per-sample point test
-    exactly for every hazard that has only one sample of its (type, side)."""
+    exactly for every hazard that has only one sample of its (type, side).
+
+    HISTORICAL NOTE (specs/caddie-tree-span-gap-plan.md §2b): `trees` used to
+    pass `bridge=None` here (an "unconditional bridge" special case, deleted
+    with this change) on the now-outdated assumption that
+    `_extract_tree_line_hazards` emits at most a near/far PAIR per side.
+    Since the gap-bounded chain change
+    (specs/caddie-hazard-side-reach-plan.md §3) that assumption is false — a
+    side can carry many chain entries spanning a genuinely open gap — so a
+    `trees` claim landing inside that open gap was wrongly ACCEPTED. `trees`
+    now bridges at `TREE_RUN_SPLIT_GAP_YDS`, the SAME threshold
+    `format_hazards_line` uses to split a tree line into spoken runs — a
+    validator run and a spoken run are the same span by construction."""
     if not carries:
         return []
-    if bridge is None:
-        return [(carries[0], carries[-1])]
     runs: list[tuple[int, int]] = []
     run_start = run_end = carries[0]
     for c in carries[1:]:
@@ -484,28 +505,37 @@ def _side_and_carry_supported(
     `_CARRY_TOLERANCE_YARDS` of a single sample.
 
     A stored `carry_yards` is a discrete sample of an extended feature (a
-    bunker/water/ob polygon's centroid, or one end of a tree line's near/far
-    bracket) — treating every sample as an isolated point false-rejects a
-    legitimately-grounded carry that falls between two samples of the SAME
-    feature. Per candidate group (the claimed side, plus 'center' — mirroring
-    `_acceptable_sides`: an on-line hazard supports either lateral claim),
-    same-type samples are merged into maximal contiguous runs via
-    `_carry_runs` — `trees` bridge unconditionally (one run per group, the
-    near/far bracket of one line); every other type bridges when consecutive
-    samples are within `_CARRY_BRIDGE_YARDS` of each other. The claim is
-    accepted iff it lands within `_CARRY_TOLERANCE_YARDS` of EITHER end of
-    some run. A single-sample run collapses to the old point-window
-    `[c - _CARRY_TOLERANCE_YARDS, c + _CARRY_TOLERANCE_YARDS]`, so every prior
+    bunker/water/ob polygon's centroid, or one entry of a tree line's
+    gap-bounded chain) — treating every sample as an isolated point
+    false-rejects a legitimately-grounded carry that falls between two
+    samples of the SAME feature. Per candidate group (the claimed side, plus
+    'center' — mirroring `_acceptable_sides`: an on-line hazard supports
+    either lateral claim), same-type samples are merged into maximal
+    contiguous runs via `_carry_runs`. `trees` bridges at
+    `TREE_RUN_SPLIT_GAP_YDS` — the SAME threshold `format_hazards_line` uses
+    to split a tree line's chain into spoken runs (specs/caddie-tree-span
+    -gap-plan.md §2b) — so a claim is checked against the same span the
+    caddie would actually SPEAK, not the old (now-stale) assumption that
+    `trees` always emits one unconditional near/far bracket per side; every
+    other type still bridges when consecutive samples are within
+    `_CARRY_BRIDGE_YARDS` of each other. The claim is accepted iff it lands
+    within `_CARRY_TOLERANCE_YARDS` of EITHER end of some run. A single-
+    sample run collapses to the old point-window `[c -
+    _CARRY_TOLERANCE_YARDS, c + _CARRY_TOLERANCE_YARDS]`, so every prior
     accept still accepts (strict superset — see the plan §2a proof); only a
     number that falls strictly inside a genuine multi-sample GAP can flip
-    from reject to accept, and only when that gap is bridged."""
+    from reject to accept, and only when that gap is bridged. Fail-closed
+    tightening for `trees` (specs/caddie-tree-span-gap-plan.md §2b): a claim
+    landing inside a real open gap (> `TREE_RUN_SPLIT_GAP_YDS` between
+    samples) is now correctly REJECTED, where the old unconditional-bridge
+    behavior wrongly accepted it."""
     for group_side in (claimed_side, "center"):
         carries = sorted(
             carry for side, carry in hazards_by_type.get(canonical_type, []) if side == group_side
         )
         if not carries:
             continue
-        bridge = None if canonical_type == "trees" else _CARRY_BRIDGE_YARDS
+        bridge = TREE_RUN_SPLIT_GAP_YDS if canonical_type == "trees" else _CARRY_BRIDGE_YARDS
         for lo, hi in _carry_runs(carries, bridge):
             if lo - _CARRY_TOLERANCE_YARDS <= claimed_carry <= hi + _CARRY_TOLERANCE_YARDS:
                 return True
@@ -881,10 +911,13 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
        must fall within `_CARRY_TOLERANCE_YARDS` of a CONTIGUOUS RUN of
        same-type stored carries on ITS OWN side — same-side samples of one
        type within `_CARRY_BRIDGE_YARDS` (60) of each other are treated as
-       one extended feature (bunker/water/ob), and a `trees` side's near/far
-       sample pair bridges unconditionally (it IS the bracket of one
-       continuous line), so a legitimate carry falling BETWEEN two samples
-       of the same real feature is not false-rejected. Per
+       one extended feature (bunker/water/ob), and a `trees` side's chain
+       entries bridge within `TREE_RUN_SPLIT_GAP_YDS` (120,
+       specs/caddie-tree-span-gap-plan.md §2b — the same threshold
+       `format_hazards_line` uses to split a tree line into spoken runs), so
+       a legitimate carry falling BETWEEN two samples of the same real run is
+       not false-rejected, while a carry landing in a genuinely open gap
+       between two SEPARATE runs is correctly rejected. Per
        guide-validator-cross-side-binding-plan.md, "its own side" for each
        bound number is the side word GRAMMATICALLY NEAREST TO THAT NUMBER
        among the keyword's own candidate side words (`_attributed_side`) —
@@ -934,13 +967,8 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
     # Defense-in-depth (security review): researched text is DATA — a field
     # that reads like an instruction, meta-prompt, or link is not golf advice.
     # Hazard grounding alone wouldn't catch "ignore previous instructions".
-    injection_pattern = re.compile(
-        r"(?:\bignore\b|\binstructions?\b|\byou are\b|\bsystem prompt\b|"
-        r"https?://|\bwww\.|<[a-z/!]|\bdisregard\b)",
-        re.IGNORECASE,
-    )
     for field_text in text_fields:
-        if injection_pattern.search(field_text or ""):
+        if GUIDE_INJECTION_PATTERN.search(field_text or ""):
             return None
 
     # A field carrying an internal newline (or carriage return) breaks the

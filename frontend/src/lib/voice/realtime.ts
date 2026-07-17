@@ -23,6 +23,7 @@ import {
   getSessionPlayerProfile,
   getSessionShotDistance,
   getSessionGreenRead,
+  sessionStrategy,
   type RealtimeSessionToken,
 } from '@/lib/caddie/api';
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
@@ -96,8 +97,21 @@ export interface RealtimeCaddieOptions {
 export async function dispatchTool(
   name: string,
   args: Record<string, unknown>,
-  ctx: { roundId: string; holeYards?: number | null; yardageBasis?: string | null },
+  ctx: {
+    roundId: string;
+    holeYards?: number | null;
+    yardageBasis?: string | null;
+    /** The hole the golfer is ACTUALLY looking at right now (specs/caddie
+     *  -live-p0-connect-hole-plan.md §3.1-3.2 — Bug B: the model's
+     *  `hole_number` arg can be stale after a swipe mid-turn). Ctx-first
+     *  override for the six hole-scoped tools below; `record_shot` stays
+     *  args-first (a shot is a statement about a just-played hole the
+     *  player often names explicitly) with this only as the omission
+     *  fallback. */
+    currentHole?: number | null;
+  },
 ): Promise<unknown> {
+  const liveHole = ctx.currentHole ?? undefined;
   switch (name) {
     case 'get_recommendation': {
       // No-fake-data (specs/caddie-numbers-coherence-plan.md §2.1 — root
@@ -108,7 +122,7 @@ export async function dispatchTool(
       // backend default when the model omits distance_yards.
       return await sessionRecommend({
         round_id: ctx.roundId,
-        hole_number: Number(args.hole_number),
+        hole_number: liveHole ?? Number(args.hole_number),
         distance_yards: args.distance_yards != null ? Number(args.distance_yards) : undefined,
         yards: ctx.holeYards ?? undefined,
         yardage_basis: ctx.yardageBasis ?? undefined,
@@ -117,9 +131,16 @@ export async function dispatchTool(
     case 'record_shot': {
       // Same endpoint as the sheet's shot logging — dual-writes the session
       // history AND the durable shots table (feeds post-round learning).
+      // ARGS-first (specs/caddie-live-p0-connect-hole-plan.md §3.2): a shot
+      // is a statement about a just-played action whose hole the player
+      // often names — the common "hole out -> swipe to next -> narrate
+      // previous hole's shots" flow would mis-file under an override. The
+      // live hole is only the fallback when the model omits it.
       return await recordShot({
         round_id: ctx.roundId,
-        hole_number: Number(args.hole_number),
+        // `Number(undefined)` is `NaN` — today's behavior, unchanged, when
+        // BOTH the model's args and the live hole are absent.
+        hole_number: Number(args.hole_number ?? liveHole),
         club: String(args.club),
         distance_yards: Number(args.distance_yards),
         result: args.result != null ? String(args.result) : undefined,
@@ -131,7 +152,7 @@ export async function dispatchTool(
     case 'get_conditions': {
       return await getSessionConditions(
         ctx.roundId,
-        args.hole_number != null ? Number(args.hole_number) : undefined,
+        liveHole ?? (args.hole_number != null ? Number(args.hole_number) : undefined),
       );
     }
     case 'get_player_profile': {
@@ -143,7 +164,7 @@ export async function dispatchTool(
       // loop resolves. Honest empties: available:false when the course isn't
       // mapped, an explicit empty list + note when the hole has no in-play
       // hazards. The persona must never invent a carry number.
-      return await getSessionCarries(ctx.roundId, Number(args.hole_number));
+      return await getSessionCarries(ctx.roundId, liveHole ?? Number(args.hole_number));
     }
     case 'get_bend': {
       // Where/how far the fairway bends — the same bend_payload the text
@@ -152,7 +173,7 @@ export async function dispatchTool(
       // The persona must never invent a dogleg direction or a distance.
       return await getSessionBend(
         ctx.roundId,
-        args.hole_number != null ? Number(args.hole_number) : undefined,
+        liveHole ?? (args.hole_number != null ? Number(args.hole_number) : undefined),
       );
     }
     case 'get_shot_distance': {
@@ -162,7 +183,7 @@ export async function dispatchTool(
       // (PHYSICS_GROUNDING_RULE), never do distance arithmetic itself.
       return await getSessionShotDistance({
         round_id: ctx.roundId,
-        hole_number: args.hole_number != null ? Number(args.hole_number) : undefined,
+        hole_number: liveHole ?? (args.hole_number != null ? Number(args.hole_number) : undefined),
         club: args.club != null ? String(args.club) : undefined,
         target_yards: args.target_yards != null ? Number(args.target_yards) : undefined,
       });
@@ -174,7 +195,21 @@ export async function dispatchTool(
       // compass slope direction to left/right itself.
       return await getSessionGreenRead({
         round_id: ctx.roundId,
+        hole_number: liveHole ?? (args.hole_number != null ? Number(args.hole_number) : undefined),
+      });
+    }
+    case 'get_strategy': {
+      // Frontier-reasoned tee-to-green strategy, synthesized server-side by the
+      // caddie brain (OpenAI gpt-5.6-sol) from the same engine payloads the other
+      // tools read. The holeYards/basis ride-along mirrors get_recommendation:
+      // the server's recommendation solve must use THIS turn's resolved yardage,
+      // never a stale cached number (no-fake-data). The persona speaks `strategy`
+      // faithfully (STRATEGY_TOOL_RULE) — never re-synthesizes.
+      return await sessionStrategy({
+        round_id: ctx.roundId,
         hole_number: args.hole_number != null ? Number(args.hole_number) : undefined,
+        hole_yards: ctx.holeYards ?? undefined,
+        yardage_basis: ctx.yardageBasis ?? undefined,
       });
     }
     case 'set_round_setup': {
@@ -255,12 +290,16 @@ export class RealtimeCaddieClient {
   // whose response.created hasn't arrived yet — those are unconditional.
   private selfTriggeredResponses = 0;
 
-  // Live getter for this turn's resolved hole yardage + basis
-  // (specs/caddie-numbers-coherence-plan.md §2.1) — set via setToolContext()
-  // by the owning hook (useCaddieLiveSession's holeContextRef), read fresh on
-  // every tool dispatch so a hole change or a GPS fix mid-round is reflected
+  // Live getter for this turn's resolved hole yardage + basis + the hole the
+  // golfer is actually on (specs/caddie-numbers-coherence-plan.md §2.1,
+  // extended by specs/caddie-live-p0-connect-hole-plan.md §3.1 for
+  // `currentHole`) — set via setToolContext() by the owning hook
+  // (useCaddieLiveSession's holeContextRef), read fresh on every tool
+  // dispatch so a hole change or a GPS fix mid-round is reflected
   // immediately, without reconstructing the client.
-  private toolContextProvider: (() => { holeYards?: number | null; yardageBasis?: string | null }) | null = null;
+  private toolContextProvider:
+    | (() => { holeYards?: number | null; yardageBasis?: string | null; currentHole?: number | null })
+    | null = null;
 
   // Cost control: disconnect after 90s with no conversation activity. The
   // connection is an ephemeral burst — a later press simply reconnects.
@@ -628,11 +667,14 @@ export class RealtimeCaddieClient {
     this.events = events;
   }
 
-  /** Bind the live hole-yardage/basis getter (specs/caddie-numbers-coherence
-   *  -plan.md §2.1) — the owning surface's OWN resolved-yardage ref, so
-   *  `get_recommendation` dispatch always reads the current value, not a
-   *  snapshot taken at construction/adoption time. */
-  setToolContext(getCtx: () => { holeYards?: number | null; yardageBasis?: string | null }): void {
+  /** Bind the live hole-yardage/basis/currentHole getter (specs/caddie
+   *  -numbers-coherence-plan.md §2.1, specs/caddie-live-p0-connect-hole
+   *  -plan.md §3.1) — the owning surface's OWN resolved-yardage/current-hole
+   *  ref, so tool dispatch always reads the current value, not a snapshot
+   *  taken at construction/adoption time. */
+  setToolContext(
+    getCtx: () => { holeYards?: number | null; yardageBasis?: string | null; currentHole?: number | null },
+  ): void {
     this.toolContextProvider = getCtx;
   }
 
@@ -1132,6 +1174,7 @@ export class RealtimeCaddieClient {
         roundId: this.opts.roundId ?? '',
         holeYards: toolCtx.holeYards,
         yardageBasis: toolCtx.yardageBasis,
+        currentHole: toolCtx.currentHole,
       });
     } catch (e) {
       output = { error: e instanceof Error ? e.message : String(e) };
