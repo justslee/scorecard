@@ -3,9 +3,19 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## 2026-07-17 IN-PROGRESS — course-intel seed rejection fix (Bethpage Red + Pebble Beach) — worktree agent-a86892fa81d2f87ee, base integration/next @36afad2
-DIAGNOSIS DONE (on-box SSM diagnostic, key-free, ~$0.09 of writer calls charged to the pre-approved
-3-course seed budget). Regenerated the writer+validator run for the EXACT rejected rows:
+## 2026-07-17 DONE (landed integration/next @f6f559b, re-seeded prod, PR opened) — course-intel seed rejection fix (Bethpage Red + Pebble Beach) — worktree agent-a86892fa81d2f87ee, base @36afad2
+VERDICTS: reviewer SHIP (all four anti-fabrication gates confirmed byte-identical & fail-closed; leak
+scan still covers full landscape; regression tests non-vacuous). qa PASS (ruff clean; 31/31 course-intel
+matrix; 147/147 offline sweep). RE-SEED on prod through the FIXED validator (key-free SSM, cost-logged,
+owner pre-approved 3-course-seed remainder ~$0.07): Bethpage Red (269e1f2e) landscape 800 -> PASS
+enriched [architect], stored text_len 919; Pebble Beach Golf Links (f8d6b570) landscape 804 -> PASS
+enriched [architect,year_built,style_notes,notable_history], stored text_len 1247; both readbacks
+provenance=enriched, model=claude-sonnet-5. All 3 seed courses now render live prose on the owner's home
+courses. NOTICEABLE (both descriptions go live). Bundle PR opened integration/next -> main. NOT
+shipped/pinged this cycle (per brief). Diagnosis detail below.
+
+DIAGNOSIS (on-box SSM diagnostic, key-free, ~$0.09 of writer calls on the pre-approved seed budget).
+Regenerated the writer+validator run for the EXACT rejected rows:
 - Bethpage Red id=269e1f2e-65cc-5cf6-a9b0-f5908e298155 (18 holes, par 70)
 - Pebble Beach Golf Links id=f8d6b570-f54e-56d8-890c-000e85a42c95 (18 holes, par 72)
 ROOT CAUSE = (b) over-strict validator length gate, for BOTH. `_MAX_LANDSCAPE_CHARS=700` in
@@ -23,14 +33,6 @@ new thresholds. Injection/fact-leak/confidence/par-claim gates UNTOUCHED. Gates 
 test_course_intel_writer 21/21, test_course_intel_service 10/10, guide_writer siblings green (147 total
 offline). DB-route integration test runs in CI.
 
-## AWAITING — reviewer + qa on the landed course_intel_writer length-cap fix (pushed to integration/next)
-Self-implemented (2-constant precision fix + tests; too small to warrant a builder sub-agent in the
-worktree). On reviewer SHIP + qa PASS -> re-seed prod: ship the reviewed course_intel_writer.py to the
-box, clear the negative-cache for the two rows, re-run the seed through the FIXED validator, verify
-opening lines + verdicts (report verbatim). Then open the next bundle PR (integration/next -> main),
-update checklist + backlog item 57 resolution + this log. On BLOCKING -> fix + re-push + re-review.
-Do NOT ship/ping this cycle. Reviewer verdict target: does raising the two length caps keep the
-validator fail-CLOSED (length is orthogonal to the injection/leak/confidence/par gates)?
 
 ## 2026-07-17 BUILDER FIXUP DONE — caddie two-tier advice routing, reviewer fixup batch on worktree agent-a84640c5c3166ffd8, 4 commits, all gates green
 Review verdict on @7d2f94d: 2 BLOCKING (false-positive validator regexes) + 3 fold-ins. Fixed all,
