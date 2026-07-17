@@ -52,6 +52,50 @@ course-search/nav later, list-add not rearchitect). Added acceptance: live "put 
 scorecard+confirm+no advice path; matrix discriminator "what do I need to shoot par on the back nine" =
 FACT/engine, not score-entry. Folded into the same Fable plan via SendMessage.
 
+## 2026-07-17 BUILDER DONE — caddie two-tier advice routing (OWNER CRUX, NOTICEABLE) — worktree agent-a84640c5c3166ffd8, 7 commits, all gates green
+Implemented specs/caddie-two-tier-routing-plan.md in full, build order §13, one commit per step:
+1. `backend/app/caddie/routing.py` (pure classify_intent + Intent enum, extensible rules-list seam) +
+   `tests/test_intent_routing.py` (26 tests, full 20-row matrix).
+2. `backend/app/caddie/verdict.py` (extract_favor_side + guide_agrees_with_verdict) + read-time guide gate
+   wired into `strategy.py::build_strategy_payload` + verdict-pinned `validate_strategy_text` extension
+   (favor-side / positioning-reachability / recommended-club pins) + honest tendencies/dispersion PLAYER
+   block + "PRIOR NOTES (may be stale)" demotion label + `tests/test_guide_verdict_gate.py` + 7 new cases
+   in `eval/test_strategy_tool.py`.
+3. `backend/app/caddie/strategy_turn.py::run_strategy_turn` extracted verbatim from `session_strategy`
+   (route now a thin wrapper) — zero behavior change, existing route tests pass unmodified.
+4. Context strips: `voice_prompts.py::_situation_block` + `caddie.py::_build_session_voice_prompt` drop
+   hazard/bend/guide/green-slope (kept: tee-numbers/aim/miss/par-sanity, weather, clubs, history) +
+   strengthened `STRATEGY_TOOL_RULE` with the spoken thinking-bridge + `tests/test_situation_block_strip.py`.
+   INVERTED (spec-driven, not deleted, per plan's own audit list): 2 tests in test_realtime_grounding.py,
+   2 in test_guide_consumption.py, 2 in test_realtime_tools.py, 1 in test_voice_stream.py — all now assert
+   ABSENCE. Also inverted (found running the suite, not in the plan's list): 2 golden tier1 bend scenarios
+   in eval/golden/caddie_advice.jsonl — added a small `context_not_contains` tier1 check type
+   (schema.py/checks.py) rather than deleting scenario coverage. Adjusted one caching test's probe
+   transcript ("what club?" -> "How's the wind?") since "what club" is now correctly ADVICE-class per the
+   plan's own matrix and would intercept before the Claude loop that test is about.
+5. Text-path interception in `session_voice`/`session_voice/stream` (`classify_intent` before the Claude
+   loop; ADVICE -> run_strategy_turn, SCORE -> honest handoff line, FACT/OTHER unchanged) + "reading the
+   hole" SSE status label (tool_loop.py) + `tests/test_text_advice_interception.py` (poisoned-Anthropic
+   proof Claude never starts on an intercepted turn).
+6. Red-1 acceptance: `tests/fixtures/bethpage_red1_poisoned_guide.json` (reconstructed, hand-built, no
+   prod/staging access) + `tests/test_red1_acceptance.py` on REAL Bethpage RED hole-1 tree geometry —
+   confirmed empirically the engine's own verdict is "favor the right side — left has trouble in the
+   driving zone" (never left), the poisoned guide is dropped at read time, and the verdict pin
+   independently rejects a synthetic left-favor narrative.
+7. Backend `record_scores` registered REALTIME_ONLY_TOOLS (never TEXT_TOOLS) + frontend: realtime.ts
+   get_strategy GPS fix (distance_to_green_yards forwarded when basis='gps' — was missing entirely) +
+   new ScoreEntryResult/RealtimeToolContext types + `record_scores` dispatch -> `ctx.enterScores` + new
+   `lib/caddie/score-entry.ts::resolveScoreEntry` (pure routing glue: EXISTING parse-scores parser +
+   EXISTING handleSetScore write path, zero rewrites, no confirm ceremony) threaded RoundPageClient ->
+   useDetachedCaddieLive -> useCaddieLiveSession -> dispatchTool.
+Gates (all green): backend ruff clean; backend pytest (not integration) 2770 passed; frontend tsc clean;
+frontend build green; frontend lint 0 errors/1 pre-existing-pattern warning (handleSetScore not memoized,
+unrelated to this item); frontend vitest 2698/2698 passed (139 files); voice-tests smoke 278/278.
+Did NOT run: live-key-gated latency/consistency probes (no key here, plan marks these pre-ship/gated) or
+Postgres-backed integration tests (no local DB — CI backend gate covers those).
+Ships HELD per plan — reviewer(adversarial) + qa(gates+Red-1+matrix+strip+score-entry) + designer
+(thinking-bridge + "reading the hole" copy) still needed before this NOTICEABLE bundle item ships.
+
 ## 2026-07-17 DONE — draggable yardage-book aim target, NOTICEABLE, committed to worktree-agent-ad870b071dfc686ee (maps to integration/next) @ b142f40 (not yet pushed by builder — eng-lead pushes)
 Owner ask: "Can you make the target draggable? The one on the yardage book and map?" Built
 per specs/draggable-target-plan.md + specs/yardage-target-concept.md. Map surface
