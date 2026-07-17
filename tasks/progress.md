@@ -19004,7 +19004,14 @@ active incl. after drag so × stays reachable; collapse to default ###Y when cle
 (kills double-pill + collision); move × into the DOM pill (>=44px); (reviewer#1) add onPointerDownCapture
 stopPropagation on hit circle (mirror RoundPageClient.tsx:1983); (cleanup) remove dead movedRef/startClientRef.
 NON-fix/owner-note: off-line "from tee" can exceed printed hole yards (euclidean corner-cut; intentional).
-On builder DONE: designer BLOCKING re-render + reviewer light check (state lift + capture) + re-run gates.
-HOLD ship. If I die: reconcile from origin/integration/next; last good code @b142f40, fixup pending.
+Builder fixup DONE @997e318 (pushed): deleted in-SVG panel; HoleIllustration surfaces readout via onAimChange
+callback + forwardRef {clearAim}; HoleCard's existing top-right pill grows to two-line FROM TEE/TO GREEN while
+custom aim active, collapses to default ###Y otherwise; × now 44x44 DOM button; onPointerDownCapture on hit
+circle + × (capture-phase framer isolation); dead movedRef/startClientRef removed. Gates green (lint/tsc/build,
+voice 278/278, unit 16/16, map+yardage 349/349).
+AWAITING (parallel): designer a600b92de11282834 (BLOCKING re-render — single pill + no dogleg collision) +
+reviewer a2c750d73f25d1623 (focused: render-loop/effect safety, forwardRef, capture on × still clears, no map
+regress). On both PASS/SHIP: open bundle PR (NOTICEABLE), update backlog, HOLD ship (owner's next approval).
+Any BLOCK -> re-dispatch builder. If I die: reconcile from origin/integration/next @997e318; reviewers read-only.
 Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
 origin/integration/next + worktree commits; do NOT re-run a finished child.
