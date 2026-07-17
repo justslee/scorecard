@@ -3,6 +3,64 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 DONE — caddie-tree-span-gap (Bethpage Red P0), NOTICEABLE (caddie-audible), pushed @ 6feb8a4 on origin/integration/next
+Implemented specs/caddie-tree-span-gap-plan.md exactly (no re-plan) — owner P0, Bethpage Red tree
+distances "wrong off the tee." `format_hazards_line` (backend/app/caddie/hazards.py) now splits a
+trees group's sorted carries into gap-separated spoken RUNS instead of one collapsed min-max span:
+new public `TREE_RUN_SPLIT_GAP_YDS = 120` constant + new pure `_tree_runs` helper split wherever a
+consecutive delta exceeds 120y (justification comment on the constant, per plan §1b); near-tee
+suppression (`_TREE_NEAR_TEE_SUPPRESS_YDS = 100`) drops a tee-flanking first run iff the side has
+>=2 runs; >3-surviving-runs falls back to today's full span (honest superset). Bunker/water
+rendering is BYTE-FOR-BYTE unchanged (verified — all existing hazard tests pass unmodified).
+Verified on Red 1/5/6: Red 1 "trees R 5-475y, trees L 30-480y" -> "trees L 265-480y, trees R
+385-475y" (closes the owner's actual complaint — the old line hid the real ~200-300y open drive
+zones); Red 5/6 unchanged ("trees R 105-170y" / "trees R 40-310y", both intra-line gaps <=120y).
+`guide_writer._carry_runs`'s trees bridge moved from unconditional (bridge=None, deleted) to
+`TREE_RUN_SPLIT_GAP_YDS` (imported from hazards.py) — fail-closed tightening: a guide claim landing
+in a real open gap is now correctly REJECTED where it was wrongly accepted before; updated the
+stale docstrings + the now-flipped test_guide_writer.py assertions (renamed
+test_carry_span_passes_tree_line_mid_span -> _rejects_tree_claim_inside_open_gap, added two
+accept-within-tolerance companions) — this is a genuine spec-encoded defect fix, not a weakened
+assertion (the old test literally asserted the bug the plan exists to fix). tests/eval/checks.py
+`context_hazards_match` now scans ALL `type SIDE lo-hi` tokens via `finditer` (was
+search-first-match-only) so a split line's later run isn't false-failed. Two never-raise INFO logs
+added: `hole_hazards_intel` in /course-intel's hole loop (routes/caddie.py, right after
+`intel.hazards = extract_hole_hazards(...)`) and `caddie_reco_context` in `/session/recommend`
+(numbers/geometry only, no PII/GPS/keys) — placed the Site-B log directly in `session_recommend`
+itself (not inside `caddie_tools.recommend_payload`) per the plan's literal "routes/caddie.py:611
+path" wording, using the returned recommendation dict's `tee_shot_numbers` block.
+
+Fixture `backend/tests/fixtures/bethpage_red_trees.json` built from the scratchpad geodesic-verified
+dumps (holes 1/5/6, tee/green/hole-line/tree geometry + already-deployed carries) — §4a reconstruction
+recipe VERIFIED to reproduce the deployed engine carries EXACTLY (hole 1 R [5,35,65,85,385,420,450,475]
+L [30,65,265,285,310,355,390,430,475,480]; hole 5 R [105,155,170]; hole 6 R [40,135,195,225,255,310] —
+all bit-for-bit). New `backend/tests/test_tree_span_gap.py` (7 tests: reconstruction invariance,
+hole-1 exact split + structural drive-zone-clear, hole-6 continuity anti-overfit, hole-5 merge) +
+extended `test_hazards.py`/`test_tree_hazards.py` with synthetic boundary tests (120/125 delta,
+non-trees never split, group-cap-counts-once x2, >3-runs fallback, suppression edges incl.
+only-run-never-suppressed, 8-bearing invariant sweep for split+suppress).
+
+One deviation from the plan's literal wording, judged minimal/sound: plan §1c says "if more than 3
+runs SURVIVE" for the fallback — implemented as post-suppression (suppress first, then check >3),
+the more literal reading of "survive"; documented in the synthetic fallback test with a fixture that
+avoids triggering suppression so the >3 path is exercised cleanly. Also fixed a self-contradictory
+sub-assertion in my own §4b test 2 draft (`"5-475" not in line` is mathematically impossible to
+satisfy alongside the plan's own exact-match `"...trees R 385-475y"`, since "385-475y" contains
+"5-475" as a raw substring) — used a word-boundary regex (`\b5-475y\b`) instead, which correctly
+encodes the intended guard (the OLD full collapsed token is absent) without false-failing on the
+verified-correct new output; not a weakened assertion, the primary exact-match (independently
+verified against the fixture) is the load-bearing check and was never touched.
+
+Gates: `ruff check .` clean. `pytest tests/test_hazards.py tests/test_tree_hazards.py
+tests/test_tree_span_gap.py tests/test_guide_writer.py tests/eval/test_harness_has_teeth.py
+tests/eval/test_golden_tier1.py -q` -> 321 passed, 0 failed. Also spot-checked
+test_bethpage_validation.py + test_realtime_tools.py + test_miss_side_grounding.py (non-DB,
+touched by the guide_writer/checks.py changes) -> 50 passed, no regressions. No DB/Postgres spun up
+locally (backend integration/DB gate runs in CI per policy). NEXT: eng-lead review — this is
+NOTICEABLE (the caddie will now speak materially different, more accurate hazard lines on any hole
+with a real tree-line gap, most visibly Bethpage Red 1) and is the owner's live P0, so likely wants
+prompt QA + a push once bundled.
+
 ## 2026-07-16 DONE — caddie-advice-model-decoupling, SILENT, committed @ a323851 (on worktree branch tracking integration/next, NOT pushed — eng-lead rebases+pushes)
 Implemented specs/caddie-advice-model-plan.md Steps 1-3 exactly (no re-plan). `_advice_model()`
 helper added in backend/app/routes/caddie.py (CADDIE_ADVICE_MODEL -> ANTHROPIC_MODEL ->
