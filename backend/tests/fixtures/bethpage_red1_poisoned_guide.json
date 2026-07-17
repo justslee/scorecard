@@ -1,0 +1,14 @@
+{
+  "_provenance": "reconstructed",
+  "_note": "specs/caddie-two-tier-routing-plan.md §11 Red-1 acceptance: a RECONSTRUCTED HoleStrategyGuide for the poisoned-guide incident class. play_line/miss_side correctly name the LEFT trees Bethpage RED hole 1 actually has (per tests/fixtures/bethpage_red_trees.json's already-verified ±5y geodesic ground truth — trees LEFT from ~265y) yet still advise favoring/aiming LEFT: a guide that passes validate_guide's hazard/side/carry grounding cleanly while still advising straight into the hazard it just named correctly. This is what the read-time verdict gate (app.caddie.verdict) exists to catch — hazard grounding alone cannot. Not fetched from prod/staging; built by hand for this test only.",
+  "guide": {
+    "play_line": "Trees line the left side of the fairway starting around 265 off the tee — favor the left half of the fairway anyway for the best angle into the green.",
+    "miss_side": "Best miss is left, staying well clear of the water right of the landing area.",
+    "green_notes": "",
+    "common_mistakes": [],
+    "sources": [],
+    "generated_at": "2026-07-17T00:00:00Z",
+    "model": "reconstructed",
+    "schema_version": 1
+  }
+}
