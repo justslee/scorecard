@@ -18530,3 +18530,20 @@ msg can't authorize prod-secret access (local fetch AND on-box SSM both denied; 
 So default from public catalog + runtime safeguard: log resolved model key-free, fail honestly (never fabricate)
 on a 404 model id. Definitive snapshot verification needs an owner-approved on-box probe (flagged in plan Risks).
 Correction SENT to the running Plan(fable) agent (aeb14676d2cb44a1b) — same architecture, swapped brain.
+
+## PLAN DONE + AWAITING builder — caddie-smart-strategy-tool @ specs/caddie-smart-strategy-tool-plan.md
+Plan(fable) delivered the architecture; brain SWAPPED to OpenAI gpt-5.6-sol per owner directive (the
+planner defaulted to Sonnet 5 — my correction arrived after it completed, so I wrote the final spec
+myself with the OpenAI brain: Responses API via raw httpx, reasoning{effort:"low"}, max_output_tokens
+1024, no temperature, env CADDIE_STRATEGY_MODEL default gpt-5.6-sol; fail-closed validator + degraded
+line; realtime-only tool; POST /caddie/session/strategy; STRATEGY_TOOL_RULE routing; parity-test
+amendment). Spec landed on integration/next @5145fea (rebased over the 1.1.11 VERSION bump for #144).
+Working in isolated worktree agent-a380dd83012eda967 (branch worktree-agent-a380dd83012eda967 @5145fea
+= origin/integration/next). NOTE: bundle #144 has a release VERSION bump (1.1.11) — a ship may be in
+motion; if #144 merges + integration/next recuts, REBASE the builder's branch onto the fresh tip at
+land time (my work is on the isolated branch, safe).
+On resume: reconcile from the worktree branch; if the builder's commit is present, run reviewer+qa;
+if not, re-dispatch builder per the spec. Builder commits to the worktree branch (does NOT push/PR);
+eng-lead reviews (reviewer fresh + qa gates) then lands on integration/next as NOTICEABLE on PR #144.
+Latency/eval are gated-live (no OPENAI/ANTHROPIC key locally) → honest note, not fabricated numbers.
+Do NOT ship/ping (caller INERT).
