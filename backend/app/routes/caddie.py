@@ -980,8 +980,10 @@ or known tendencies when relevant.
 # parser + the existing score write path, wired client-side); the text path
 # has no live tool-context (players/handleSetScore) to route a write through
 # yet. A constant, never model-generated — the seam accepts a future
-# server-side write without rearchitecting this interception.
-_SCORE_TEXT_HANDOFF_LINE = "Score entry runs on the live caddie or the score sheet."
+# server-side write without rearchitecting this interception. First-person,
+# spoken-style wording (designer fold-in, 2026-07-17) — this line is TTS'd,
+# not read as app copy.
+_SCORE_TEXT_HANDOFF_LINE = "Scores go through the live caddie or your scorecard for now."
 
 
 @router.post("/session/voice", response_model=VoiceCaddieResponse)

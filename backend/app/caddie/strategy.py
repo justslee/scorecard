@@ -417,9 +417,22 @@ _STRATEGY_MAX_CHARS = 600
 
 # Positioning-shot reachability pin (specs/caddie-two-tier-routing-plan.md
 # §6.2) — POSITIONING_SHOT_RULE enforced deterministically: on a positioning
-# turn the flag doesn't exist for this swing, so pin-relative language is
-# always wrong, model-repeated-guide or not.
-_PIN_RELATIVE_PATTERN = re.compile(r"\b(?:at|of|from) the (?:flag|pin)\b|\bdead aim\b|\bpin.high\b")
+# turn the flag doesn't exist for this swing, so genuine AIM-AT-THE-PIN
+# language is always wrong, model-repeated-guide or not.
+#
+# B2 fix (eng-lead review, 2026-07-17): the original `\b(?:at|of|from) the
+# (flag|pin)\b` alternation false-positived on CORRECT positioning phrasing —
+# "lay up to about 100 short OF THE pin", "leaves a full wedge in FROM THE
+# pin" — degrading good brain advice to the terse engine line on exactly the
+# layup turns this feature targets. Dropped `of|from`; "at the (flag|pin)" is
+# now gated on an AIM VERB nearby (never a bare "look at the pin"/"short of
+# the pin"), so only genuine pin-relative aim language rejects.
+_AIM_VERB = r"(?:aim|target|play|send)"
+_PIN_RELATIVE_PATTERN = re.compile(
+    rf"\b{_AIM_VERB}\w*\b[^.?!]{{0,25}}\bat the (?:flag|pin)\b"
+    r"|\bdead aim\b"
+    r"|\bpin.high\b"
+)
 
 
 def _verdict_pin_reject_reason(flat: str, recommendation: Optional[dict]) -> Optional[str]:
@@ -446,7 +459,15 @@ def _verdict_pin_reject_reason(flat: str, recommendation: Optional[dict]) -> Opt
     if recommendation.get("tee_shot_numbers"):
         rec_club = recommendation.get("club")
         rec_club_display = CLUB_DISPLAY_NAMES.get(rec_club, rec_club) if rec_club else None
-        mentioned_clubs = [name for name in CLUB_DISPLAY_NAMES.values() if name.lower() in lowered]
+        # B1 fix (eng-lead review, 2026-07-17): a bare substring check false-
+        # positived on ordinary words containing a 2-letter club abbreviation
+        # — "swing" contains "sw" (Sand Wedge), "always" contains "lw" (Lob
+        # Wedge) — silently degrading a correct, on-side narrative. Word-
+        # boundary match instead.
+        mentioned_clubs = [
+            name for name in CLUB_DISPLAY_NAMES.values()
+            if re.search(rf"\b{re.escape(name.lower())}\b", lowered)
+        ]
         if mentioned_clubs and (rec_club_display is None or rec_club_display not in mentioned_clubs):
             return "club"
 

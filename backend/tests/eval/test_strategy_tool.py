@@ -405,9 +405,29 @@ def test_validator_rejects_lateral_favor_when_engine_says_center():
 
 
 def test_validator_rejects_pin_relative_language_on_positioning_shot():
+    """B2 (eng-lead review, 2026-07-17): genuine AIM-AT-THE-PIN language —
+    the flag doesn't exist for an unreachable positioning swing — still
+    rejects. The old text here used 'left OF THE flag', which the B2 fix
+    deliberately un-flags (see the pass-on-good regression right below);
+    'take dead aim at the pin' is unambiguous pin-relative language."""
     rec = {"miss_side": {"preferred": "center"}, "shot_kind": "positioning"}
-    text = "Hit driver. Aim 9 yards left of the flag. Commit to the shot."
+    text = "Hit driver. Take dead aim at the pin. Commit to the shot."
     assert strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec) is None
+
+
+def test_validator_passes_positioning_narrative_with_short_of_or_from_the_pin_phrasing():
+    """B2 regression (eng-lead review): natural, CORRECT positioning-shot
+    phrasing — 'short of the pin', 'wedge in from the pin' — must never trip
+    the reachability pin. Only genuine aim-AT-the-pin language should; the
+    original `\\b(at|of|from) the (flag|pin)\\b` alternation was silently
+    degrading exactly the layup/positioning advice this feature targets."""
+    rec = {"miss_side": {"preferred": "center"}, "shot_kind": "positioning"}
+    text = (
+        "Lay up to about 100 short of the pin, that leaves a full wedge in "
+        "from the pin. Commit to the number."
+    )
+    result = strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec)
+    assert result == text
 
 
 def test_validator_requires_recommended_club_on_tee_shot_narrative():
@@ -418,6 +438,22 @@ def test_validator_requires_recommended_club_on_tee_shot_narrative():
     }
     text = "Hit the 3 Wood here, safe play. Bunker left. Water right."
     assert strategy_mod.validate_strategy_text(text, _REAL_HAZARDS, recommendation=rec) is None
+
+
+def test_validator_passes_tee_shot_narrative_containing_swing_and_always_substrings():
+    """B1 regression (eng-lead review): 'swing' contains 'sw' (Sand Wedge
+    display 'SW') and 'always' contains 'lw' (Lob Wedge 'LW') as BARE
+    SUBSTRINGS — the club pin must use word-boundary matching, never a
+    substring `in` check, or these ordinary words silently degrade a
+    correct, on-side tee-shot narrative to the terse engine line."""
+    rec = {
+        "miss_side": {"preferred": "right"},
+        "club": "driver",
+        "tee_shot_numbers": {"club": "driver"},
+    }
+    text = "Hit driver. Commit to a confident swing and always favor the right side off this tee."
+    result = strategy_mod.validate_strategy_text(text, hazards=[], recommendation=rec)
+    assert result == text
 
 
 def test_validator_without_recommendation_behaves_exactly_as_before():
