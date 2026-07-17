@@ -18652,3 +18652,13 @@ Diagnosis PROVEN & committed. Next: Plan(fable) -> specs/caddie-tree-span-gap-pl
 formatter + how it threads the 3 caddie call-sites + guide_writer + fixtures + observability + the near-tee
 product flag); then builder implements; reviewer (hand-check a hole trig + verify fix not fixture-calibrated);
 qa gates. SHIPS HELD until reviewer+qa green. Do NOT ship/ping.
+
+## 2026-07-17 PLAN(fable) DONE — specs/caddie-tree-span-gap-plan.md; AWAITING builder
+Fable plan verified against real ground truth (reconstruction reproduces deployed carries bit-for-bit;
+split prototyped at 40/100/120 on real chains). Fix = trees-only run-split in format_hazards_line at new
+TREE_RUN_SPLIT_GAP_YDS=120 (3x the chain's 40y gap bound; splits only real preserved gaps; 40 rejected as
+over-fragmenting Red 5/6). Red 1 -> "trees L 265-480y, trees R 385-475y" (drive zone shown clear). Near-tee
+suppression (<=100y first run when a farther run exists). guide_writer validator bridge=None -> 120 (was
+accepting hallucinated open-zone tree carries). Fixtures backend/tests/fixtures/bethpage_red_trees.json
+(holes 1/5/6). Observability: hole_hazards_intel + caddie_reco_context log.info. Measurement geometry
+UNTOUCHED. Dispatching builder now (commit + push before await). Do NOT ship/ping.
