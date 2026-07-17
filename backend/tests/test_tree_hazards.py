@@ -356,6 +356,53 @@ class TestTreeHazards:
         assert line.count("trees") == 1
         assert "160y" not in line, "the last-sorted (highest-carry) trees group is the one dropped"
 
+    def test_format_group_cap_split_trees_group_still_counts_once(self):
+        """Extends T9 (specs/caddie-tree-span-gap-plan.md §4c): the SAME
+        7-group fixture, but the trees LEFT group now has two widely
+        separated samples (delta 240y, > TREE_RUN_SPLIT_GAP_YDS) that render
+        as two SPOKEN runs. The group still counts as ONE (type, side) slot
+        toward `_FORMAT_GROUP_CAP` (6) — it is still the single trailing
+        group dropped, exactly as in T9, never two."""
+        hazards = [
+            Hazard(type="bunker", side="left", carry_yards=100, line_side="left"),
+            Hazard(type="bunker", side="right", carry_yards=110, line_side="right"),
+            Hazard(type="bunker", side="center", carry_yards=120, line_side="center"),
+            Hazard(type="water", side="left", carry_yards=130, line_side="left"),
+            Hazard(type="water", side="right", carry_yards=140, line_side="right"),
+            Hazard(type="trees", side="left", carry_yards=150, line_side="left"),
+            Hazard(type="trees", side="left", carry_yards=390, line_side="left"),
+            Hazard(type="trees", side="right", carry_yards=160, line_side="right"),
+        ]
+        line = format_hazards_line(9, hazards)
+        assert "130y" in line and "140y" in line, "water groups must never be dropped in favor of trees"
+        assert line.count("trees") == 1, "the split trees L group still occupies a single slot"
+        assert "150y" in line and "390y" in line, "both runs of the surviving trees L group render"
+        assert "160y" not in line, "the last-sorted (highest-carry) trees group is the one dropped, whole"
+
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_tree_run_split_and_suppression_identical_at_all_eight_bearings(self, bearing):
+        """specs/caddie-tree-span-gap-plan.md §4c — a two-stand LEFT fixture
+        (a near-tee stand ~30-60y, a far stand ~280-320y, gap ~220-250y >
+        TREE_RUN_SPLIT_GAP_YDS) renders the SAME split-and-suppressed line at
+        every compass heading: the near stand's run (far end ~60 <=
+        _TREE_NEAR_TEE_SUPPRESS_YDS) is suppressed because the far run also
+        exists, leaving only the far run spoken — trees inherit the shared
+        bearing-independent frame, same as `test_tree_side_at_all_eight_
+        bearings` and `test_bracketing_woods_left_stays_left_at_all_eight_
+        bearings`."""
+        tee_feat, green_feat = _hole_at_bearing(bearing, green_yards=400.0)
+        near_stand = [
+            _hazard_at_bearing(bearing, along=a, lateral=30, feature_type="tree")
+            for a in (30, 45, 60)
+        ]
+        far_stand = [
+            _hazard_at_bearing(bearing, along=a, lateral=30, feature_type="tree")
+            for a in (280, 300, 320)
+        ]
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, *near_stand, *far_stand))
+        line = format_hazards_line(1, hazards)
+        assert line == "Hole 1 hazards: trees L 280-320y"
+
     def test_crossing_woods_center_band(self):
         """T10: a woods ring with >=3 vertices within the 10y deadband,
         spanning along 180-220y -> `trees C 180-220y` (the honest

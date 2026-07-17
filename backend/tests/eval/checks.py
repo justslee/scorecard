@@ -299,21 +299,36 @@ def check_hazards_line_empty_when_no_hazards(ctx: Tier1Context, check: Tier1Chec
 
 def context_hazards_match(hazards_line: str, expected: list[dict]) -> CheckResult:
     """Every expected `{type, side, carry?}` entry must appear in the
-    formatted hazards line; `carry` (if given) must land within 15y of the
-    line's stated range — the same along-path-vs-chord slack the real
-    Bethpage-4 fixture carries (test_bethpage_validation.py)."""
+    formatted hazards line; `carry` (if given) must land within 15y of SOME
+    matched range — the same along-path-vs-chord slack the real Bethpage-4
+    fixture carries (test_bethpage_validation.py).
+
+    Scans ALL `type SIDE lo[-hi]y` tokens for the (type, side) pair via
+    `finditer`, not just the first (the old `re.search`) — a gap-preserving
+    trees line can render multiple runs for one side
+    (specs/caddie-tree-span-gap-plan.md, e.g. `trees L 30-65y and
+    265-480y`), and a `search`-only scan would false-fail an expected carry
+    that only the SECOND run covers. The check passes when ANY matched range
+    covers the expected carry ±15y — it does not need every range to."""
     for e in expected:
         etype, eside = e["type"], e["side"]
         ecarry = e.get("carry")
         pattern = re.compile(rf"\b{re.escape(etype)}\s+{re.escape(eside)}\s+(\d+)(?:-(\d+))?y\b")
-        m = pattern.search(hazards_line)
-        if not m:
+        matches = list(pattern.finditer(hazards_line))
+        if not matches:
             return CheckResult(False, f"expected {etype!r} {eside!r} not found in hazards line: {hazards_line!r}")
-        if ecarry is not None:
+        if ecarry is None:
+            continue
+        ranges = []
+        for m in matches:
             lo = int(m.group(1))
             hi = int(m.group(2)) if m.group(2) else lo
-            if not (lo - 15 <= ecarry <= hi + 15):
-                return CheckResult(False, f"expected carry ~{ecarry}y, hazards line has {lo}-{hi}y")
+            ranges.append((lo, hi))
+            if lo - 15 <= ecarry <= hi + 15:
+                break
+        else:
+            ranges_str = ", ".join(f"{lo}-{hi}y" for lo, hi in ranges)
+            return CheckResult(False, f"expected carry ~{ecarry}y, hazards line has {ranges_str}")
     return CheckResult(True, "ok")
 
 

@@ -108,6 +108,48 @@ def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str], call_in
         log.debug("caddie_usage log failed", exc_info=True)
 
 
+def _log_hole_hazards_intel(intel: HoleIntelligence, tee: Optional[dict]) -> None:
+    """Site A (specs/caddie-tree-span-gap-plan.md §5): one structured line
+    per hole at intel-build time (the session-start `/course-intel` path) —
+    hole / rendered hazards line / hazard count / tee anchor. Numbers and
+    course geometry only, no PII/user GPS/keys — greppable from journalctl
+    by event name for the next field report. Never raises."""
+    try:
+        log.info(
+            "hole_hazards_intel",
+            extra={
+                "hole": intel.hole_number,
+                "hazards_line": format_hazards_line(intel.hole_number, intel.hazards),
+                "n_hazards": len(intel.hazards),
+                "tee_lat": (tee or {}).get("lat"),
+                "tee_lng": (tee or {}).get("lng"),
+            },
+        )
+    except Exception:  # noqa: BLE001 — logging must never break a reply
+        log.debug("hole_hazards_intel log failed", exc_info=True)
+
+
+def _log_caddie_reco_context(hole_number: int, hazards_line: str, tsn: Optional[dict]) -> None:
+    """Site B (specs/caddie-tree-span-gap-plan.md §5): one structured line
+    per recommendation — hole / rendered hazards line / tee-shot numbers.
+    `tsn` is the dumped `rec.tee_shot_numbers` block (``None`` when the
+    recommendation has no tee-shot block, e.g. an approach-only club call);
+    fields are `None` when absent. Never raises."""
+    try:
+        tsn = tsn or {}
+        log.info(
+            "caddie_reco_context",
+            extra={
+                "hole": hole_number,
+                "hazards_line": hazards_line,
+                "to_green_yards": tsn.get("to_green_yards"),
+                "drive_total_yards": tsn.get("drive_total_yards"),
+            },
+        )
+    except Exception:  # noqa: BLE001 — logging must never break a reply
+        log.debug("caddie_reco_context log failed", exc_info=True)
+
+
 def _advice_model() -> str:
     """Model for the text advice mouths only. Dedicated env so the advice
     path moves independently of the other ANTHROPIC_MODEL consumers
@@ -615,7 +657,7 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
     the text tool loop (parity by construction).
     """
     session = await get_owned_session(request.round_id, user_id)
-    return await caddie_tools.recommend_payload(
+    result = await caddie_tools.recommend_payload(
         session,
         request.round_id,
         request.hole_number,
@@ -626,6 +668,15 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
         competition_legal=request.competition_legal,
         yardage_basis=request.yardage_basis,
     )
+    if "error" not in result:
+        # Site B (specs/caddie-tree-span-gap-plan.md §5) — once the
+        # recommendation exists, log its hazards line + tee-shot numbers.
+        hole_intel = session.hole_intel.get(request.hole_number)
+        hazards_line = (
+            format_hazards_line(request.hole_number, hole_intel.hazards) if hole_intel else ""
+        )
+        _log_caddie_reco_context(request.hole_number, hazards_line, result.get("tee_shot_numbers"))
+    return result
 
 
 # ── Session-aware voice ──
@@ -1313,6 +1364,7 @@ async def get_course_intel(
                         tee=hc.get("tee"),
                         green=hc.get("green"),
                     )
+                    _log_hole_hazards_intel(intel, hc.get("tee"))
                     intel.bend = extract_hole_bend(
                         stored_features,
                         tee=hc.get("tee"),
