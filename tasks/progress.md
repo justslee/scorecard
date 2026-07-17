@@ -100,9 +100,19 @@ never confident right); 8-bearing invariant; Red-2 reach fixture (greenside bunk
 payload; bomber total 350 -> included); existing miss-side/corridor tests stay green (or corrected if
 they encoded the flip — document). Frontend cross-check bunker letter/legend side source.
 
-Plan -> specs/caddie-hazard-side-reach-plan.md. Outcomes: Plan returns -> dispatch builder on the plan;
-then reviewer (adversarial, construct a still-misclassifying layout) + qa (gates SUCCESS on pushed head +
-caddie-experience green). On usage/spend error: checkpoint + STOP. Do NOT ship/ping (owner brief).
+Plan(fable) DONE -> specs/caddie-hazard-side-reach-plan.md written. Key: frontend ALREADY sends the
+player's tee (`tee: c.tee`), backend ignores it -> Fix A contained to `_derive_tee_green`. Fix B =
+gap-bounded chain sampling (new _TREE_SPAN_MAX_GAP_YDS=40) so a bracketing tree line keeps a
+landing-zone entry. Fix C = optional `max_reach_yds` on drive_zone_hazards, fed drive_total_yards at
+aim_point.py:874/876. No shared-type changes.
+
+## AWAITING builder on caddie-hazard-side-reach-plan (this cycle)
+Dispatched builder to implement specs/caddie-hazard-side-reach-plan.md (Fixes A/B/C + tests), commit on
+this worktree branch, run gates 1-8. Outcomes: builder returns green -> dispatch reviewer (adversarial:
+try to construct a layout the fix still misclassifies; verify NO double-flip/sign-flip masking) + qa
+(gates SUCCESS on pushed head + caddie-experience green) in parallel. BLOCKING findings -> re-dispatch
+builder. Then rebase onto latest origin/integration/next (parallel orb lane), push, add to bundle PR
+#144 checklist (NOTICEABLE). On usage/spend error: checkpoint + STOP. Do NOT ship/ping (owner brief).
 
 ## 2026-07-16 DONE — GPS/on-course readiness verification (isolated worktree) [audit record below; RESOLVED block follows]
 Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
