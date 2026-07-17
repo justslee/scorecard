@@ -72,13 +72,26 @@ _SCORE_STROKE_PATTERN = re.compile(
     r"\b(par|birdie|bogey|double(?:\s+bogey)?|eagle|triple|\d{1,2})\b"
 )
 
+# Putts guard (eng-lead review fold-in): "I had 3 putts" matches SCORE_PERSON
+# ("i had") + SCORE_STROKE (bare "3") but is a PUTTING-STATS statement, not a
+# hole score — writing it to record_scores would put the wrong number on the
+# card. A bare stroke number co-occurring with "putt(s)" only counts as a
+# real hole score when paired with an explicit hole-score verb (made/shot/
+# scored); "had"/"got"/"took"/"put me down"/etc alone never do.
+_PUTTS_PATTERN = re.compile(r"\bputts?\b")
+_HOLE_SCORE_VERB_PATTERN = re.compile(r"\b(made|shot|scored)\b")
+
 
 def _is_score(text: str) -> bool:
     if _SCORE_EXCLUSION_PATTERN.search(text):
         return False
     if _SCORE_FOR_PATTERN.search(text):
         return True
-    return bool(_SCORE_PERSON_PATTERN.search(text) and _SCORE_STROKE_PATTERN.search(text))
+    if _SCORE_PERSON_PATTERN.search(text) and _SCORE_STROKE_PATTERN.search(text):
+        if _PUTTS_PATTERN.search(text) and not _HOLE_SCORE_VERB_PATTERN.search(text):
+            return False
+        return True
+    return False
 
 
 # ── ADVICE (checked second — fail-toward-advice) ────────────────────────────
@@ -88,11 +101,18 @@ def _is_score(text: str) -> bool:
 _CLUB_WORD = r"(?:driver|(?:\d\s*-?\s*)?wood|hybrid|(?:\d\s*-?\s*)?iron|wedge|pw|gw|sw|lw)"
 _CLUB_VS_CLUB_PATTERN = re.compile(rf"\b{_CLUB_WORD}\b[^.?!]*\bor\b[^.?!]*\b{_CLUB_WORD}\b")
 
+# A single club name + "here" ("driver here?", "3-wood here") — an implicit
+# club-choice question, no "should"/"or" needed.
+_CLUB_HERE_PATTERN = re.compile(rf"\b{_CLUB_WORD}\b\s+here\b")
+
 _ADVICE_PATTERNS = _compile(
     r"\bwhat should i (hit|play|do)\b",
     r"\b(which|what) club\b",
     r"\bhow (do|should) i play\b",
-    r"\bwhat'?s the play\b",
+    # Broadened (eng-lead review fold-in) to allow one adjective between "the"
+    # and "play" — "what's the smart play" reads exactly like "what's the
+    # play" (row 15 of the matrix) but the original contiguous pattern missed it.
+    r"\bwhat'?s the (?:\w+ )?play\b",
     r"\bwalk me through\b",
     r"\bwhere('?s| is| should)? (the |my )?(miss|bail|bailout)\b",
     r"\bwhich side (do|should) i (bail|miss)\b",
@@ -102,8 +122,15 @@ _ADVICE_PATTERNS = _compile(
     r"\brisk\b",
     r"\baim\b",
     r"\bfavor\b",
+    # Terse on-course forms (eng-lead review fold-in) — common short asks
+    # that were falling through to OTHER/Claude instead of the brain.
+    r"\bgo for it\b",
+    r"\bsend it\b",
+    r"\bleft or right\b",
+    r"\bbite off\b",
 )
 _ADVICE_PATTERNS.append(_CLUB_VS_CLUB_PATTERN)
+_ADVICE_PATTERNS.append(_CLUB_HERE_PATTERN)
 
 
 def _is_advice(text: str) -> bool:

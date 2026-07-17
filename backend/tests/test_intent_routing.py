@@ -33,6 +33,17 @@ _MATRIX: list[tuple[str, Intent]] = [
     ("Bogey for me", Intent.SCORE),
     ("Say that again?", Intent.OTHER),
     ("Thanks, that was a great call", Intent.OTHER),
+    # Terse on-course forms (eng-lead review fold-in, 2026-07-17) — common
+    # short asks that were falling through to OTHER/Claude instead of ADVICE.
+    ("Driver here?", Intent.ADVICE),
+    ("Go for it?", Intent.ADVICE),
+    ("Send it?", Intent.ADVICE),
+    ("Left or right off this tee?", Intent.ADVICE),
+    ("What's the smart play?", Intent.ADVICE),
+    ("How much can I bite off?", Intent.ADVICE),
+    # Putts guard (eng-lead review fold-in) — a putting-stats statement, not
+    # a hole score; must never write via record_scores.
+    ("I had 3 putts", Intent.OTHER),
 ]
 
 
@@ -60,6 +71,22 @@ def test_club_vs_club_is_advice_even_with_fact_words() -> None:
     """Fail-toward-ADVICE: a club-vs-club ask classifies ADVICE even mixed
     with fact-sounding words like 'here' or a yardage number."""
     assert classify_intent("Driver or 3-wood here, it's playing 165?") is Intent.ADVICE
+
+
+def test_putts_count_is_not_score() -> None:
+    """Eng-lead review fold-in: 'I had 3 putts' matches the person+stroke
+    SCORE shape (i had + a bare number), but a putts count is NOT a hole
+    score — writing it via record_scores would put the wrong number on the
+    card. Only an explicit hole-score verb (made/shot/scored) rescues a
+    putts-mentioning utterance back into SCORE."""
+    assert classify_intent("I had 3 putts") is not Intent.SCORE
+
+
+def test_explicit_score_verb_with_putts_word_still_pinned_correctly() -> None:
+    """The putts guard is scoped to the ambiguous verbs (had/got/took) —
+    it must never swallow a genuine score statement that happens to also
+    mention putts in the same breath."""
+    assert classify_intent("I made a 5, three putts on that green") is Intent.SCORE
 
 
 def test_intent_enum_is_extensible_without_dispatch_rewrite(monkeypatch) -> None:
