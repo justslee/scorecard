@@ -18994,10 +18994,17 @@ Builder DONE: b142f40 (code) + 85c2ff5 (progress) pushed to origin/integration/n
 time (lint/tsc/build clean, voice 278/278, vitest 2685 no regress). New pure module yardage-book-target.ts
 (+16 tests); HoleIllustration.tsx reticle/readout; map untouched. Builder deviation (accepted, NORTHSTAR-calm):
 pill persists while aim!==null (drag OR settled) so × stays reachable, else quiet reticle baseline.
-AWAITING (parallel): reviewer a86f1e678fb8952a2 (fresh adversarial + /code-review) + qa ae370cd83a9761875
-(6 gates + drive) + designer a2a18abae00ed93b7 (BLOCKING vs concept). On all back: BLOCKING issues ->
-re-dispatch builder + re-review; all green -> open/refresh bundle PR (NOTICEABLE), update progress+backlog,
-HOLD ship (owner's next approval). If I die: reconcile from origin/integration/next @85c2ff5; children are
-read-only reviewers — safe to re-run if their verdict didn't land.
+VERDICTS IN (@85c2ff5): QA PASS (6 gates green + live Playwright drive, no regress). Reviewer SHIP w/ 1
+proactive fix (capture-phase framer isolation) + dead movedRef cleanup. Designer BLOCK: readout built as a
+NEW in-SVG panel instead of reusing HoleCard's top-right pill -> TWO pills during drag + panel collides with
+green/flag on dogleg holes 2/6/14. Reticle/dashed-line/round5/motion all PASS.
+AWAITING: builder fixup (one iteration) covering — (BLOCK) lift aim/dragging/toTarget/toGreen from
+HoleIllustration to HoleCard, reuse the existing top-right pill (two-line FROM TEE/TO GREEN while custom aim
+active incl. after drag so × stays reachable; collapse to default ###Y when cleared), delete the in-SVG panel
+(kills double-pill + collision); move × into the DOM pill (>=44px); (reviewer#1) add onPointerDownCapture
+stopPropagation on hit circle (mirror RoundPageClient.tsx:1983); (cleanup) remove dead movedRef/startClientRef.
+NON-fix/owner-note: off-line "from tee" can exceed printed hole yards (euclidean corner-cut; intentional).
+On builder DONE: designer BLOCKING re-render + reviewer light check (state lift + capture) + re-run gates.
+HOLD ship. If I die: reconcile from origin/integration/next; last good code @b142f40, fixup pending.
 Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
 origin/integration/next + worktree commits; do NOT re-run a finished child.
