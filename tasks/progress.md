@@ -91,11 +91,27 @@ putts-exclusion guard to _is_score. qa: all gates GREEN (ruff, 2770 pytest, tsc,
 test (sessionStrategy-never-called + no-confirm) not built -> add it. designer: APPROVE; nit = caddie.py:984
 _SCORE_TEXT_HANDOFF_LINE is TTS-spoken but reads like app help text -> first-person reword.
 
-## AWAITING — builder FIXUP (same builder ac55af03, resumes w/ context) on the above batch
-Batch: B1 word-boundary club match + B2 reachability regex + pass-on-good validator tests + classifier
-terse-advice patterns/rows + putts guard + live-session record_scores test + copy reword. Re-run gates.
-On DONE: I rebase+push, then re-review the DELTA (reviewer delta-check + qa gates). Ships HELD; do NOT
-ship/ping. If I die: reconcile from origin/integration/next + builder fixup commits.
+## BUILDER FIXUP DONE @6885050 (4 commits: classifier terse+putts 26f2b61, B1+B2 regex 258e1f4,
+## live-session record_scores test 6f729ba, progress 6885050) — gates green (2781 pytest, 2700 vitest,
+## 278 voice). DELTA RE-REVIEW: reviewer SHIP-except-1 — B1 sound, but B2's aim-verb allowlist leaked
+## idiomatic aim-at-pin verbs (fire/go/hit it/start it "at the pin") past the positioning reachability
+## pin (BLOCKING; owner-crux safety net). Supplied verified 1-line fix. Also non-blocking putts-guard
+## false-negative ("I had a 5, two putts" -> OTHER, should be SCORE=5). qa: all gates green + Red-1 2/2 +
+## matrix 35/35 + strip 6/6 + validator pass-on-good present. designer: APPROVE (+1 nit fixed in fixup).
+## ENG-LEAD DELTA FIX @5a03256 (applied directly — reviewer-verified 1-liner, too small for another
+## builder round): B2 _PIN_RELATIVE_PATTERN -> bare `at the (flag|pin)` (drop leaky aim-verb allowlist;
+## false-positives came only from of|from, never at-the) + putts guard narrowed (strip "<count> putts"
+## phrase, keep score if a distinct hole-score number survives) + pinning tests (5 aggressive-aim reject
+## params + 2 score-plus-putts params). Verified directly: 7/7 aim-at-pin REJECT, 4/4 layup PASS, putts
+## matrix correct. Gates: ruff clean, backend 2788 pytest (+7), affected suites green. Frontend untouched
+## by this micro-fixup (last green 2700 vitest / 278 voice / build / tsc stands).
+
+## ITEM GREEN on integration/next — caddie two-tier advice routing + full intent router (NOTICEABLE).
+Evidence captured firsthand: Red-1 acceptance 2/2 (poisoned guide dropped, favor never LEFT); routing
+matrix 35/35 (incl. terse-advice rows + "I had 3 putts"->other); context-strip proof 6/6 (no hazard/
+guide/bend/slope in realtime instructions, tee-numbers/aim/miss/par-sanity kept, transcription vocab
+retained); validator pass-on-good regressions present+green. NEXT: push, update bundle PR #146 checklist
++ backlog, ships HELD (do NOT ship/ping per brief).
 
 ## AWAITING — reviewer + qa + designer on item @7d2f94d (integration/next), running in parallel
 reviewer(fresh adversarial: can ANY advice-class ask slip to a mouth un-brained? does the strip break
