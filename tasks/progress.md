@@ -18329,3 +18329,14 @@ verified via the full build + manual code-reading against the plan's exact eligi
 Committed to worktree-agent-aadf4889fca14557d (not pushed — eng-lead owns rebase/push onto
 integration/next). NEXT: reviewer (fresh) + qa, then designer BLOCKING on rendered result before this
 lands in PR #144 as NOTICEABLE (owner-directed gesture inversion, v1.1.10 field test).
+
+### BUILDER DONE @c778f0c (2026-07-16) — caddie-orb-tap-to-talk-inversion
+All gates green: lint clean, tsc clean, build ok (19/19), voice 278/278, vitest 2640/2640.
+useDetachedCaddieLive.test.tsx + CaddieSheet.session.test.tsx + LooperSheet.test.tsx pass UNMODIFIED.
+Files: looper-bus.ts(+test), caddie-context.ts, CaddieOrbSheet.tsx(+test), CaddieOrb.tsx(+test),
+RoundPageClient.tsx. No plan deviations. Pill has no unit harness (manual verify owed).
+
+AWAITING (parallel): reviewer (fresh, adversarial correctness+security on the diff — no second session
+path, no zombie/dedup regression, no mic-without-indicator) + qa (re-run gates) + designer (BLOCKING on
+rendered interaction). On all-green -> REBASE onto latest origin/integration/next -> push -> add to PR
+#144 as NOTICEABLE. BLOCKING issues -> re-dispatch builder. No ship/ping this cycle.
