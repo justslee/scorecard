@@ -18732,3 +18732,36 @@ guide_writer validator tightening) + qa (all gates SUCCESS; caddie-experience if
 sanity). On resume: reviewer SHIP + qa PASS -> update bundle PR checklist (NOTICEABLE) + on-box post-fix
 proof + observability confirmed -> then this is the ship-bar-cleared P0, offer to release-manager (but SHIPS
 STILL HELD until owner "ship it"). BLOCKING -> re-dispatch builder. Do NOT ship/ping without owner.
+
+## 2026-07-17 LANE: course-discovery-intel (Augusta descriptions + stars/stats + map slide-up card)
+Owner directive (2026-07-17, 2 screenshots): improve search + course finding; every course seeded with an
+Augusta-styled description + user-reviewed stars/stats; map pin opens a slide-up detail card (not just a marker).
+Isolated worktree agent-a1cf848b762f30fae; DISJOINT from the two parallel lanes (tree-distance backend caddie,
+orb session-lifecycle frontend). Ships HELD pending tree-distance verification — do NOT ship/ping this pass.
+
+STORAGE CRUX (verified): public.courses (supabase 001_course_mapping_schema.sql) = id,name,address,location,
+timestamps — NO JSONB. Only durable mapped-schema JSONB = per-hole hole_features.properties (where strategy_guide
+lives, served via courses_mapped.update_green_feature_properties). course_search/golfapi caches are FILE-backed
+JSON (backend/data/*.json), not a per-course durable home. => a CLEAN course-level `description` home genuinely
+needs an additive migration (ALTER TABLE courses ADD COLUMN course_intel jsonb) -> brief routes that to
+"design + STOP for approval". Reviews: course_reviews is OWNER-SCOPED (caller's own only), keyed by course_key
+(GolfAPI id or name:<slug>) — a mismatch vs mapped-course UUID; no aggregate endpoint yet. Stars today = owner's
+own reviews avg+count (honest); external Google ratings OUT (budget).
+
+Surfaces: map card = CourseScoutMap.tsx "Tap card" (thin one-row name+subline+Add, lines 402-481; data via
+fetchCoursesInBounds -> /api/courses/in-bounds, OSM+DB only, budget-safe). Detail page =
+frontend/src/app/courses/[id]/CourseDetailClient.tsx (698 lines, the spec-sheet from screenshot 1). Pipeline
+pattern to copy = backend/app/caddie/guide_writer.py (grounded writer + fail-closed validator) +
+backend/app/services/course_guides.py (idempotent per-course precompute, negative cache, env-gated bounded backfill).
+
+PLAN OF RECORD this pass: (1) PM spec + designer concept for all 3 surfaces incl. ONE Bethpage Black exemplar
+description + the register; (2) fable plan = full feature incl. the additive course_intel migration DESIGN +
+confidence-gated validator (rejects unverifiable architect/year claims, falls back to geometry-grounded landscape
+prose) + stars/stats aggregation + both frontend surfaces; (3) BUILD the migration-free NOTICEABLE slice now
+(stars+stats surfacing from existing course_reviews + live DB stats; the slide-up map card + detail-page
+sections; description slot empty-safe until seeded) -> land on integration/next (accumulates, does NOT ship);
+(4) STOP the migration + description pipeline + 3-course seed for owner approval (rides the held ship).
+
+## AWAITING — Explore(frontend map/detail/types), then PM + designer concept (parallel)
+Next: dispatch product-manager (spec) + designer (concept + Bethpage Black exemplar) in parallel; then fable Plan;
+then builder on the no-migration slice. If I die: reconcile from origin/integration/next; no code landed yet.
