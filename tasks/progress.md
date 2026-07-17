@@ -19180,3 +19180,48 @@ HELD — rides bundle #146 for the owner's next approval; NOT shipped/pinged thi
 LESSON for next time: co-located onPointerDownCapture{stopPropagation}+onPointerDown on the same node ABORTS
 React 19 dispatch and silently kills the handler; and a code-read reviewer SHIP'd it — only the designer's
 LIVE pointer drive caught it. Live-drive interaction changes; don't trust code-read for event-dispatch bugs.
+
+## 2026-07-17 DONE — yardage-book-card-wobble-drag-isolation fixed, SILENT rider on bundle #146
+Backlog item's diagnosis (3 candidates) said the root cause is: HoleIllustration's pointer handlers were
+React JSX props (onPointerDown/Move/Up), so `e.stopPropagation()` only runs inside React's root-delegated
+synthetic dispatch — which happens AFTER real native bubbling has already reached the ancestor framer-motion
+`drag="x"` wrapper's own native pointerdown listener (RoundPageClient mock/no-course fallback branch). Too
+late to stop it -> card visibly rubber-banded a few px during every reticle drag.
+FIX (chose candidate (a)): rewired the hit-target's pointerdown/move/up/cancel via NATIVE addEventListener
+(ref+useEffect, empty deps) directly on the `<circle>` DOM node, replacing the onPointerDown/Move/Up JSX
+props entirely. A native listener at the target element fires at the true DOM "target" phase — stopPropagation()
+there prevents the event from ever reaching the ancestor, no React synthetic dispatch involved at all. Added a
+`toSvgPointRef` mirror (same pattern as the file's existing `onAimChangeRef`) so the once-registered native
+handlers always read the latest `toSvgPoint` closure instead of going stale. Removed the now-dead `PointerEvent
+as ReactPointerEvent` import. Did NOT reintroduce the rejected co-located onPointerDownCapture+onPointerDown
+pattern (learned-lesson from the parent item) — there are zero React pointer handlers on this node now, so
+there's no capture/bubble dispatch to poison.
+Rejected (b) [flip the ancestor's `drag` prop to false while dragging] — would require lifting a new dragging
+signal up through HoleCard into RoundPageClient (3-file prop-plumb) for a fix that's still racy (the ancestor's
+native pointerdown listener already fires before a React state update could flip the prop). Rejected (c)
+[intermediate capture-div guard, mirroring the map branch] — redundant once (a) isolates fully at the source;
+the map branch needs (c) because its descendant doesn't own pointerdown itself, HoleIllustration's reticle does.
+LIVE-RENDER VERIFIED (mandatory, not a code-read): built a throwaway Playwright-driven harness page
+(`frontend/src/app/dev-wobble-test/page.tsx` + a driver script) that reproduced the EXACT ancestor
+`motion.div drag="x"` wrapper copied from RoundPageClient's mock/no-course branch around `HoleCard` — deleted
+both before commit, not part of the diff. Sanity-checked the harness itself first: stashed the fix, reran
+against the OLD code, and confirmed it DOES reproduce the bug (wrapper's computed `transform` visibly
+translated x 1px->10px across a 10-step reticle drag, and was still `matrix(1,0,0,1,1.17,0)` — not fully
+settled — 400ms after release). Restored the fix and reran: wrapper `transform` stayed `none` for the ENTIRE
+reticle drag while the reticle itself moved (FROM TEE/TO GREEN readout appeared and updated) — card rock
+still, drag fully functional. Then verified off-reticle behavior is untouched: a normal small swipe still
+advances the hole (flicks=1), and a fast 300px flick still advances the hole (flicks=2) — draggedRef gating
+logic in RoundPageClient was never touched.
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npx tsx voice-tests/runner.ts --smoke` 278/278,
+targeted vitest (yardage-book-target.test.ts [16] + DistancesCard/Transcript + all `src/lib/map/*` +
+scout-map-config + mapped-course-api + hole-yardage) 409/409 (15 files), all green.
+Scope: ONLY `frontend/src/components/yardage/HoleIllustration.tsx` changed — no other files. Reverted an
+incidental `package-lock.json` lockfile-drift diff caused by a local `npm install` (missing node_modules in
+this fresh worktree) before committing — per the standing lockfile rule, never let a local install prune
+platform-optional entries into the committed lockfile.
+Rebased fast-forward onto latest `origin/integration/next` (@dd49707, which had already picked up a parallel
+course-discovery-intel lane) before this commit — no conflicts, HoleIllustration.tsx untouched by that lane.
+backlog.json: flipped `yardage-book-card-wobble-drag-isolation` to `done-on-bundle` with the full fix + evidence
+recorded in `resolution` (targeted edit, JSON validated: 103 items, single match). SILENT rider (not
+noticeable — pure event-wiring internals, same visual/behavioral surface minus the bug) — no ship ping, no
+release; rides the existing HELD bundle #146 for the owner's next approval.

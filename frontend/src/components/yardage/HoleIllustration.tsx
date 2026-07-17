@@ -6,7 +6,6 @@ import {
   useImperativeHandle,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useReducedMotion } from "framer-motion";
 import { T } from "./tokens";
@@ -138,6 +137,7 @@ const HoleIllustration = forwardRef<
   // null the reticle is seeded from `shotPoint` (or the path midpoint) so
   // there is ALWAYS something to grab. See specs/draggable-target-plan.md §2.4.
   const svgRef = useRef<SVGSVGElement>(null);
+  const hitRef = useRef<SVGCircleElement>(null);
   const [aim, setAim] = useState<PathPoint | null>(null);
   const [dragging, setDragging] = useState(false);
   const pointerIdRef = useRef<number | null>(null);
@@ -189,30 +189,77 @@ const HoleIllustration = forwardRef<
     return aimPoint;
   }
 
-  function handlePointerDown(e: ReactPointerEvent<SVGCircleElement>) {
+  // Ref mirror of the latest `toSvgPoint` closure (same pattern as
+  // `onAimChangeRef` below) — the native listeners wired up in the effect
+  // further down are attached ONCE (empty deps), so they must read fresh
+  // state through refs rather than closing over a stale render's values.
+  const toSvgPointRef = useRef(toSvgPoint);
+  useEffect(() => {
+    toSvgPointRef.current = toSvgPoint;
+  });
+
+  function handlePointerDown(e: PointerEvent) {
     e.stopPropagation();
     if (pointerIdRef.current !== null) return; // ignore a second finger mid-drag
     pointerIdRef.current = e.pointerId;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    (e.currentTarget as SVGCircleElement).setPointerCapture(e.pointerId);
     setDragging(true);
     haptic("light"); // once per drag-start, matches the map's feel
   }
 
-  function handlePointerMove(e: ReactPointerEvent<SVGCircleElement>) {
+  function handlePointerMove(e: PointerEvent) {
     if (pointerIdRef.current !== e.pointerId) return;
-    setAim(clampToDiagram(toSvgPoint(e)));
+    e.stopPropagation();
+    setAim(clampToDiagram(toSvgPointRef.current(e)));
   }
 
-  function endDrag(e: ReactPointerEvent<SVGCircleElement>) {
+  function endDrag(e: PointerEvent) {
     if (pointerIdRef.current !== e.pointerId) return;
+    e.stopPropagation();
     pointerIdRef.current = null;
     setDragging(false);
     try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
+      (e.currentTarget as SVGCircleElement).releasePointerCapture(e.pointerId);
     } catch {
       // already released (e.g. pointercancel) — fine to ignore
     }
   }
+
+  // Wire the drag via NATIVE addEventListener rather than React's
+  // onPointerDown/Move/Up JSX props. Root cause of the card-wobble bug
+  // (backlog: yardage-book-card-wobble-drag-isolation): the round page's
+  // ancestor framer-motion `drag="x"` hole-swipe wrapper installs its OWN
+  // native pointerdown listener directly on its DOM node. That listener
+  // fires during REAL native event bubbling — which completes in full
+  // before React's synthetic system (delegated from the root in React 17+)
+  // ever dispatches to this component's handlers. So a React
+  // SyntheticEvent.stopPropagation() call here always runs too late to stop
+  // framer's PanSession from starting, and the card visibly rubber-banded a
+  // few px on every reticle drag. A capture-phase React handler co-located
+  // with this node's bubble handler was tried and REJECTED — in React 19 it
+  // aborts the WHOLE synthetic dispatch for the node (capture + bubble share
+  // one ordered list; calling stopPropagation mid-list skips the rest),
+  // silently killing the drag entirely. A plain native listener attached to
+  // THIS element runs at the true DOM "target" phase: stopPropagation()
+  // there prevents the event from ever reaching the ancestor, and there's no
+  // React synthetic dispatch in the mix to poison.
+  useEffect(() => {
+    const el = hitRef.current;
+    if (!el) return;
+    el.addEventListener("pointerdown", handlePointerDown);
+    el.addEventListener("pointermove", handlePointerMove);
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+    return () => {
+      el.removeEventListener("pointerdown", handlePointerDown);
+      el.removeEventListener("pointermove", handlePointerMove);
+      el.removeEventListener("pointerup", endDrag);
+      el.removeEventListener("pointercancel", endDrag);
+    };
+    // Intentionally empty deps: the handlers above only close over stable
+    // refs/setters (or read through toSvgPointRef), so they never go stale;
+    // re-registering per render would be pointless churn.
+  }, []);
 
   const { toTarget, toGreen } = bookTargetDistances(aimPoint, hole.path, hole.yards);
   const reticleColor = dragging ? accent : T.ink;
@@ -322,24 +369,23 @@ const HoleIllustration = forwardRef<
           collapsed card). Sits last so it's on top for hit-testing; the
           visible glyph above is purely decorative. */}
       <circle
+        ref={hitRef}
         cx={scale(aimPoint[0])}
         cy={scale(aimPoint[1])}
         r="12"
         fill="transparent"
         style={{ touchAction: "none", cursor: "grab" }}
-        // Isolation from the round page's framer-motion `drag="x"` hole-swipe
-        // comes from setPointerCapture (inside handlePointerDown) rerouting
-        // all subsequent pointermove/up to this element — a lone pointerdown
-        // without moves can't trigger a swipe. touch-action:none blocks
-        // native browser pan gestures. Do NOT add an onPointerDownCapture
-        // alongside this bubble handler: in React 19, stopPropagation() in a
-        // capture handler aborts the WHOLE synthetic dispatch for that
-        // event on this node, including this same bubble-phase
-        // onPointerDown — silently killing the drag (regression, fixed).
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
+        // Pointer handlers are wired imperatively via native addEventListener
+        // (see the effect above) rather than JSX onPointerDown/Move/Up props
+        // — that's what lets stopPropagation() actually isolate the drag from
+        // the round page's framer-motion `drag="x"` hole-swipe wrapper (see
+        // the effect's comment for why). setPointerCapture (inside
+        // handlePointerDown) still reroutes all subsequent pointermove/up to
+        // this element regardless of finger movement; touch-action:none
+        // blocks native browser pan gestures too. Do NOT add an
+        // onPointerDownCapture alongside a co-located bubble onPointerDown on
+        // this node: in React 19 that aborts the whole synthetic dispatch,
+        // silently killing the drag (regression, fixed — see git history).
         onClick={(e) => e.stopPropagation()}
         aria-label="Drag aim target"
       />
