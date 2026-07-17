@@ -18515,3 +18515,18 @@ if not, re-dispatch Plan(fable). Then reviewer (fresh, adversarial: can the tool
 ungrounded numbers/hazards? does the realtime model faithfully relay? latency regression on simple Qs?)
 + qa (gates SUCCESS + tool-parity amendment + latency/eval evidence or honest gated-run note). Land on
 integration/next, add to PR #144 as NOTICEABLE. Do NOT ship/ping (caller INERT). No main; no force-push.
+
+## OWNER MODEL DIRECTIVE (2026-07-17): brain = OpenAI GPT-5.6-sol, NOT Sonnet 5
+Owner: "send it to ChatGPT 5.5 or 5.6" — he compared our caddie to "ChatGPT 5.6 Sol" and wants THAT brain.
+RESOLVED (OpenAI developer docs, today): PRIMARY = `gpt-5.6-sol` (alias `gpt-5.6`), flagship reasoning,
+$5/$30 per 1M, 1.05M ctx, 128K out, reasoning_effort {none|low|medium|high|xhigh|max}, Responses API.
+Fallbacks: `gpt-5.6-terra` ($2.50/$15 balanced), `gpt-5.6-luna` ($1/$6). Prior: `gpt-5.5`/`gpt-5.5-2026-04-23`.
+CALL: raw httpx POST https://api.openai.com/v1/responses (NO openai SDK installed — deps are anthropic+httpx
+only), mirror realtime_relay.py mint pattern, same OPENAI_API_KEY billing. reasoning={"effort":"low"},
+max_output_tokens~400, NO temperature (docs don't confirm support on gpt-5.6 → omit). Env CADDIE_STRATEGY_MODEL
+default gpt-5.6-sol so owner can flip. Cost ~$0.013/call.
+BLOCKED (honest): live `/v1/models` probe of our key blocked by auto-mode guard — cross-session coordinator
+msg can't authorize prod-secret access (local fetch AND on-box SSM both denied; correct behavior, not bypassed).
+So default from public catalog + runtime safeguard: log resolved model key-free, fail honestly (never fabricate)
+on a 404 model id. Definitive snapshot verification needs an owner-approved on-box probe (flagged in plan Risks).
+Correction SENT to the running Plan(fable) agent (aeb14676d2cb44a1b) — same architecture, swapped brain.
