@@ -67,15 +67,33 @@ FACING the played line. Surviving observations are grouped by ``line_side``
 (same 10y deadband); a side only SPEAKS with ``>= _TREE_MIN_OBS`` (3)
 observations — the coverage guard that keeps 1-2 stray volunteer-mapped tree
 points silent while any real mapped woods polygon (>=4 ring vertices)
-qualifies on its own. A qualifying side emits its min-carry observation as a
-``Hazard(type="trees")``, plus a max-carry entry when the spread is
-``>= _TREE_RANGE_MIN_SPREAD_YARDS`` (30y) — ``format_hazards_line``'s
-existing (type, side) grouping renders the pair as a range (``trees R
-220-300y``) with zero new formatter logic. Tree entries are computed
-SEPARATELY from the bunker/water pass and appended AFTER it has been sorted
-and capped — a tree line can structurally never evict a bunker or water
-hazard from the extraction result. See test_tree_hazards.py for the pinned
-observation-model tests (T1-T12).
+qualifies on its own. A qualifying side with spread ``< _TREE_RANGE_MIN_
+SPREAD_YARDS`` (30y) emits a single min-carry ``Hazard(type="trees")``.
+Otherwise it emits a GAP-BOUNDED GREEDY CHAIN of REAL observations, not just
+the min/max pair (Finding B fix, 2026-07-16 — the old two-entry near/far
+collapse could silently drop a bracketing tree line's interior coverage: a
+LEFT line spanning carry 145-360y collapsed to just {145, 360}, both outside
+an ~80y drive window, while a sparse RIGHT cluster's near entry survived
+inside it — the caddie confidently called "miss right" on a hole where LEFT
+was equally in play). The chain starts at the near observation and
+repeatedly jumps to the FARTHEST observation within ``_TREE_SPAN_MAX_GAP_
+YDS`` (40y) of the current vertex; when no observation qualifies (a real
+mapped gap wider than 40y), it jumps to the very next observation in sorted
+order instead — the gap is preserved, NEVER interpolated — and always
+terminates at the far observation. A per-side safety cap
+(``_TREE_CHAIN_SAFETY_CAP``, 12) doubles the gap and rebuilds the chain if
+exceeded, so entry count stays bounded while the near/far endpoints always
+survive. ``format_hazards_line``'s existing (type, side) grouping renders
+the resulting min...max spread as a single range (``trees R 220-300y``,
+byte-identical for the common 2-entry case) with zero new formatter logic —
+chain interior vertices only add MORE grounded carries within that same
+rendered range, they never change the rendered min/max. Tree entries are
+computed SEPARATELY from the bunker/water pass and appended AFTER it has
+been sorted and capped — a tree line can structurally never evict a bunker
+or water hazard from the extraction result. See test_tree_hazards.py for the
+pinned observation-model tests (T1-T12) and
+specs/caddie-hazard-side-reach-plan.md §3 for the gap-bounded chain
+derivation.
 """
 
 from __future__ import annotations
@@ -113,7 +131,18 @@ _TREE_FEATURE_TYPES: frozenset[str] = frozenset({"tree", "woods"})
 _TREE_MIN_OBS: int = 3
 _TREE_MAX_LATERAL_YARDS: float = 70.0
 _TREE_RANGE_MIN_SPREAD_YARDS: float = 30.0
-_TREE_ENTRY_CAP_PER_SIDE: int = 2
+# Gap-bounded chain step (Finding B fix, 2026-07-16): the drive window is 80y
+# wide (DRIVE_ZONE_SHORT_YDS 50 + DRIVE_ZONE_LONG_YDS 30 in decade_advice.py).
+# A <=40y step guarantees at least one emitted chain vertex inside any 80y
+# window overlapping a densely-observed span, so a bracketing tree line can
+# no longer be windowed away by the old near/far-only collapse (a real Red-1
+# defect — see _extract_tree_line_hazards). Only a real observation gap
+# wider than this can leave a window empty, and then exclusion is honest.
+_TREE_SPAN_MAX_GAP_YDS: float = 40.0
+# Safety cap on chain length per side — if exceeded (an unusually dense
+# stand), the gap is doubled and the chain rebuilt (loop) so entry count
+# stays bounded while near/far endpoints always survive.
+_TREE_CHAIN_SAFETY_CAP: int = 12
 
 # format_hazards_line's group cap (bunker/water/trees combined). Named
 # constant (was a literal 5) so the trees-headroom decision is documented at
@@ -222,6 +251,18 @@ def _feature_point(feature: dict) -> Optional[tuple[float, float]]:
     return None
 
 
+def _point_dist_sq_m(base_lat: float, a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Squared metre distance between two (lon, lat) points via the
+    equirectangular projection (``_xy_m``) — used for nearest/farthest tee
+    selection below. Accurate enough at golf-hole scale (a few hundred
+    metres), where raw lon/lat degree distance would be biased by the
+    cos(latitude) longitude scaling this helper corrects for."""
+    a_lon, a_lat = a
+    b_lon, b_lat = b
+    x, y = _xy_m(base_lat, a_lon, b_lat, b_lon)
+    return x * x + y * y
+
+
 def _derive_tee_green(
     features: list[dict],
     tee: Optional[dict],
@@ -229,30 +270,96 @@ def _derive_tee_green(
 ) -> tuple[Optional[tuple[float, float]], Optional[tuple[float, float]]]:
     """Derive (tee_lonlat, green_lonlat) for the hole.
 
-    Priority:
-    1. ``tee``/``green`` Polygon centroids in the FeatureCollection.
-    2. Fallback: a ``"hole"`` LineString's first vertex = tee, last = green.
+    Green priority (unchanged):
+    1. A ``"green"`` Polygon centroid in the FeatureCollection (first one
+       found).
+    2. Fallback: a ``"hole"`` LineString's last vertex.
        NOTE (tee-ordering dependency): this assumes the ``golf=hole`` way is
        digitized tee→green, which is the OSM convention. A way drawn
        green→tee would swap the derived endpoints AND reverse the polyline's
        travel direction (mirroring every side) — there is no independent
        signal here to detect that; the ingest-time yardage validation
        (test_bethpage_validation "GROSS REVERSED" check) is the guard.
-    3. Last resort: the ``tee=``/``green=`` args ({"lat", "lng"} dicts).
+    3. Last resort: the ``green=`` arg ({"lat", "lng"} dict).
+
+    Tee priority (Finding A fix, 2026-07-16 — a multi-tee hole was picking
+    the FIRST stored tee feature by file order, which silently anchored
+    every carry/bend/corridor number to the wrong box the player was
+    actually standing on):
+    1. A VALID ``tee=`` arg — ``{"lat", "lng"}`` both present, non-None, and
+       not the sloppy-default sentinel ``(0, 0)``:
+       - Stored ``featureType == "tee"`` features exist: select the stored
+         tee whose ``_feature_point`` is NEAREST the arg. The arg is itself
+         a selector into curated geometry — the frontend already resolves
+         and sends the player's own tee box (``applyTeeAnchors`` /
+         ``ringCentroid``, see ``frontend/src/lib/course/tee-anchor.ts``) —
+         so this is an exact match in practice, and it's tolerant of
+         centroid-computation drift and a sloppy `legacy`-source marker.
+       - No stored tee features: use the arg directly (today's last-resort
+         path, promoted to first-class when a valid arg is supplied).
+    2. No arg, MULTIPLE stored tee features, green derivable: the tee
+       FARTHEST (straight-line) from the derived green — the back tee.
+       Deterministic, replaces file-order "first" with the card convention
+       and the frontend's own tie rule ("never hand the golfer a
+       shorter-than-actual number"). Requires the green to already be known
+       — the loop above collects tee/green together before this selection
+       runs. No stored green yet at this point (only the linestring/arg
+       fallbacks could supply one) → honest fallback to the first stored tee
+       (order-independent tie; no way to define "back" without a green).
+    3. No arg, a single stored tee feature: that tee (unchanged).
+    4. Hole-LineString fallback: unchanged (first vertex).
+    5. Last resort: the ``tee=`` arg's raw fields, even if incomplete/zeroed
+       (mirrors the pre-fix "if tee_pt is None and tee" catch-all — only
+       reachable when nothing above resolved a tee).
 
     Never guesses a bearing — a side left `None` propagates to the caller,
     which returns `[]` rather than fabricate a travel direction.
     """
-    tee_pt: Optional[tuple[float, float]] = None
+    tee_feature_points: list[tuple[float, float]] = []
     green_pt: Optional[tuple[float, float]] = None
 
     for f in features:
         props = f.get("properties") or {}
         ftype = props.get("featureType")
-        if ftype == "tee" and tee_pt is None:
-            tee_pt = _feature_point(f)
+        if ftype == "tee":
+            pt = _feature_point(f)
+            if pt is not None:
+                tee_feature_points.append(pt)
         elif ftype == "green" and green_pt is None:
             green_pt = _feature_point(f)
+
+    tee_arg_pt: Optional[tuple[float, float]] = None
+    if tee is not None:
+        arg_lat = tee.get("lat")
+        arg_lng = tee.get("lng")
+        if (
+            arg_lat is not None
+            and arg_lng is not None
+            and not (float(arg_lat) == 0.0 and float(arg_lng) == 0.0)
+        ):
+            tee_arg_pt = (float(arg_lng), float(arg_lat))
+
+    tee_pt: Optional[tuple[float, float]] = None
+    if tee_arg_pt is not None:
+        if tee_feature_points:
+            base_lat = tee_arg_pt[1]
+            tee_pt = min(
+                tee_feature_points,
+                key=lambda pt: _point_dist_sq_m(base_lat, tee_arg_pt, pt),
+            )
+        else:
+            tee_pt = tee_arg_pt
+    elif len(tee_feature_points) == 1:
+        tee_pt = tee_feature_points[0]
+    elif len(tee_feature_points) > 1:
+        if green_pt is not None:
+            base_lat = green_pt[1]
+            tee_pt = max(
+                tee_feature_points,
+                key=lambda pt: _point_dist_sq_m(base_lat, green_pt, pt),
+            )
+        else:
+            tee_pt = tee_feature_points[0]
 
     if tee_pt is None or green_pt is None:
         for f in features:
@@ -697,6 +804,43 @@ def _tree_hazard(
     )
 
 
+def _gap_bounded_tree_chain(
+    side_obs: list[tuple[float, float, float, float, float, float]],
+    max_gap_m: float,
+) -> list[tuple[float, float, float, float, float, float]]:
+    """Greedy gap-bounded chain over ``side_obs`` (a side's observations,
+    already sorted ascending by ``carry_m`` — tuple index 0). ALWAYS includes
+    the first (near) and last (far) observation.
+
+    From the current chain tip, jump to the FARTHEST observation whose carry
+    is within ``max_gap_m`` of the tip's carry (side_obs is sorted, so this
+    is the last observation satisfying the condition before it fails —
+    monotonic, so the scan can stop at the first failure). When no
+    observation qualifies — a real mapped gap wider than ``max_gap_m`` —
+    jump to the very next observation in sorted order instead: the gap is
+    preserved, never interpolated. Repeats until the chain reaches the far
+    endpoint (see module docstring "Trees/woods" paragraph and
+    specs/caddie-hazard-side-reach-plan.md §3).
+    """
+    n = len(side_obs)
+    far = side_obs[-1]
+    chain = [side_obs[0]]
+    idx = 0
+    while chain[-1] is not far:
+        current_carry_m = chain[-1][0]
+        best_j: Optional[int] = None
+        for j in range(idx + 1, n):
+            if side_obs[j][0] <= current_carry_m + max_gap_m:
+                best_j = j
+            else:
+                break
+        if best_j is None:
+            best_j = idx + 1  # real gap wider than max_gap_m — preserve it
+        chain.append(side_obs[best_j])
+        idx = best_j
+    return chain
+
+
 def _extract_tree_line_hazards(
     feature_list: list[dict],
     tee_lat: float,
@@ -705,8 +849,9 @@ def _extract_tree_line_hazards(
     gy: float,
     classify,
 ) -> list[Hazard]:
-    """Aggregate tree/woods OBSERVATIONS into at most two "tree line" entries
-    per qualifying side (module docstring "Trees/woods" paragraph, plan §1):
+    """Aggregate tree/woods OBSERVATIONS into a gap-bounded chain of "tree
+    line" entries per qualifying side (module docstring "Trees/woods"
+    paragraph, Finding B fix — specs/caddie-hazard-side-reach-plan.md §3):
 
     1. Collect observations (``_tree_observations``), classify each through
        the SAME ``classify`` closure as bunkers/water.
@@ -715,10 +860,11 @@ def _extract_tree_line_hazards(
        makes woods handling near-EDGE rather than centroid.
     3. Group survivors by ``line_side`` (same 10y deadband). A side QUALIFIES
        iff it has ``>= _TREE_MIN_OBS`` observations — the coverage guard.
-    4. Emit the min-carry observation as one ``Hazard``, plus the max-carry
-       observation as a second entry ONLY when the spread is
-       ``>= _TREE_RANGE_MIN_SPREAD_YARDS`` — capped at
-       ``_TREE_ENTRY_CAP_PER_SIDE`` entries per side.
+    4. Spread ``< _TREE_RANGE_MIN_SPREAD_YARDS``: emit the near entry only.
+       Otherwise emit ``_gap_bounded_tree_chain``'s chain of REAL
+       observations (never just the min/max pair) — capped at
+       ``_TREE_CHAIN_SAFETY_CAP`` per side; if exceeded, the gap is doubled
+       and the chain rebuilt until it fits, so near/far always survive.
 
     Returns an UNSORTED, UNCAPPED-at-the-hole-level list — the caller
     (``extract_hole_hazards``) appends it after the bunker/water cap and
@@ -762,10 +908,18 @@ def _extract_tree_line_hazards(
         near_carry_yards = max(0, _round_to_5(near[0] * _YARDS_PER_METER))
         far_carry_yards = max(0, _round_to_5(far[0] * _YARDS_PER_METER))
 
-        entries = [_tree_hazard(side, near, near_carry_yards, gx, gy)]
-        if far_carry_yards - near_carry_yards >= _TREE_RANGE_MIN_SPREAD_YARDS:
-            entries.append(_tree_hazard(side, far, far_carry_yards, gx, gy))
-        hazards.extend(entries[:_TREE_ENTRY_CAP_PER_SIDE])
+        if far_carry_yards - near_carry_yards < _TREE_RANGE_MIN_SPREAD_YARDS:
+            chain = [near]
+        else:
+            gap_m = _TREE_SPAN_MAX_GAP_YDS / _YARDS_PER_METER
+            chain = _gap_bounded_tree_chain(side_obs, gap_m)
+            while len(chain) > _TREE_CHAIN_SAFETY_CAP:
+                gap_m *= 2.0
+                chain = _gap_bounded_tree_chain(side_obs, gap_m)
+
+        for obs in chain:
+            carry_yards = max(0, _round_to_5(obs[0] * _YARDS_PER_METER))
+            hazards.append(_tree_hazard(side, obs, carry_yards, gx, gy))
 
     return hazards
 

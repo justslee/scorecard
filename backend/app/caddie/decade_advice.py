@@ -434,18 +434,35 @@ DRIVE_ZONE_LONG_YDS: float = 30.0    # window past it
 _FAIRWAY_HALF_WIDTH_YDS: float = 16.0  # hazards.py's 10y deadband + fairway shoulder
 
 
-def drive_zone_hazards(hazards: list[Hazard], expected_advance_yds: float) -> list[Hazard]:
+def drive_zone_hazards(
+    hazards: list[Hazard],
+    expected_advance_yds: float,
+    max_reach_yds: Optional[float] = None,
+) -> list[Hazard]:
     """Hazards in play at THIS shot's distance — the `carry_yards` frame
     (the tee-anchored along-played-line number `hazards.py` computed), never
     `distance_from_green`. `carry_yards <= 0` entries (green-frame-only /
     degenerate, e.g. unmapped holes or course_intel-style hazards) are
     excluded, not guessed at.
+
+    `max_reach_yds` (Finding C fix, specs/caddie-hazard-side-reach-plan.md
+    §4): when provided, caps the long window edge at
+    `min(expected_advance_yds, max_reach_yds) + DRIVE_ZONE_LONG_YDS` — a
+    hazard the player physically cannot reach on this swing (e.g. a
+    374y-carry greenside bunker against a 285y total) is excluded from the
+    tee-shot window even if it happens to sit within the raw
+    `expected_advance_yds`-relative range. `None` (default) preserves
+    today's behavior — back-compat for direct callers/tests that don't pass
+    a reach ceiling.
     """
+    long_edge = expected_advance_yds + DRIVE_ZONE_LONG_YDS
+    if max_reach_yds is not None:
+        long_edge = min(expected_advance_yds, max_reach_yds) + DRIVE_ZONE_LONG_YDS
     return [
         h for h in hazards
         if h.carry_yards > 0
         and expected_advance_yds - DRIVE_ZONE_SHORT_YDS
-            <= h.carry_yards <= expected_advance_yds + DRIVE_ZONE_LONG_YDS
+            <= h.carry_yards <= long_edge
     ]
 
 
@@ -503,6 +520,7 @@ def decade_landing_advice(
     expected_advance_yds: float,
     leave_yds: float,
     handicap: Optional[float] = None,
+    max_reach_yds: Optional[float] = None,
 ) -> Optional[str]:
     """Expected-strokes landing-zone insight for a positioning (out-of-reach)
     shot — the driving-zone analogue of `decade_aim_advice`.
@@ -517,8 +535,13 @@ def decade_landing_advice(
     otherwise `None` (the driving zone has no in-play hazard worth calling
     out — the caller falls back to "middle of the fairway"). The words
     "flag" and "pin" are unreachable from this function.
+
+    `max_reach_yds` passes through to `drive_zone_hazards` (Finding C fix,
+    specs/caddie-hazard-side-reach-plan.md §4) — an out-of-reach hazard
+    (e.g. a greenside bunker beyond the player's total) never drives this
+    advice string either.
     """
-    zone = drive_zone_hazards(hazards, expected_advance_yds)
+    zone = drive_zone_hazards(hazards, expected_advance_yds, max_reach_yds=max_reach_yds)
     if not zone:
         return None
 

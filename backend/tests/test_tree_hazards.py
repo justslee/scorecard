@@ -21,6 +21,7 @@ import math
 
 import pytest
 
+from app.caddie.decade_advice import drive_zone_hazards
 from app.caddie.hazards import (
     extract_hole_hazards,
     format_hazards_line,
@@ -171,9 +172,17 @@ _BEARINGS = [0, 45, 90, 135, 180, 225, 270, 315]
 class TestTreeHazards:
     def test_tree_point_cluster_becomes_tree_line_range(self):
         """T1: 4 `"tree"` Points at along 220/240/260/300y, lateral -25..-35y
-        (east = right) -> exactly two `trees` hazards (min carry 220, max
-        carry 300, both line_side=='right'), and the formatted line renders
-        the along-path range."""
+        (east = right) -> the gap-bounded chain (Finding B fix,
+        _TREE_SPAN_MAX_GAP_YDS 40y) walks near(220) -> farthest-within-40y
+        (260, since 300 is 40y past 260... actually reachable: 260<=220+40
+        and 300>220+40, so 260 is the farthest reachable from 220) -> 300
+        (far) -> exactly THREE `trees` hazards (220/260/300, all
+        line_side=='right') — one MORE than the old near/far-only collapse
+        (2->3, see module docstring "Trees/woods" paragraph): the real
+        interior observation at 260 now survives instead of being dropped,
+        which is exactly the coverage the Red-1 bracketing-tree-line bug
+        needed. The formatted line's rendered min-max range is unchanged
+        (chain interior vertices never move the min/max)."""
         tee_feat, green_feat, _, _ = _base_hole_features()
         trees = [
             _hazard_at_bearing(0, along=220, lateral=-25, feature_type="tree"),
@@ -183,9 +192,9 @@ class TestTreeHazards:
         ]
         hazards = extract_hole_hazards(_fc(tee_feat, green_feat, *trees))
         tree_hazards = [h for h in hazards if h.type == "trees"]
-        assert len(tree_hazards) == 2
+        assert len(tree_hazards) == 3
         assert {h.line_side for h in tree_hazards} == {"right"}
-        assert sorted(h.carry_yards for h in tree_hazards) == [220, 300]
+        assert sorted(h.carry_yards for h in tree_hazards) == [220, 260, 300]
 
         line = format_hazards_line(9, hazards)
         assert line == "Hole 9 hazards: trees R 220-300y"
@@ -374,9 +383,15 @@ class TestTreeHazards:
         assert all(h.type != "trees" for h in hazards)
 
     def test_woods_polygon_and_points_merge_per_side(self):
-        """T12: a woods Polygon (3 near-edge vertices) + 2 tree Points on the
-        SAME side -> one merged range spanning all 5 observations — output
-        independent of the OSM feature mix."""
+        """T12: a woods Polygon (3 near-edge vertices, carries ~200/210/220)
+        + 2 tree Points on the SAME side (carries ~240/260) -> one merged
+        range spanning all 5 observations, output independent of the OSM
+        feature mix. The gap-bounded chain (Finding B fix) walks near(200)
+        -> farthest-within-40y (240, since 210/220/240 are all <= 200+40)
+        -> far(260) -> THREE entries (200/240/260), one MORE than the old
+        near/far-only collapse (2->3, see module docstring "Trees/woods"
+        paragraph) — the interior 240y vertex now survives. The formatted
+        line's rendered min-max range is unchanged."""
         tee_feat, green_feat, _, _ = _base_hole_features()
         woods = _woods_polygon_at_bearing([(200, -20), (210, -22), (220, -25)])
         points = [
@@ -386,7 +401,57 @@ class TestTreeHazards:
 
         hazards = extract_hole_hazards(_fc(tee_feat, green_feat, woods, *points))
         tree_hazards = [h for h in hazards if h.type == "trees"]
-        assert len(tree_hazards) == 2
+        assert len(tree_hazards) == 3
         assert all(h.line_side == "right" for h in tree_hazards)
-        assert sorted(h.carry_yards for h in tree_hazards) == [200, 260]
+        assert sorted(h.carry_yards for h in tree_hazards) == [200, 240, 260]
         assert format_hazards_line(6, hazards) == "Hole 6 hazards: trees R 200-260y"
+
+    # ── Finding B (gap-bounded chain) — new gate tests ──────────────────────
+
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_bracketing_woods_left_stays_left_at_all_eight_bearings(self, bearing):
+        """specs/caddie-hazard-side-reach-plan.md §5.3 — a dense LEFT tree
+        line spanning carry 145->360y (gaps <=40y, the Red-1 bracketing
+        shape) stays 'left' at every compass heading, AND always contributes
+        at least one entry inside a representative drive window
+        ([235, 315]) — the exact coverage the old near/far-only collapse
+        structurally could not guarantee (its two survivors, 145 and 360,
+        both sit outside this window)."""
+        tee_feat, green_feat = _hole_at_bearing(bearing, green_yards=450.0)
+        trees = [
+            _hazard_at_bearing(bearing, along=a, lateral=30, feature_type="tree")
+            for a in (145, 180, 215, 250, 285, 320, 360)
+        ]
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, *trees))
+        tree_hazards = [h for h in hazards if h.type == "trees"]
+        assert len(tree_hazards) >= 3
+        assert all(h.line_side == "left" for h in tree_hazards)
+        assert any(235 <= h.carry_yards <= 315 for h in tree_hazards), (
+            f"no chain entry landed inside the drive window: {[h.carry_yards for h in tree_hazards]}"
+        )
+
+    def test_real_gap_not_interpolated(self):
+        """specs/caddie-hazard-side-reach-plan.md §5.3 — two real same-side
+        stands, {140,150,160} and {350,360,370}, separated by a genuine
+        ~190y mapped gap far wider than `_TREE_SPAN_MAX_GAP_YDS` (40y): the
+        chain must jump directly from 160 to 350 (the next REAL observation)
+        rather than fabricate an interior entry — no emitted carry in
+        (165, 345). This is the honesty guard the plan rejected an
+        alternative fix for: treating the near/far pair as an INTERVAL in
+        `drive_zone_hazards` would fabricate in-zone trees between two
+        separate stands on the same side — a [235, 315] drive window must
+        stay genuinely empty here."""
+        tee_feat, green_feat, _, _ = _base_hole_features(green_yards=450.0)
+        trees = [
+            _hazard_at_bearing(0, along=a, lateral=30, feature_type="tree")
+            for a in (140, 150, 160, 350, 360, 370)
+        ]
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, *trees))
+        tree_hazards = [h for h in hazards if h.type == "trees"]
+        assert all(h.line_side == "left" for h in tree_hazards)
+        assert not any(165 < h.carry_yards < 345 for h in tree_hazards), (
+            f"an interior carry was fabricated in the real gap: {[h.carry_yards for h in tree_hazards]}"
+        )
+
+        zone = drive_zone_hazards(tree_hazards, expected_advance_yds=265.0)
+        assert zone == []

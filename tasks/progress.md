@@ -61,6 +61,51 @@ gates + AUTH_BYPASS negative + caddie-experience) on f4eda94, in parallel. On re
 re-dispatch builder then re-review; both green → open fresh bundle PR (SILENT/dark), update
 progress+backlog (slice 3 done, note slice 4 multiuser-p0-keychain-token readiness). Do NOT
 ship/ping (dark slice). Reconcile from branch (git log origin/integration/next) if resumed.
+## 2026-07-16 DONE (builder) — caddie-hazard-side-reach-plan implemented on worktree agent-afd3de02e2f7430e6 (NOTICEABLE, P0)
+Implemented specs/caddie-hazard-side-reach-plan.md exactly (Fixes A/B/C), on branch
+worktree-agent-afd3de02e2f7430e6 (based on integration/next). NOT yet rebased/pushed to
+integration/next — eng-lead owns that step (parallel orb lane active, per the plan's own note).
+
+- Fix A (`hazards.py::_derive_tee_green`): tee priority now (1) a valid `tee=` arg (rejects
+  (0,0)) selects the NEAREST stored tee feature, or the arg itself if no stored tee features;
+  (2) no arg + multiple stored tees + green derivable -> FARTHEST tee from green (back tee,
+  deterministic, replaces file-order "first"); (3) single tee unchanged; (4)/(5) hole-linestring
+  / raw-arg fallbacks unchanged. Green derivation untouched. Two-pass loop (collect tee/green,
+  then select) so green is known before back-tee selection.
+- Fix B (`hazards.py::_extract_tree_line_hazards`): replaced the near/far 2-entry collapse with
+  a gap-bounded greedy chain (new `_gap_bounded_tree_chain` + `_TREE_SPAN_MAX_GAP_YDS=40.0`,
+  safety cap `_TREE_CHAIN_SAFETY_CAP=12` with double-the-gap retry loop). Endpoints always
+  survive; real gaps preserved, never interpolated.
+- Fix C (`decade_advice.py::drive_zone_hazards`/`decade_landing_advice` + `aim_point.py`):
+  added optional `max_reach_yds`; when set, the drive-zone long edge =
+  `min(expected_advance_yds, max_reach_yds) + DRIVE_ZONE_LONG_YDS`. Wired at aim_point.py's two
+  positioning call sites with `max_reach_yds=float(tee_shot_numbers.drive_total_yards)` — the
+  confirmed field name (grepped, matches the plan). Default `None` = legacy behavior.
+
+Tests: added `TestTeeSelection` (5 cases, test_hazards.py), `test_bracketing_woods_left_stays_
+left_at_all_eight_bearings` + `test_real_gap_not_interpolated` (test_tree_hazards.py),
+`test_red1_bracketing_left_tree_line_never_confident_right` (test_miss_side_grounding.py, incl.
+a generate_recommendation-level "favor the left" scan), `test_greenside_bunker_beyond_reach_
+excluded` + `test_reach_cap_end_to_end` + `test_drive_zone_default_reach_is_legacy`
+(test_positioning_shot.py). Updated 2 existing tree tests whose entry COUNT changes 2->3 per the
+plan's own justification (T1 `test_tree_point_cluster_becomes_tree_line_range`, T12 `test_woods_
+polygon_and_points_merge_per_side`) — formatted-line assertions kept byte-identical, only the
+count/interior changed; documented inline why. No test weakened or deleted.
+
+Gates (all green, evidence in the builder's report): `ruff check .` clean; backend
+`pytest tests -q --ignore=tests/integration` 2595 passed (incl. every suite the plan named:
+test_bethpage_validation, test_corridor_profile/bend_cap/width_selection, test_tee_shot_numbers,
+test_guide_writer, test_course_guides — 334 passed on that named subset alone); frontend
+`npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded, voice-tests smoke
+278/278, `npm run test:caddie-experience` 241/241 (17 test files). No shared-type changes
+(Hazard unchanged; new params are additive/optional Python kwargs) — types.ts/models.py
+untouched, consistent with plan §6.
+
+Commit on worktree-agent-afd3de02e2f7430e6 (not yet on integration/next): see git log on that
+branch. NEXT: eng-lead rebases onto latest origin/integration/next, dispatches reviewer
+(adversarial — verify no double-flip masking) + qa in parallel, then pushes + adds to bundle PR
+#144 checklist (NOTICEABLE, P0 field-bug fix).
+
 ## 2026-07-16 AWAITING Plan(fable) — caddie-hazard-side + drive-zone-reach (NOTICEABLE, P0 field bugs, Red-1/Red-2, v1.1.10)
 Isolated worktree agent-afd3de02e2f7430e6, based on origin/integration/next @ f4d55c5 (reset off a
 stale orb-lane progress-only commit d901688). Parallel orb lane active on a different surface — REBASE
