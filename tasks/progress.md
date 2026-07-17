@@ -18279,3 +18279,19 @@ change; my range touched 0 frontend files), the recurring npm-11-prunes-npm-10-n
 (lockfile-regen-rule). Fixed in place with npm 10 (--package-lock-only --ignore-scripts): restored the
 5 nested utf-8-validate nodes, additive-only (0 deletions). VERIFIED via the exact CI gate:
 `npx npm@10.8.2 ci --dry-run` succeeds (added 1189 pkgs, no EUSAGE). Pushed; CI re-running on 74c3833.
+
+### FABLE PLAN DELIVERED + SAVED (2026-07-16) — specs/caddie-orb-tap-to-talk-inversion-plan.md
+Build-ready CONTRACT. Seam: general orb gets a presentation:"docked"|"full" mode over the SINGLE
+useLooperDictation in CaddieOrbSheet (NO second session); docked->full promotion routes through the
+SAME open/sessionRef/presentation state (3 triggers: user-turn-appended, real mic/connect error,
+unexpected listening-drop). Bare no-speech self-heals in the orb chip w/o promoting. Round pill: idle
+tap = voice.stop()+detachedCaddieLive.start() (no sheet) w/ eligibility fallback to openCaddieSheet();
+idle hold 350ms = openCaddieSheet(); live tap/hold UNCHANGED. Reduced-motion static ring added on both
+surfaces (closes existing indicator gap). New bus field presentation? + LooperDockedGesture channel;
+CaddieOrbState gains "connecting"+activates "listening"; new CaddieOrbCaption channel. Zero backend.
+useDetachedCaddieLive.test.tsx + CaddieSheet.session.test.tsx + LooperSheet.test.tsx must pass UNMODIFIED.
+
+AWAITING: builder implementing specs/caddie-orb-tap-to-talk-inversion-plan.md on THIS worktree branch
+(worktree-agent-aadf4889fca14557d). On builder return -> reviewer (fresh) + qa (gates SUCCESS) ->
+designer BLOCKING on rendered result -> REBASE onto latest origin/integration/next -> push -> add to
+PR #144 as NOTICEABLE. No ship/ping this cycle. No main; no force-push.
