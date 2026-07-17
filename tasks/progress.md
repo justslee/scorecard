@@ -102,14 +102,28 @@ key-free voiceEvent phase telemetry; realtime.ts UNTOUCHED for A. Bug B fix: get
 dispatchTool ctx carry live currentHole; six hole-scoped tools override stale args.hole_number
 (record_shot args-first); no backend/shared-types change.
 
-## 2026-07-17 AWAITING builder — implement specs/caddie-live-p0-connect-hole-plan.md VERBATIM
-Dispatched builder on worktree agent-a23cf368966ee80ce (integration/next content @ 8579326 + d5e5f95
-progress + spec commit). Builder commits on THIS worktree branch, runs gates, does NOT open a per-item PR.
-On builder return: reviewer(fresh adversarial: retry zombies? rapid-swipe race? stall-fix masking real
-net errors? connect-failed persistence safe?) + qa(all gates SUCCESS + caddie suites green) in parallel,
-then designer BLOCKING on connecting/retrying/connect-failed copy+behavior. Then rebase onto
-origin/integration/next, push, add both items (NOTICEABLE) to bundle PR. Ships HELD (tree-distance lane)
-— do NOT ship/ping. On resume: git log the worktree branch; if builder's commit exists, do NOT re-dispatch.
+## 2026-07-17 BUILDER DONE @399d6e6 (worktree branch) — all gates green
+tsc/lint clean; voice-smoke 278/278; vitest 137 files/2669; caddie-experience 18/271; next build ok;
+ruff clean (no backend edits). 16 files, +1198/-118. Deviation (good catch, in commit msg): mic-deny
+classification made UNCONDITIONAL (only cancelled/fellBackRef-gated) because realtime.ts fires
+onStatus/onError synchronously inside its own attachMic/start catch and a warm-adopted client can read
+'connected' before its first real getUserMedia deny — the plan's everConnectedRef-gated version silently
+suppressed the mic-deny fallback in that combo. Caught by pre-existing CaddieSheet.realtime mic-deny test
+(synthetic Error updated to real DOMException name:NotAllowedError to exercise the path — not a weakened
+assertion). Also updated 3 pre-existing realtime.test.tsx cases for the retry-then-connect-failed sequence.
+
+## 2026-07-17 AWAITING reviewer + qa + designer (parallel) on 399d6e6
+reviewer: fresh adversarial — retry mint zombies? rapid hole-swipe race? stall-fix masking real net
+errors? connect-failed persistence (liveOn held) safe / no stuck-forever? mic-deny unconditional branch
+correct? Bug B override coherent, no other-hole regression beyond the flagged owner-decision? Run
+/security-review + /code-review (noticeable change).
+qa: independently run all gates to SUCCESS + all caddie suites green on 399d6e6 (no local Postgres — DB
+tests are CI).
+designer: BLOCKING — review the connecting/retrying/connect-failed pill+sheet states vs NORTHSTAR
+(calm, yardage-book, not alarming); the labels in live-copy.ts are PLACEHOLDERS awaiting his copy.
+On return: BLOCKING issues → re-dispatch builder; all green → rebase onto origin/integration/next, push,
+add both items (NOTICEABLE) to bundle PR. Ships HELD (tree-distance lane) — do NOT ship/ping.
+On resume: reconcile from worktree git log; children are read-only reviews — safe to re-dispatch if unsure.
 
 ## 2026-07-16 DONE — caddie-advice-model-decoupling, SILENT, committed @ a323851 (on worktree branch tracking integration/next, NOT pushed — eng-lead rebases+pushes)
 Implemented specs/caddie-advice-model-plan.md Steps 1-3 exactly (no re-plan). `_advice_model()`
