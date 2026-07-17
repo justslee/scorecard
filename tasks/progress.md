@@ -18216,3 +18216,20 @@ savedplayer (needs PlayerCreate.clerkUserId server change); (d) device/sim Keych
 (e) the two clerk-jwt-keychain-swap LOW followups. P1 profiles/discovery/connect is NEXT but OWNER-GATED
 on soak/launch sequencing + the spec's OWNER-DECISION list — do NOT start P1 until the owner sequences
 the flip. Bundle PR #144 remains SILENT-only (no noticeable change) → keeps accumulating, no owner ping.
+## 2026-07-16 — Caddie model audit + safe advice-model decoupling (eng-lead, worktree lane)
+Owner Q: "what model is the caddie using? ChatGPT 5.6 caddies better from a screenshot."
+AUDIT (verified vs code): the VOICE ORB he compared = OpenAI `gpt-realtime` (realtime_relay.py),
+NOT Claude — a speech model reading engine numbers off tools. Claude only powers TEXT paths:
+advice = `claude-sonnet-4-5-20250929` (shared ANTHROPIC_MODEL, temp 0.7, tool_loop.py);
+guides already = `claude-sonnet-5` (dedicated GUIDE_WRITER_MODEL); memory temp 0.3; OCR/voice
+default opus-4. Blast-radius: ANTHROPIC_MODEL has 7 consumers / 3 temps / 2 defaults → cannot
+flip shared env to Sonnet 5 (400s on temp paths, hijacks opus). Fable plan @ specs/caddie-advice-model-plan.md.
+No ANTHROPIC_API_KEY locally → cannot run evals → honesty rule: NOT landing an unproven bump.
+LANDING (SILENT, behavior-neutral): dedicated CADDIE_ADVICE_MODEL env + conditional temperature
+(byte-identical on shipped sonnet-4-5; makes Sonnet-5 flip a one-env change without 400).
+FILING designed-ready: caddie-advice-sonnet5-flip (a), caddie-smart-strategy-tool (b, the big win),
+caddie-vision-visual-read (c). Do NOT ship/ping this cycle.
+
+## AWAITING builder on caddie-advice-model-decoupling (SILENT) per specs/caddie-advice-model-plan.md
+On resume: reconcile from origin/integration/next; if builder's commit is present, run reviewer+qa;
+if not, re-dispatch builder. Two other lanes active (hazards.py + orb) — REBASE before push; add to PR #144.
