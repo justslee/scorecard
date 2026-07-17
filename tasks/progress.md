@@ -48,6 +48,29 @@ wind?" since "what club" is now correctly ADVICE per matrix); frontend score-ent
 lib/caddie/score-entry.ts::resolveScoreEntry unit tests (8 cases incl no-confirm-round-trip) instead of
 full live-session mount.
 
+## REVIEW VERDICTS IN on @7d2f94d — reviewer BLOCKING(2) + qa PASS(1 gap) + designer APPROVE(1 nit)
+reviewer: structural spine SOUND (strip real not moved, text interception ordering+auth correct, guide-gate
++ Red-1 gate have teeth, score write-path pure routing + hole-index off-by-one correct, prompt-cache
+invariants held). BLOCKING x2 in the §6 validator (safe-direction degrades but gut the brain's value on
+targeted turns): (B1) strategy.py:456 club pin uses substring not word-boundary -> "swing"->SW, "always"->LW
+falsely reject good tee-shot narratives; fix = \b word-boundary match. (B2) strategy.py:421
+_PIN_RELATIVE_PATTERN "of|from the pin" catches natural layup phrasing ("short of the pin","wedge from the
+pin") -> reject good positioning narratives; fix = drop of|from, keep "at the pin"/"dead aim"/"pin-high",
+require aim-verb. Builder's tests only assert reject-on-bad, never pass-on-good w/ these words -> add
+pass-on-good regression tests. NON-BLOCKING folded into fixup: classifier misses terse advice ("driver
+here?","go for it?","send it?","left or right off this tee","what's the smart play","how much can I bite
+off") -> OTHER->Claude (bounded by strip); add patterns + matrix rows. "I had 3 putts"->SCORE risk -> add
+putts-exclusion guard to _is_score. qa: all gates GREEN (ruff, 2770 pytest, tsc, build, 2698 vitest,
+278 voice-smoke) + 57/57 backend acceptance + 38/38 frontend; GAP = spec §11 named live-session record_scores
+test (sessionStrategy-never-called + no-confirm) not built -> add it. designer: APPROVE; nit = caddie.py:984
+_SCORE_TEXT_HANDOFF_LINE is TTS-spoken but reads like app help text -> first-person reword.
+
+## AWAITING — builder FIXUP (same builder ac55af03, resumes w/ context) on the above batch
+Batch: B1 word-boundary club match + B2 reachability regex + pass-on-good validator tests + classifier
+terse-advice patterns/rows + putts guard + live-session record_scores test + copy reword. Re-run gates.
+On DONE: I rebase+push, then re-review the DELTA (reviewer delta-check + qa gates). Ships HELD; do NOT
+ship/ping. If I die: reconcile from origin/integration/next + builder fixup commits.
+
 ## AWAITING — reviewer + qa + designer on item @7d2f94d (integration/next), running in parallel
 reviewer(fresh adversarial: can ANY advice-class ask slip to a mouth un-brained? does the strip break
 benign chit-chat/fast-path readout? does the guide-gate false-reject a valid guide? verdict-pin holes?
