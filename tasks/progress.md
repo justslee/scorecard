@@ -3,6 +3,47 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 DONE — draggable yardage-book aim target, NOTICEABLE, committed to worktree-agent-ad870b071dfc686ee (maps to integration/next) @ b142f40 (not yet pushed by builder — eng-lead pushes)
+Owner ask: "Can you make the target draggable? The one on the yardage book and map?" Built
+per specs/draggable-target-plan.md + specs/yardage-target-concept.md. Map surface
+(GoogleSatelliteMap.tsx) was VERIFY-ONLY per plan — untouched, no code change (on-device
+verification is QA's job, not this commit's).
+- New `frontend/src/lib/yardage-book-target.ts` (pure, headless-testable): `pathArcLength`,
+  `bookYardsPerUnit` (yards/arcLength — a straight hole's tee→green euclidean distance equals
+  hole.yards exactly), `bookTargetDistances` (single arg-building seam for live-drag + settled
+  readout, mirrors the map's `tapTargetDistances` Item-4 contract; rounds to nearest 5 —
+  false-precision guard per designer, vs the map's nearest-1), `clampToDiagram`, `round5`.
+  Doglegs deliberately don't sum legs to `yards` (euclidean cuts the corner) — commented as
+  intentional/honest, unit-tested (chord-midpoint vs at-vertex cases).
+- `HoleIllustration.tsx`: Pointer Events (down/move/up/cancel + setPointerCapture) drive an ink
+  ring+crosshair reticle seeded at `shotPoint` (or path midpoint) so there's always something to
+  grab; aim state stays INTERNAL to the component (shotPoint prop contract unchanged, no
+  HoleCard/RoundPageClient plumbing). Screen→viewBox via getScreenCTM().inverse(). Ink→accent
+  while dragging, one restrained target→green dashed thread (no tee→target leg, per designer's
+  "stay simpler than the map" call); supersedes the old passive shotPoint pulse (no double
+  marker). In-SVG top-left readout pill (dark ink/mono/paper — matches HoleCard's existing
+  {distance}Y pill idiom) shows live FROM TEE / TO GREEN numbers + a × to clear back to seed;
+  pill body is `pointerEvents:none` so it can never shadow the hit circle if dragged underneath
+  it. stopPropagation on pointerdown+click isolates the drag from HoleCard's expand-tap and
+  RoundPageClient's framer hole-swipe wrapper. Full reduced-motion fallback (instant swaps).
+- Found + fixed one real bug while building: mixing an XML `transform` attribute with a CSS
+  `style.transform` on the SAME `<g>` silently drops the attribute (CSS always wins) — split
+  translate (XML attribute, instant, no lag) from the grab-scale (nested `<g>`, CSS transition)
+  across parent/child so position tracks the finger with zero delay while only the scale
+  bounces/eases.
+- Gates green (paste-able): `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build`
+  succeeds, `npx tsx voice-tests/runner.ts --smoke` 278/278, targeted vitest set (new
+  yardage-book-target.test.ts [16] + hole-shot-point + the three untouched map suites) 264/264,
+  full `npx vitest run` 138 files / 2685 tests, no regressions.
+- Deviation note: plan flagged an ambiguity on whether the readout persists after release or is
+  drag-only. Resolved conservatively toward NORTHSTAR "calm": the reticle mark is ALWAYS the
+  quiet baseline; the numeric pill only appears once the golfer has actually placed a custom aim
+  (`aim !== null`, drag OR settled) so the required × stays reachable to clear it — not shown at
+  the plain seeded/rest state. Documented in the code comment; not a mechanics/geometry change.
+- Ready for the designer's blocking visual pass (reticle form, readout placement/rounding) per
+  the plan's §4 implementation order, and an on-device pass covering the map's §1 verification
+  checklist (separate, unstarted — not part of this commit).
+
 ## 2026-07-17 DONE — caddie live P0s A (connect-stall UX) + B (live-hole answers), BOTH NOTICEABLE, LANDED on origin/integration/next @ fbd2061 (rebased onto eba80ca, pushed); added to bundle PR #145
 Two owner v1.1.11 field P0s, one eng-lead pass (worktree agent-a23cf368966ee80ce). Fable plan
 specs/caddie-live-p0-connect-hole-plan.md, builder @3e030e7, designer copy fix @fbd2061.
