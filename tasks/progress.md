@@ -18720,3 +18720,15 @@ suppression (<=100y first run when a farther run exists). guide_writer validator
 accepting hallucinated open-zone tree carries). Fixtures backend/tests/fixtures/bethpage_red_trees.json
 (holes 1/5/6). Observability: hole_hazards_intel + caddie_reco_context log.info. Measurement geometry
 UNTOUCHED. Dispatching builder now (commit + push before await). Do NOT ship/ping.
+
+## 2026-07-17 AWAITING reviewer + qa on 7be7c37 (parallel) — caddie-tree-span-gap (P0, NOTICEABLE)
+Builder DONE @ 6feb8a4 (impl) / 7be7c37 (progress), pushed to origin/integration/next, FF clean (linear
+history, plan b3c1176 preserved). Gates green locally: ruff clean, 321 passed / 0 failed on the 6 targeted
+files. Protected geometry funcs confirmed untouched (diff-check). Red 1 line now "trees L 265-480y, trees R
+385-475y" (drive zone shown clear); Red 5/6 unchanged. Fixture reconstruction reproduces deployed carries
+exactly. NOW awaiting: reviewer (adversarial — verify fix not fixture-calibrated, hand-check one hole's
+geometry trig independently, confirm geometry untouched, scrutinize near-tee suppression + >3-run fallback +
+guide_writer validator tightening) + qa (all gates SUCCESS; caddie-experience if present; on-box before/after
+sanity). On resume: reviewer SHIP + qa PASS -> update bundle PR checklist (NOTICEABLE) + on-box post-fix
+proof + observability confirmed -> then this is the ship-bar-cleared P0, offer to release-manager (but SHIPS
+STILL HELD until owner "ship it"). BLOCKING -> re-dispatch builder. Do NOT ship/ping without owner.
