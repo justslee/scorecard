@@ -18874,3 +18874,22 @@ line — no production impact, no current golden scenario splits; fix = match "t
 SHIPS HELD per brief — did NOT ping owner. Bundle PR opened (integration/next -> main), item on checklist as
 NOTICEABLE. The combined ship (with the smart-brain lane) is the coordinator's/owner's call; this pass only
 clears the measurement ship-bar gate.
+
+## 2026-07-17 CONCEPT DONE (PM spec + designer) — AWAITING fable Plan
+PM spec specs/course-discovery-intel.md + backlog item course-discovery-intel (p1, noticeable). Locked:
+courseId == public.courses.id (reviews already key on it — ZERO new identity bridging); description writer =
+parametric-knowledge-only (NO web_search: kills injection+search cost); per-fact confidence gate (drop < high ->
+geometry-grounded landscape fallback); one DB-only endpoint GET /api/courses/{id}/intel feeds both surfaces;
+map card reuses CaddiePanel sheet idiom. Designer delivered the Bethpage Black exemplar (126w, grounded
+Tillinghast/US-Open facts) + a low-confidence fallback voice + the floating-paper slide-up card concept (NOT a
+docked SaaS sheet) + detail-page About/rating sections; HARD constraints: typographic ink stars never colored,
+no shimmer skeletons, cap card clutter, wire exemplar as VERBATIM few-shot anchor.
+
+fable Plan (a453afe40587ead0c) -> specs/course-discovery-intel-plan.md: resolving the storage fork decisively
+(A additive courses.course_intel migration [STOP-for-approval] vs B reuse hole_features [no migration, ships real
+output now]), designing writer+confidence-validator (offline-testable crux), CourseIntel shape, endpoint, both
+frontend surfaces, seed. Ships HELD; do NOT ship/ping.
+
+## AWAITING — fable Plan a453afe40587ead0c (specs/course-discovery-intel-plan.md)
+On completion: dispatch builder on the no-migration-safe slice + whatever the plan's storage verdict authorizes.
+If I die: reconcile from origin/integration/next; concept+spec landed; plan pending; no feature code yet.
