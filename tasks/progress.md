@@ -94,10 +94,22 @@ ROOT-CAUSE TRACE (done, handed to Plan agent):
   get_bend/get_shot_distance/get_green_read), overriding stale args.hole_number — mirrors the yards/basis
   override already there; structurally cannot go stale.
 
-NEXT: Plan(fable) → specs/caddie-live-p0-connect-hole-plan.md; builder; reviewer(fresh, adversarial:
-retry zombies? rapid-swipe race? stall-fix masking real net errors?); qa(gates SUCCESS + caddie suites);
-designer BLOCKING on connecting-UX states. On resume: reconcile from worktree branch git log; if Plan's
-spec file exists, do NOT re-run Plan.
+PLAN DONE (fable) → specs/caddie-live-p0-connect-hole-plan.md (confirmed both traces w/ exact seams).
+Bug A fix: new liveState "retrying"/"connect-failed" + retryConnect(); per-phase budgets in transport.ts
+(LIVE_MINT_BUDGET_MS=4000, LIVE_CONNECT_BUDGET_MS=8000); one quiet cold auto-retry; honest tap-to-retry
+that PERSISTS liveOn (connect-failed != fallback, so useDetachedCaddieLive auto-release untouched);
+key-free voiceEvent phase telemetry; realtime.ts UNTOUCHED for A. Bug B fix: getToolContext +
+dispatchTool ctx carry live currentHole; six hole-scoped tools override stale args.hole_number
+(record_shot args-first); no backend/shared-types change.
+
+## 2026-07-17 AWAITING builder — implement specs/caddie-live-p0-connect-hole-plan.md VERBATIM
+Dispatched builder on worktree agent-a23cf368966ee80ce (integration/next content @ 8579326 + d5e5f95
+progress + spec commit). Builder commits on THIS worktree branch, runs gates, does NOT open a per-item PR.
+On builder return: reviewer(fresh adversarial: retry zombies? rapid-swipe race? stall-fix masking real
+net errors? connect-failed persistence safe?) + qa(all gates SUCCESS + caddie suites green) in parallel,
+then designer BLOCKING on connecting/retrying/connect-failed copy+behavior. Then rebase onto
+origin/integration/next, push, add both items (NOTICEABLE) to bundle PR. Ships HELD (tree-distance lane)
+— do NOT ship/ping. On resume: git log the worktree branch; if builder's commit exists, do NOT re-dispatch.
 
 ## 2026-07-16 DONE — caddie-advice-model-decoupling, SILENT, committed @ a323851 (on worktree branch tracking integration/next, NOT pushed — eng-lead rebases+pushes)
 Implemented specs/caddie-advice-model-plan.md Steps 1-3 exactly (no re-plan). `_advice_model()`
