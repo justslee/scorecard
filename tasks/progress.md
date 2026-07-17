@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 IN-PROGRESS — caddie two-tier advice routing (OWNER CRUX, NOTICEABLE) — worktree agent-a84640c5c3166ffd8
+Owner-ratified rearchitecture: advice-class asks MUST route to the advanced brain fed the COMPLETE
+grounded payload; fast facts stay on the deterministic engine tools + realtime mouth. Builds ON the
+already-landed get_strategy seam (4bbe0e3, strategy.py). Base = origin/integration/next @7e330cc.
+ARCHITECTURE MAP DONE (direct read + Explore). Confirmed gaps to close:
+1. STRIP: realtime `_situation_block` (voice_prompts.py:386-395) bakes hazard-side detail + guide text +
+   bend into the session instructions — the freelancing fuel. Text path `_build_session_voice_prompt`
+   (caddie.py:948-972) bakes the same. Must strip the strategy INGREDIENTS from the mouths.
+2. ROUTING is soft only: realtime tool_choice:"auto" + STRATEGY_TOOL_RULE nudge; get_strategy excluded
+   from TEXT_TOOLS. No deterministic classifier/routing seam. Need enforced routing + a pinnable matrix.
+3. GUIDE GATE is verdict-blind: validate_guide (guide_writer.py:877) catches hazard-NAMING side-flips,
+   NOT a guide whose strategic favor-side disagrees with the engine verdict (the Red-1 poison). Need a
+   read-time side-agreement check vs the live engine favor-side; disagree -> drop+log; demote to labeled
+   "prior notes — may be stale, trust live data" (injected at voice_prompts.py:393, caddie.py:968,
+   strategy.py:150).
+4. VALIDATOR not verdict-pinned: validate_strategy_text (strategy.py:364) checks hazard-presence/side-
+   flip only, not favor-side + reachability agreement with the engine recommendation.
+5. TEXT/CLASSIC path has no brain seam ("one brain, every mouth" unmet) — DECISION POINT for Fable
+   (6s tool_loop timeout, text mouth already Claude, prompt-cache prefix).
+6. LIVE-GPS BUG: frontend get_strategy dispatch (realtime.ts:208-213) omits distance_to_green_yards —
+   brain isn't fed live GPS distance though /session/strategy accepts it (caddie.py:693).
+Fixture for Red-1 acceptance: backend/tests/fixtures/bethpage_red_trees.json (holes 1/5/6).
+
+## AWAITING — Plan(fable): specs/caddie-two-tier-routing-plan.md (THE crux design)
+Dispatched Fable Plan agent for the routing design + context-strip + read-time guide gate + verdict-pin
++ tendencies payload + text-path decision + routing matrix + test contract (Red-1 acceptance, routing
+matrix, structural strip, consistency). On DONE -> builder implements the plan on this worktree; then
+reviewer(fresh) + qa(gates+acceptance+matrix) + designer(thinking-bridge). Ships HELD; do NOT ship/ping.
+If I die: reconcile from origin/integration/next + worktree commits; re-dispatch Fable only if no plan
+file exists.
+
 ## 2026-07-17 DONE — draggable yardage-book aim target, NOTICEABLE, committed to worktree-agent-ad870b071dfc686ee (maps to integration/next) @ b142f40 (not yet pushed by builder — eng-lead pushes)
 Owner ask: "Can you make the target draggable? The one on the yardage book and map?" Built
 per specs/draggable-target-plan.md + specs/yardage-target-concept.md. Map surface
