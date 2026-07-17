@@ -151,13 +151,21 @@ gap-bounded chain sampling (new _TREE_SPAN_MAX_GAP_YDS=40) so a bracketing tree 
 landing-zone entry. Fix C = optional `max_reach_yds` on drive_zone_hazards, fed drive_total_yards at
 aim_point.py:874/876. No shared-type changes.
 
-## AWAITING builder on caddie-hazard-side-reach-plan (this cycle)
-Dispatched builder to implement specs/caddie-hazard-side-reach-plan.md (Fixes A/B/C + tests), commit on
-this worktree branch, run gates 1-8. Outcomes: builder returns green -> dispatch reviewer (adversarial:
-try to construct a layout the fix still misclassifies; verify NO double-flip/sign-flip masking) + qa
-(gates SUCCESS on pushed head + caddie-experience green) in parallel. BLOCKING findings -> re-dispatch
-builder. Then rebase onto latest origin/integration/next (parallel orb lane), push, add to bundle PR
-#144 checklist (NOTICEABLE). On usage/spend error: checkpoint + STOP. Do NOT ship/ping (owner brief).
+## builder DONE @8dfb701 — Fixes A/B/C + 7 tests, all 8 gates green (2595 backend, voice 278, caddie-exp 241)
+Files: hazards.py (_derive_tee_green tee-arg priority + back-tee default, two-pass; _gap_bounded_tree_chain,
+_TREE_SPAN_MAX_GAP_YDS=40, _TREE_CHAIN_SAFETY_CAP=12), decade_advice.py (drive_zone_hazards/
+decade_landing_advice optional max_reach_yds), aim_point.py (max_reach_yds=drive_total_yards at both
+positioning sites). Tests: TestTeeSelection, red1 bracketing e2e, 8-bearing bracketing invariant,
+real-gap-not-interpolated, greenside-bunker-excluded + reach e2e + legacy-default. T1/T12 counts 2->3
+(min/max collapse was the root cause; formatted lines unchanged). No shared-type changes.
+
+## AWAITING reviewer + qa on 8dfb701 (parallel, this cycle)
+Worktree branch @8dfb701; base merge-base 533ac44; origin/integration/next now a135ef7 (orb lane advanced
+f4d55c5->a135ef7 — rebase there at push time). Reviewer: adversarial correctness (construct a layout the
+fix still misclassifies; verify NO sign-flip/double-flip masking; scrutinize gap-chain + tee-selection
+edges) + /code-review. QA: run gates 1-8 in the worktree. Outcomes: both green -> rebase onto latest
+origin/integration/next, push, open/append bundle PR #144 checklist (NOTICEABLE). BLOCKING -> re-dispatch
+builder. On usage/spend error: checkpoint + STOP. Do NOT ship/ping (owner brief).
 
 ## 2026-07-16 DONE — GPS/on-course readiness verification (isolated worktree) [audit record below; RESOLVED block follows]
 Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
