@@ -18253,3 +18253,11 @@ caddie-vision-visual-read (c). Do NOT ship/ping this cycle.
 ## AWAITING builder on caddie-advice-model-decoupling (SILENT) per specs/caddie-advice-model-plan.md
 On resume: reconcile from origin/integration/next; if builder's commit is present, run reviewer+qa;
 if not, re-dispatch builder. Two other lanes active (hazards.py + orb) — REBASE before push; add to PR #144.
+
+## AWAITING reviewer + qa on caddie-advice-model-decoupling @ a323851 (SILENT)
+Builder DONE: _advice_model() + conditional-temperature allowlist, byte-identical on shipped sonnet-4-5.
+Gates green local (ruff clean, 72/72 targeted). Reviewer: grounding-contract pins must survive the
+model-change surface (no regression to numbers/decision/language rules); confirm allowlist can't 400.
+QA: full backend gate on the pushed head (CI Postgres). On resume: if both green -> add to PR #144
+(SILENT), done for this item. Filed designed-ready: caddie-smart-strategy-tool (b, big win),
+caddie-advice-sonnet5-flip (a), caddie-vision-visual-read (c). Do NOT ship/ping (SILENT).
