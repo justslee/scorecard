@@ -18944,8 +18944,12 @@ Owner ask: make the aim target DRAGGABLE on BOTH the satellite map AND the yarda
 - Yardage book (HoleIllustration.tsx + HoleCard.tsx): static SVG on abstract HOLES path, only a passive
   shotPoint dot. ADD a draggable on-paper aim marker; yardages (to-target, target-to-green) derive from
   hole.yards via path/geometry. This is the NEW work. Designer BLOCKING on on-paper feel.
-AWAITING: fable Plan (specs/draggable-target-plan.md) + designer concept (yardage-book target look+gesture),
-running in parallel. On both back: builder implements plan in THIS worktree on integration/next; then
+Plan @b47d315 (specs/draggable-target-plan.md): book geometry = arc-length ypu (hole.yards/arcLength(path)),
+FREE 2D drag clamped to paper, origin=tee always, round5; NEW pure module frontend/src/lib/yardage-book-target.ts
+(+test); map = VERIFY-ONLY (no code). Concept @b47d315 (specs/yardage-target-concept.md): ink ring+crosshair
+reticle (accent while dragging), ONE dashed target->green line only (no tee-leg), top-right pill grows to
+two-line TEE/PIN readout round5, × to clear. Concept wins on visuals, plan wins on mechanics.
+AWAITING: builder afc248ffc7883a360 (in THIS worktree, commits here; I push HEAD:integration/next). On DONE:
 reviewer (fresh: touch-event correctness, no drag leak, yardage math correct+consistent, no map regression)
 + qa (gates SUCCESS + map/caddie suites, drive interaction) + designer BLOCKING (both rendered targets).
 Ships HELD — lands on bundle for owner's NEXT approval; do NOT ship/ping. If I die: reconcile from
