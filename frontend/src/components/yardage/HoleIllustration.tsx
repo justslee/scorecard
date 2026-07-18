@@ -111,6 +111,17 @@ const HoleIllustration = forwardRef<
      * the single readout surface (specs/yardage-target-concept.md §3); this
      * component owns the drag/aim geometry but never draws its own panel. */
     onAimChange?: (r: AimReadout | null) => void;
+    /** `"interactive"` (default) is byte-identical to the pre-existing
+     * behavior — every existing call site (HoleCard etc.) is unaffected.
+     * `"hero"` is a static, chrome-free rendering for the sign-in hero
+     * (specs/login-screen-visual-plan.md §4): no `#ece7db` background rect
+     * (paper + noise shows through — "no card chrome"), no aim reticle group,
+     * no tee→green thread line, no invisible drag-hit circle, and the native
+     * pointer-listener effect never attaches (no dead listeners). This exact
+     * element set (rough texture, fairway ribbon, dashed centerline, hazards,
+     * green + flag, tee dot, TEE/GRN labels) is the shared contract Slice 3
+     * will animate — do not fork a second hero component. */
+    variant?: "interactive" | "hero";
   }
 >(function HoleIllustration(
   {
@@ -120,9 +131,11 @@ const HoleIllustration = forwardRef<
     showDetail = true,
     accent = "oklch(0.54 0.18 28)",
     onAimChange,
+    variant = "interactive",
   },
   ref,
 ) {
+  const isHero = variant === "hero";
   const hole = HOLES[(holeNumber - 1) % HOLES.length];
   const VB = 100;
   const scale = (v: number) => v * VB;
@@ -244,6 +257,7 @@ const HoleIllustration = forwardRef<
   // there prevents the event from ever reaching the ancestor, and there's no
   // React synthetic dispatch in the mix to poison.
   useEffect(() => {
+    if (isHero) return; // hero variant never attaches drag listeners — no dead listeners.
     const el = hitRef.current;
     if (!el) return;
     el.addEventListener("pointerdown", handlePointerDown);
@@ -256,10 +270,12 @@ const HoleIllustration = forwardRef<
       el.removeEventListener("pointerup", endDrag);
       el.removeEventListener("pointercancel", endDrag);
     };
-    // Intentionally empty deps: the handlers above only close over stable
-    // refs/setters (or read through toSvgPointRef), so they never go stale;
-    // re-registering per render would be pointless churn.
-  }, []);
+    // Deps: `isHero` only (never toggles on a mounted instance in practice —
+    // `variant` is a static prop — but listed so the guard above is honest to
+    // the linter). The handlers otherwise only close over stable refs/setters
+    // (or read through toSvgPointRef), so they never go stale; re-registering
+    // per render would be pointless churn.
+  }, [isHero]);
 
   const { toTarget, toGreen } = bookTargetDistances(aimPoint, hole.path, hole.yards);
   const reticleColor = dragging ? accent : T.ink;
@@ -296,8 +312,8 @@ const HoleIllustration = forwardRef<
         </radialGradient>
       </defs>
 
-      <rect x="0" y="0" width={VB} height={VB} fill="#ece7db" />
-      <rect x="0" y="0" width={VB} height={VB} fill={`url(#rough-${holeNumber})`} opacity="0.3" />
+      {!isHero && <rect x="0" y="0" width={VB} height={VB} fill="#ece7db" />}
+      <rect x="0" y="0" width={VB} height={VB} fill={`url(#rough-${holeNumber})`} opacity={isHero ? 0.25 : 0.3} />
 
       <path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" />
       <path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" />
@@ -321,74 +337,78 @@ const HoleIllustration = forwardRef<
         <circle r="0.6" fill="#f4f1ea" />
       </g>
 
-      {/* Draggable aim reticle — supersedes the old passive shotPoint pulse
-          (never both: two markers would be noise). One dashed thread while
-          dragging, echoing the map's "what's left" leg, but restrained —
-          no permanent tee→target leg on this smaller, calmer surface. */}
-      <line
-        x1={scale(aimPoint[0])}
-        y1={scale(aimPoint[1])}
-        x2={scale(green[0])}
-        y2={scale(green[1])}
-        stroke={T.pencil}
-        strokeWidth="0.3"
-        strokeDasharray="1 1.5"
-        style={{
-          opacity: dragging ? 0.35 : 0,
-          transition: reduceMotion ? "none" : "opacity 0.3s ease",
-        }}
-      />
+      {!isHero && (
+        <>
+          {/* Draggable aim reticle — supersedes the old passive shotPoint pulse
+              (never both: two markers would be noise). One dashed thread while
+              dragging, echoing the map's "what's left" leg, but restrained —
+              no permanent tee→target leg on this smaller, calmer surface. */}
+          <line
+            x1={scale(aimPoint[0])}
+            y1={scale(aimPoint[1])}
+            x2={scale(green[0])}
+            y2={scale(green[1])}
+            stroke={T.pencil}
+            strokeWidth="0.3"
+            strokeDasharray="1 1.5"
+            style={{
+              opacity: dragging ? 0.35 : 0,
+              transition: reduceMotion ? "none" : "opacity 0.3s ease",
+            }}
+          />
 
-      {/* Translate via the XML attribute (position tracks the pointer
-          glued, every render, no CSS transition — no lag). Scale-on-grab
-          lives on a NESTED <g> as a separate CSS transform, so the grab
-          bounce can spring/ease independently of position. (A CSS
-          `transform` style completely overrides the XML `transform`
-          attribute on the same element per SVG2/CSS Transforms — mixing
-          both on ONE <g> would silently drop the translate, so they're
-          split across parent/child instead.) */}
-      <g transform={`translate(${scale(aimPoint[0])}, ${scale(aimPoint[1])})`}>
-        <g
-          style={{
-            transform: `scale(${dragging ? 1.15 : 1})`,
-            transformOrigin: "0px 0px",
-            transition: reduceMotion ? "none" : "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-          }}
-        >
-          <circle r="3.2" fill="none" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="0" y1="-3.6" x2="0" y2="-4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="0" y1="3.6" x2="0" y2="4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="3.6" y1="0" x2="4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="-3.6" y1="0" x2="-4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <circle r="0.9" fill={reticleColor} stroke={T.paper} strokeWidth="0.3" style={{ transition: colorTransition }} />
-        </g>
-      </g>
+          {/* Translate via the XML attribute (position tracks the pointer
+              glued, every render, no CSS transition — no lag). Scale-on-grab
+              lives on a NESTED <g> as a separate CSS transform, so the grab
+              bounce can spring/ease independently of position. (A CSS
+              `transform` style completely overrides the XML `transform`
+              attribute on the same element per SVG2/CSS Transforms — mixing
+              both on ONE <g> would silently drop the translate, so they're
+              split across parent/child instead.) */}
+          <g transform={`translate(${scale(aimPoint[0])}, ${scale(aimPoint[1])})`}>
+            <g
+              style={{
+                transform: `scale(${dragging ? 1.15 : 1})`,
+                transformOrigin: "0px 0px",
+                transition: reduceMotion ? "none" : "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
+              }}
+            >
+              <circle r="3.2" fill="none" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="0" y1="-3.6" x2="0" y2="-4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="0" y1="3.6" x2="0" y2="4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="3.6" y1="0" x2="4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="-3.6" y1="0" x2="-4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <circle r="0.9" fill={reticleColor} stroke={T.paper} strokeWidth="0.3" style={{ transition: colorTransition }} />
+            </g>
+          </g>
 
-      {/* Invisible hit target, ≥44pt physical touch target at both card
-          sizes (r=12 viewBox units ⇒ ~45.6px diameter at the 190px
-          collapsed card). Sits last so it's on top for hit-testing; the
-          visible glyph above is purely decorative. */}
-      <circle
-        ref={hitRef}
-        cx={scale(aimPoint[0])}
-        cy={scale(aimPoint[1])}
-        r="12"
-        fill="transparent"
-        style={{ touchAction: "none", cursor: "grab" }}
-        // Pointer handlers are wired imperatively via native addEventListener
-        // (see the effect above) rather than JSX onPointerDown/Move/Up props
-        // — that's what lets stopPropagation() actually isolate the drag from
-        // the round page's framer-motion `drag="x"` hole-swipe wrapper (see
-        // the effect's comment for why). setPointerCapture (inside
-        // handlePointerDown) still reroutes all subsequent pointermove/up to
-        // this element regardless of finger movement; touch-action:none
-        // blocks native browser pan gestures too. Do NOT add an
-        // onPointerDownCapture alongside a co-located bubble onPointerDown on
-        // this node: in React 19 that aborts the whole synthetic dispatch,
-        // silently killing the drag (regression, fixed — see git history).
-        onClick={(e) => e.stopPropagation()}
-        aria-label="Drag aim target"
-      />
+          {/* Invisible hit target, ≥44pt physical touch target at both card
+              sizes (r=12 viewBox units ⇒ ~45.6px diameter at the 190px
+              collapsed card). Sits last so it's on top for hit-testing; the
+              visible glyph above is purely decorative. */}
+          <circle
+            ref={hitRef}
+            cx={scale(aimPoint[0])}
+            cy={scale(aimPoint[1])}
+            r="12"
+            fill="transparent"
+            style={{ touchAction: "none", cursor: "grab" }}
+            // Pointer handlers are wired imperatively via native addEventListener
+            // (see the effect above) rather than JSX onPointerDown/Move/Up props
+            // — that's what lets stopPropagation() actually isolate the drag from
+            // the round page's framer-motion `drag="x"` hole-swipe wrapper (see
+            // the effect's comment for why). setPointerCapture (inside
+            // handlePointerDown) still reroutes all subsequent pointermove/up to
+            // this element regardless of finger movement; touch-action:none
+            // blocks native browser pan gestures too. Do NOT add an
+            // onPointerDownCapture alongside a co-located bubble onPointerDown on
+            // this node: in React 19 that aborts the whole synthetic dispatch,
+            // silently killing the drag (regression, fixed — see git history).
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Drag aim target"
+          />
+        </>
+      )}
 
       {showDetail && (
         <>

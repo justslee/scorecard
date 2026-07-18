@@ -1,6 +1,8 @@
 // Gate-4 offline test — proves both the predicate AND the CLI exit code,
 // mirroring how assert-no-auth-bypass.mjs is proven
-// (specs/auth-headless-spike-plan.md §6).
+// (specs/auth-headless-spike-plan.md §6). Also covers the login-screen-
+// visual broadening (specs/login-screen-visual-plan.md §1): the new
+// `src/components/auth` scan root and the `append(...)` call-shape.
 
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
@@ -67,11 +69,32 @@ describe("findCredentialLogViolations — predicate", () => {
     );
     expect(violations).toHaveLength(0);
   });
+
+  it("flags append(...) of a password variable (login-screen-visual broadening)", () => {
+    const violations = findCredentialLogViolations(
+      "fake.ts",
+      `append(\`signing in with \${password}\`);`,
+    );
+    expect(violations).toHaveLength(1);
+  });
+
+  it("does NOT flag append(...) with only descriptive labels/status codes", () => {
+    const violations = findCredentialLogViolations(
+      "fake.ts",
+      `append(\`\${label}: FAILED (\${errCode(e)})\`);`,
+    );
+    expect(violations).toHaveLength(0);
+  });
 });
 
 describe("scanForCredentialLogs — real repo files stay clean", () => {
-  it("finds zero violations across the auth-spike surface today", () => {
+  it("finds zero violations across the auth-spike + components/auth surface today", () => {
     const violations = scanForCredentialLogs();
+    expect(violations).toEqual([]);
+  });
+
+  it("scanning ONLY the new src/components/auth root is clean (proves the root exists + is walked)", () => {
+    const violations = scanForCredentialLogs(["src/components/auth"]);
     expect(violations).toEqual([]);
   });
 });

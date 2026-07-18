@@ -1,13 +1,15 @@
-// CI/build guard for the auth-headless-spike (Gate 4 — credential no-log
-// discipline; specs/auth-headless-spike-plan.md §6). Mirrors the
-// assert-no-auth-bypass.mjs pattern: an importable predicate + a CLI
-// entrypoint, proven by frontend/src/lib/auth-spike/no-credential-log.test.ts.
+// CI/build guard for the auth-headless-spike AND the login-screen-visual
+// custom login UI (Gate 4 — credential no-log discipline;
+// specs/auth-headless-spike-plan.md §6, specs/login-screen-visual-plan.md
+// §1). Mirrors the assert-no-auth-bypass.mjs pattern: an importable
+// predicate + a CLI entrypoint, proven by
+// frontend/src/lib/auth-spike/no-credential-log.test.ts.
 //
-// Scans the auth-spike surface (the only files touched by this slice that
-// handle raw credentials) and fails the build if any console.*(...) or
-// setAuthDiag(...) call, or any template-literal / string-concatenation
-// expression, references an identifier that looks like a raw secret:
-// password | idToken | identityToken | rawNonce | token (word-boundary).
+// Scans the auth-spike surface plus the shipped custom auth UI (the files
+// that handle raw credentials) and fails the build if any console.*(...),
+// setAuthDiag(...), or append(...) call, or any template-literal / string-
+// concatenation expression, references an identifier that looks like a raw
+// secret: password | idToken | identityToken | rawNonce | token (word-boundary).
 //
 // Allowlisted identifiers (booleans/diag fields, not raw secrets):
 //   tokenRestored, authHeaderReceived, tokenType, tok (diag-field names that
@@ -22,6 +24,7 @@ import { join } from "node:path";
 const SCAN_ROOTS = [
   "src/lib/auth-spike",
   "src/components/auth-spike",
+  "src/components/auth",
   "src/components/AuthProvider.tsx",
   "src/components/ClerkTokenBridge.tsx",
 ];
@@ -31,7 +34,10 @@ const SCAN_ROOTS = [
 const SECRET_IDENTIFIER = /\b(password|idToken|identityToken|rawNonce|token)\b/;
 
 // Calls whose arguments must never contain a secret-shaped reference.
-const LOGGING_CALL = /\b(console\.\w+|setAuthDiag)\s*\(/g;
+// `append(` covers AuthSpikePanel's on-screen log line helper (and any
+// future `components/auth` equivalent) — the same call-shape discipline as
+// console.*/setAuthDiag.
+const LOGGING_CALL = /\b(console\.\w+|setAuthDiag|append)\s*\(/g;
 
 /**
  * Blank out plain string-literal TEXT so a descriptive label like
