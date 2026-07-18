@@ -282,8 +282,11 @@ user with `onboarding_step` NULL → backfilled to `'done'` by the migration (§
   tri-state), cache last-known in namespaced localStorage so offline open doesn't re-gate.
 - **Native-token compatibility CONFIRMED:** custom UI → same clerk-js FAPI client → same `window`
   hooks → same Keychain persistence. No change. Spike asserts `authdiag` shows `native-sent:true` +
-  token persisted + cold-start restore after a custom-flow sign-in. Sign-out must call
-  `clearNativeToken()` (audit every `signOut()` site).
+  token persisted + cold-start restore after a custom-flow sign-in. **Sign-out clearing is already
+  CENTRALIZED** — `ClerkTokenBridge.tsx` observes the `isSignedIn` true→false transition and clears
+  the Keychain regardless of which `signOut()` fired (with a `wasSignedIn` guard against clobbering a
+  cold-start-restored token). Do NOT add per-site `clearNativeToken()` calls; the spike asserts the
+  observer still fires after a headless `signOut()` (Keychain entry gone). See §7.
 
 ---
 
@@ -299,17 +302,61 @@ user with `onboarding_step` NULL → backfilled to `'done'` by the migration (§
   codes to uniform copy, don't leak account existence); rate-limiting/stuffing/bot protection stay
   Clerk's (surface `too_many_requests` gracefully, no client retry loops); OAuth nonce/state handled
   inside clerk-js/native ID-token strategies (do not hand-roll — spike uses only supported
-  strategies); native-token Keychain posture unchanged, sign-out clears it; keep the
-  `assert-no-auth-bypass.mjs` prebuild guard + `NEXT_PUBLIC_AUTH_BYPASS` semantics identical; any
-  Capacitor social-login plugin is a new native auth dependency → supply-chain + `/security-review`.
+  strategies); native-token Keychain posture unchanged, sign-out clearing stays CENTRALIZED in
+  `ClerkTokenBridge` (do not add per-site clears — §7); keep the `assert-no-auth-bypass.mjs` prebuild
+  guard + `NEXT_PUBLIC_AUTH_BYPASS` semantics identical (and when Slice 4 adds the AuthGate onboarding
+  state, re-verify the bypass short-circuit can't leak protected content); any Capacitor social-login
+  plugin is a new native auth dependency handling the raw ID token → pin+audit, extend the no-log grep
+  to its token, confirm nonce binding forwarded to Clerk, `/security-review`; if the native OAuth
+  browser-redirect FALLBACK is used, its callback MUST be a Universal Link (not a custom URL scheme).
 - **`/security-review` checkpoints:** Slice 1 (spike — new flows + plugin), Slice 2 (credential UI),
   Slice 4 (onboarding gate + new backend field), Slice 7 (epic-wide). Slice 5 rides the Slice-7 pass
   (touches caddie payloads).
 
 ---
 
-## 7. Reviewer security-lens sanity pass on the auth recommendation
-_(Filled in from the reviewer dispatch this cycle — see the progress note / backlog for the verdict.)_
+## 7. Reviewer security-lens sanity pass on the auth recommendation — **SHIP-WITH-NOTES**
+Fresh adversarial review (2026-07-18) verified the load-bearing claims against the actual code
+(`AuthProvider.tsx`, `clerk_auth.py`, `webhooks.py`, `native-token-store.ts`, `AuthGate.tsx`,
+`ClerkTokenBridge.tsx`, `settings/page.tsx`). Verdict: the auth decision is **sound — keep Clerk,
+go headless**.
+- **Headless over homegrown is unambiguously correct (security):** `webhooks.py` authenticates on
+  the Svix signature (constant-time compare + replay protection), zero coupling to the sign-in UI;
+  `clerk_auth.py` reduces the provider-facing surface to one verifiable RS256 JWT. Homegrown = own
+  password hashing/OAuth/rotation/revocation/Apple validation/breach detection for zero design gain.
+- **"Zero backend delta" is TRUE.** FAPI hooks are genuinely provider-level (`window` globals
+  consumed by the clerk-js singleton), so a custom UI produces the *same* session JWT. **`azp` does
+  NOT change** — it derives from the request Origin that minted the token, not from which OAuth
+  provider authenticated the user; Google/Apple ID-token strategies authenticate *upstream* of
+  session creation. `iss`/JWKS are instance properties. Headless also *removes* the
+  `mountSignIn`/`assertComponentsReady` white-screen class.
+  - **Caveat (NOT this epic — multi-user):** `CLERK_AUTHORIZED_PARTIES` is currently unset in
+    owner-mode, so the azp allowlist is skipped (enforced only when `APP_ACCESS_MODE=open`). When
+    open-mode ships, the allowlist must enumerate **every minting origin** (web + Capacitor native).
+    A multi-user-epic config item; the login redesign is azp-neutral.
+- **CORRECTION folded into §5/§6 below — "audit every signOut() site to call `clearNativeToken()`"
+  was the WRONG invariant.** Clearing is **centralized**: `ClerkTokenBridge.tsx` observes the
+  `isSignedIn` true→false transition and clears the Keychain regardless of which `signOut()` fired
+  (with a `wasSignedIn` ref guard so it never clobbers a just-restored token on cold start). The
+  settings page correctly does NOT clear the token itself. Per-site clears would risk double-clear /
+  missed sites / clobbering cold-start restore. The real invariant → a spike assertion.
+- **New surface §6 under-weighted:** (a) if the native OAuth *fallback* (system browser + redirect)
+  is used, the callback MUST be a **Universal Link, not a custom URL scheme** (another app can
+  register the same scheme → callback hijack) + Clerk transfer; else the fallback is not shippable
+  and the ID-token path is required. (b) the social-login plugin handles the raw Google/Apple ID
+  token before clerk-js — pin+audit it, extend the credential no-log grep to cover its token, and
+  confirm nonce binding is forwarded to Clerk (anti-replay). (c) when adding the AuthGate onboarding
+  state (Slice 4), re-verify the `NEXT_PUBLIC_AUTH_BYPASS` short-circuit can't leak protected
+  content in a bypass build.
+- **Hard gates on the Slice-1 spike (folded into the `auth-headless-spike` backlog item):**
+  1. **JWT parity** — decode the session JWT from each flow (email/code, Google web, Google native
+     ID-token, Apple native ID-token); assert `iss`+`azp`+shape are IDENTICAL to the prebuilt-widget
+     baseline and the unchanged backend verifies each.
+  2. **Native bridge parity** — `authdiag` `native-sent:true` + Keychain persisted + cold-start restore.
+  3. **Sign-out clears Keychain via the observer** — headless `signOut()` → `isSignedIn` false →
+     `ClerkTokenBridge` observer clears; assert the Keychain entry is gone (NOT "audit every site").
+  4. **Credential no-log grep gate** extended to the social-login plugin's token.
+  5. **Fallback safety** — if the browser-redirect fallback is used, Universal-Link callback only.
 
 ---
 

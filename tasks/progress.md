@@ -258,3 +258,13 @@ deletions, no ids lost): `auth-clerk-enable-social-connections` (blocked-owner o
 
 AWAITING: reviewer security-lens sanity pass on the auth recommendation (agent a742098f) — fold
 verdict into plan §7 + here. No ship, no owner ping (planning docs are SILENT).
+
+**RESOLVED (reviewer):** security-lens verdict = SHIP-WITH-NOTES. Headless-Clerk-over-homegrown
+is the correct security call; "zero backend delta" holds (FAPI hooks provider-level; azp derives
+from Origin not the OAuth provider, so iss/azp/JWKS unchanged). Folded 3 refinements into plan §7 +
+§5/§6 + the `auth-headless-spike` item: (1) sign-out clearing is CENTRALIZED in ClerkTokenBridge —
+"audit every signOut() site" was the wrong invariant, spike asserts the observer still fires; (2)
+native OAuth browser-redirect fallback MUST use a Universal Link, not a custom URL scheme; (3) five
+hard spike gates (JWT parity, native bridge parity, sign-out Keychain clear, credential no-log grep
+incl. plugin token + nonce binding, fallback safety). azp allowlist enumeration is a multi-user-epic
+config item (unset today in owner-mode), not this epic. Planning pass COMPLETE — no ship, no ping.
