@@ -495,3 +495,20 @@ AWAITING: re-designer verdict against the same bar (Augusta vibe, "stop and look
 reviewer/qa already SHIP/PASS on the underlying logic (no auth/data changes this iteration, purely
 SVG/CSS) — confirm no re-run needed, then PR #150 checklist NOTICEABLE + backlog flip + progress.
 Do NOT ship/ping this cycle.
+
+## DONE (2026-07-18) — login-screen-visual (Slice 2, NOTICEABLE) landed on integration/next
+The Augusta-vibe custom headless login screen replaces the ancient prebuilt-Clerk widget.
+Code @8a2e4b1 (impl @811a898 + hero iteration @8a2e4b1). Verdicts: reviewer SHIP (/security-review,
+no changes), qa PASS (9 gates + backend ruff + zero-diff invariant), designer SHIP (after one
+BLOCKING hero iteration — bold fairway ribbon, de-lollipop bunker, feathered rough, placeholders,
+centered short steps). All hero fixes HERO-SCOPED — interactive HoleCard/HOLES[] byte-identical.
+FLIP STATE: the new screen replaces SignInClient/SignUpClient internals OUTRIGHT and is ON by
+default for the owner's next TestFlight build (NOT gated behind NEXT_PUBLIC_AUTH_SPIKE; that flag
+only gates /dev/auth-spike). Google/Apple render live-DISABLED ("coming online shortly") pending
+auth-clerk-enable-social-connections; email (code+password) fully live via spike-proven Future API.
+Live-flow caveat: no real Clerk click-through in-sandbox (no dev key) — proven via typed unit tests
++ real-render screenshots (scratchpad/login-{375,430}-{1-method,2-email-code,3-email-password}.png).
+Backlog: login-screen-visual -> done; login-animation-moment (Slice 3) unblocked -> ready; filed
+login-hero-ribbon-joints-polish (cosmetic, designer non-blocking follow-up). PR #150 checklist
+updated (NOTICEABLE). NOT shipped/pinged this cycle (bundle also holds the earlier caddie
+NOTICEABLE; owner approval is a separate release-manager step when directed).

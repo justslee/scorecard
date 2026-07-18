@@ -1372,7 +1372,7 @@
         "id": "login-screen-visual",
         "title": "New custom sign-in/sign-up screens (final static design, headless Clerk flow, delete the prebuilt <SignIn> widget)",
         "type": "major",
-        "status": "blocked",
+        "status": "done",
         "priority": "p1",
         "risk": "medium",
         "noticeable": true,
@@ -1382,10 +1382,23 @@
         "why": "Slice 2 of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §3.2, §5). The full new sign-in/sign-up screens -- final layout, Instrument Serif type, method buttons (Apple primary ink pill / Google / email), email-flow states, uniform error copy -- as STATIC design (no hero animation yet, that's slice 3). Delete the prebuilt @clerk/react <SignIn>/<SignUp> usage in SignInClient.tsx; keep NativeAuthDiag; new frontend/src/components/auth/ family (SignInScreen, useAuthFlow headless state machine, OAuthButtons platform-branched). Static-export safe (dynamic ssr:false, the proven pattern; headless removes the mountSignIn white-screen hazard). Update frontend/e2e/auth.spec.ts for the custom flow (@clerk/testing tokens work headless). Design must match NORTHSTAR (yardage-book, calm) -- designer review required. Enumeration hygiene: map Clerk error codes to uniform copy. Gates: lint, tsc, build, Playwright e2e, designer review, /security-review (credential-handling UI). Blocked on the spike proving the flows."
     },
     {
+        "id": "login-hero-ribbon-joints-polish",
+        "title": "Login hero: smooth the fairway-ribbon joints at the dogleg vertices (cosmetic)",
+        "type": "minor",
+        "status": "ready",
+        "priority": "p3",
+        "risk": "low",
+        "noticeable": true,
+        "depends_on": [
+            "login-screen-visual"
+        ],
+        "why": "Designer non-blocking follow-up from the login-screen-visual SHIP review (2026-07-18). The bold hero fairway ribbon uses straight perpendicular offsets, so at the dogleg vertices the corridor edges form visible angular/mitered joints rather than smooth curves. Purely cosmetic polish on the HERO (isHero) render in frontend/src/components/yardage/HoleIllustration.tsx (fairwayRibbon) -- smooth/round the offset joints (e.g. join the offset boundary points with quadratic segments like the centerline, or a rounded/miter-limited join) so the corridor reads as a hand-drawn shape. Hero-scoped ONLY; keep the interactive HoleCard variant byte-identical (HOLES[] indexed in production rounds). Gates: lint, tsc, build, designer eyeball. Low priority -- does not block the epic."
+        },
+    {
         "id": "login-animation-moment",
         "title": "The Augusta-vibe hero: a signature hole that draws itself in ink (framer-motion pathLength over HoleIllustration)",
         "type": "major",
-        "status": "blocked",
+        "status": "ready",
         "priority": "p2",
         "risk": "low",
         "noticeable": true,
