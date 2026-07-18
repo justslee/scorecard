@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — 2026-07-17 — strategy reasoning-effort flip + verdict negation fix + aim_point wart filed (PR #147)
+Worktree agent-a08c83f621081c418, base `origin/integration/next` @ 20ea1a8. Three items from
+tonight's on-box latency experiment (12 keyed calls, quality-gated), landed as 3 commits, pushed
+fast-forward @ 33fb82f.
+
+1. `backend/app/caddie/strategy.py::_strategy_reasoning_effort()` default `low` -> `none`. Evidence:
+   p50 2.4s vs 5.9s at effort=low; validator 6/6 PASS; Red-1 anti-left 3/3; the ONLY variant that
+   consistently named Augusta-12's center-bunker/water carries; zero reasoning tokens observed = zero
+   non-payload numbers to hallucinate; effort=none also unblocks streaming later (~0.5-1s first-delta).
+   `CADDIE_STRATEGY_REASONING_EFFORT` env override still works. Updated
+   `test_request_shape_has_no_sampling_params_and_correct_reasoning_field`'s pinned reasoning field
+   low->none; added `test_strategy_reasoning_effort_defaults_to_none` +
+   `test_strategy_reasoning_effort_env_override_still_works`. `run_strategy_latency.py`'s `--effort`
+   CLI default flipped to match (was a stale "low, the owner default" comment). Part of PR #147's
+   "caddie: reliable strategy answers" NOTICEABLE item (commit 739d013).
+2. `backend/app/caddie/verdict.py::extract_favor_side` negation blindness — "never miss left" /
+   "don't miss left" previously matched `_MISS_PATTERNS`' bare `miss (left|right)` substring and read
+   as a LEFT-miss claim, so a correctly-worded anti-left prior note got DROPPED as conflicting at the
+   read-time verdict gate. Added `_NEGATED_MISS_PATTERNS` (negation cue + miss|bail X), scanned before
+   the un-negated direct patterns and flipped to the OPPOSITE lateral (mirrors the module's existing
+   `_OPPOSITION_PATTERNS` convention); tracks matched spans so a negated phrase isn't double-counted as
+   its own conflicting direct claim. "miss left is fine" (no negation cue) still claims left. Full
+   existing corpus (`test_extract_favor_side_left_right_none_conflict` + guide-agreement tests) stays
+   green; 4 new parametrize rows added. SILENT (commit 5c59e0f).
+3. Filed `aim-point-hazard-aware-recommendation-line` to backlog.json (targeted string edit, validated
+   with `json.load` before commit, item count 110->111): `aim_point.compute_aim_point`'s RECOMMENDATION
+   line says "Aim at the flag — green light, no trouble" on hazard-rich reachable holes (Augusta 12:
+   water C ~140, bunkers C/L ~148-165) — `classify_pin_position` only escalates off
+   `penalty_severity`+`distance_from_green<=10`, which tee-shot-carry-yards hazards don't populate the
+   same way. Same flag-only class as `[[caddie-shot-context-reachability]]`'s incident, but the
+   REACHABLE branch, not the positioning branch that fix already covers. Filed, not fixed — out of
+   scope for this pass. SILENT (commit 33fb82f).
+
+Gates: `ruff check .` clean; full offline `backend/tests/` suite 2859 passed, 133 skipped (DB-gated,
+expected — no local Postgres per policy); targeted strategy/verdict/eval suites re-run individually
+(373 passed) before the full sweep. No frontend files touched. Rebased on `origin/integration/next`
+@ 20ea1a8 (no drift — pushed as a clean fast-forward). Not shipped/pinged — rides along on PR #147
+(owner already knows the bundle is ready; two items above ride the existing "reliable strategy
+answers" NOTICEABLE line, the negation fix and backlog filing are silent).
+
 ## DONE — 2026-07-17 — eval-multiturn-conversation-router (SILENT test rider, PR #147)
 Worktree agent-afcbd1f423e532a67, base `origin/integration/next` @ 2ccad08 (plan commit). Implemented
 `specs/eval-multiturn-conversation-router-plan.md` exactly as written — offline conversation-runner for
