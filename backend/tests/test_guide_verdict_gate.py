@@ -47,6 +47,14 @@ def _no_db_persist(monkeypatch):
         ("Avoid the right side at all costs.", "left"),  # opposition guard
         ("Play down the middle, take it as it comes.", None),  # no claim
         ("Favor the left side, but miss right if forced.", "conflict"),
+        # Negation guard (2026-07-17) — "never miss left" / "don't miss
+        # left" claim the OPPOSITE lateral, not a left-miss claim; a
+        # correctly-worded anti-left note must not read as pro-left.
+        ("Never miss left off this tee.", "right"),
+        ("Don't miss left here, it's dead.", "right"),
+        ("You shouldn't bail left on this hole.", "right"),
+        # Un-negated "miss left" still stands as a left claim.
+        ("Miss left is fine, just not long.", "left"),
     ],
 )
 def test_extract_favor_side_left_right_none_conflict(text, expected):

@@ -56,6 +56,24 @@ _MISS_PATTERNS = [
 
 _DIRECT_PATTERNS = _FAVOR_PATTERNS + _MISS_PATTERNS
 
+# Negation guard: "never miss left", "don't miss left", "shouldn't bail
+# right" claim the OPPOSITE lateral from the bare imperative — the same idea
+# _OPPOSITION_PATTERNS already applies to "away from"/"avoid"/"clear of".
+# Without this, a negation cue in front of "miss left"/"bail left" was
+# invisible to `_MISS_PATTERNS`, which matches "miss left" as a substring
+# regardless of what precedes it — a correctly-worded anti-left guide
+# ("never miss left here") read as a LEFT-miss claim and got DROPPED as
+# conflicting with an engine verdict it actually agrees with (quality loss:
+# a good prior note lost at the read-time gate). Only wraps the two
+# imperative-style miss patterns ("miss X" / "bail X") — the declarative
+# ones ("best miss is X", "X is the safe miss") don't take a natural
+# negation prefix.
+_NEGATION_CUE = r"(?:never|don't|do not|doesn't|does not|shouldn't|should not|can't|cannot)"
+_NEGATED_MISS_PATTERNS = [
+    re.compile(rf"\b{_NEGATION_CUE}\s+miss\s+(left|right)\b"),
+    re.compile(rf"\b{_NEGATION_CUE}\s+bail(?: out)?\s+(left|right)\b"),
+]
+
 
 def extract_favor_side(text: str) -> Optional[str]:
     """'left' | 'right' | 'conflict' | None — None means no lateral
@@ -64,14 +82,29 @@ def extract_favor_side(text: str) -> Optional[str]:
     treat that the same as an outright disagreement."""
     lowered = (text or "").lower()
     claims: set[str] = set()
+    # Spans already accounted for by an opposition/negation match — the
+    # un-negated direct scan below skips any (left|right) hit inside one of
+    # these, so "never miss left" isn't ALSO read as a bare "miss left"
+    # claim (which would self-contradict into a false 'conflict').
+    covered_spans: list[tuple[int, int]] = []
 
     for pattern in _OPPOSITION_PATTERNS:
         for m in pattern.finditer(lowered):
             side = m.group(1)
             claims.add("right" if side == "left" else "left")
+            covered_spans.append(m.span())
+
+    for pattern in _NEGATED_MISS_PATTERNS:
+        for m in pattern.finditer(lowered):
+            side = m.group(1)
+            claims.add("right" if side == "left" else "left")
+            covered_spans.append(m.span())
 
     for pattern in _DIRECT_PATTERNS:
         for m in pattern.finditer(lowered):
+            group_start = m.start(1)
+            if any(start <= group_start < end for start, end in covered_spans):
+                continue
             claims.add(m.group(1))
 
     if not claims:
