@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 DONE (landed integration/next @f050960, NOTICEABLE rider — owner-directed urgent cluster) — caddie-degraded-line-reliability, worktree agent-aaedc898cc8dd4962, base @b755be2
+Implemented specs/caddie-degraded-line-reliability-plan.md faithfully (no re-plan). Three fixes:
+**Fix A** (backend/app/caddie/strategy_turn.py) — extracted `compose_degraded_line(rec, green_read,
+carries)` as a module-level pure function, replacing the closure `_degraded_line()`. Composed PURELY
+from engine fields (zero reuse of `format_tee_numbers_line`'s prompt-scaffold string —
+"AUTHORITATIVE — they close" / "Speak ONLY these numbers" — and zero reuse of `*.description` prose,
+whose "no trouble" default both lied about real hazards and aimed an unreachable flag on a positioning
+shot); fixed the "the none" bug (`uphill_leave_side == "none"` STRING was truthy under the old guard).
+Every clause omitted (never a placeholder) when its source is empty/None/"none". **Fix B**
+(backend/app/caddie/strategy.py) — `_STRATEGY_TIMEOUT_S` 10.0 -> 18.0 (the reliability lever; a slow
+real answer beats a broken fallback under the voice's thinking-bridge); `_STRATEGY_MAX_OUTPUT_TOKENS`
+left at 1024 per the plan's reasoning (a cap, not a latency knob, on a reasoning model — lowering it
+would only risk more `incomplete` degrades). No retry added (Fix C: 18s x2 would blow the ~20s
+worst-case-with-bridge budget). **Client-budget alignment** (frontend/src/lib/caddie/api.ts) —
+`SESSION_VOICE_TIMEOUT_MS` 8_000 -> 20_000 so `/session/voice`'s ADVICE branch (runs
+`run_strategy_turn` inline) doesn't abort to the stateless fallback before the 18s backend synth
+returns. Tests: 5 new direct `compose_degraded_line` fixtures in
+backend/tests/eval/test_strategy_tool.py (Red-6 positioning-3-wood/trees-right/miss-right w/
+exact-equality pin, Augusta-12 center-bunkers 140/165, flat-green, falls-toward, clean
+reachable-approach) asserting the 7 forbidden substrings never appear; `_expected_degraded_line`
+rewired to delegate to the real composer (one source of truth). Gates: `ruff check .` clean;
+`test_strategy_tool.py` 52/52 (was 47, +5); `test_text_advice_interception.py` +
+`test_caddie_caching.py` 17/17; frontend `npm run lint` clean (1 pre-existing unrelated warning),
+`tsc --noEmit` clean, voice-tests smoke 278/278. Pushed to integration/next @f050960. NOTICEABLE
+(caddie advice reliability + fallback quality on TestFlight) — owner said he'd handle the ship ask
+per the plan header; not pinged this cycle.
+
 ## 2026-07-17 DONE (landed integration/next, SILENT rider on bundle PR) — ingest-overpass-error-honesty, worktree agent-ab5e93ee9bc510a64, base @72086e7
 Eng-lead's bounded contract decision, implemented as specced: `fetch_golf_course_boundaries`
 (backend/app/services/osm.py) previously swallowed Overpass 429/504/timeout into `[]`, same as
