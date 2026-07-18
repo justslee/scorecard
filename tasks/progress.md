@@ -3,6 +3,57 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## SHIPPED — 2026-07-18 — Bundle #147: caddie fast reliable strategy + course descriptions live + hazard-aware aim line (v1.1.14)
+Owner approved in-session: verbatim **"Ship it"** on the standing #147 ship ask. Pinned head
+`7bc79b3` (stable for hours, all three gates SUCCESS repeatedly — Backend, Frontend, E2E
+advisory); no drift, head unmoved through the whole ship.
+
+**VERSION bump + pre-merge gates:** bumped 1.1.13 -> 1.1.14 at `dce36c2` on `integration/next`,
+pushed, all three gates re-verified SUCCESS on the bump head before merge.
+
+**Merge:** PR #147 -> `main`, merge commit `d207720d32559395ec864c77f80908cc47ef6ea9`.
+
+**Post-merge main CI:** green on `d207720` (Frontend + Backend both SUCCESS).
+
+**Backend deploy + confirms** (key-free SSM probe, instance `i-0826ae70df62d9fe8`):
+- `Deploy backend (SSM)` GH Actions workflow auto-triggered on merge. First attempt's tail
+  health-check raced the app's own startup (fixed `sleep 3` beat uvicorn's actual ~3-4s bind
+  time — git pull/alembic/restart all succeeded, only the closing `curl` hit a 0ms-connect
+  refusal, single transient timing race, not a code defect). Confirmed on-box via a direct SSM
+  probe immediately after: `systemctl is-active` -> active, `/health` -> `{"status":"ok"}`
+  repeatedly since. Re-ran the same GH Actions job for a clean recorded status -> SUCCESS.
+- `/health` -> `{"status":"ok"}`.
+- `APP_ACCESS_MODE` absent from on-box `backend/.env` (confirmed dark).
+- Caller inert: zero `TWILIO_*` keys in the on-box `.env`.
+- `alembic current` = `015_course_intel (head)` — unchanged, no new migrations (expected).
+- **The ship's whole point, verified directly in the deployed file:**
+  `backend/app/caddie/strategy.py` on-box has `_STRATEGY_TIMEOUT_S = 18.0` and
+  `_strategy_reasoning_effort()` defaulting to `"none"` (via `CADDIE_STRATEGY_REASONING_EFFORT`
+  env override, unset on-box -> `"none"`).
+
+**TestFlight:** `bash ops/ios/ship.sh` from `main` (worked directly in the primary checkout,
+clean tree, no worktree needed — ARCHIVE SUCCEEDED, EXPORT SUCCEEDED — "Uploaded v1.1.14
+(build 202607180823) to TestFlight" on first try, no exit-70/SPM retry needed. Polled App
+Store Connect (`scratchpad/poll_build.py 1.1.14 202607180823`): `processingState=VALID` on
+first poll, not expired.
+
+**Fresh integration/next:** cut from new main and pushed as a fast-forward
+(`dce36c2..d207720`).
+
+**Records:** Notion board card created (`Bundle #147`, Status=Shipped, Type=Major).
+`backlog.json` top-level `note` ledger updated with the full terminal SHIPPED entry (targeted
+edit, validated JSON after — `items` count unchanged at 111, no data loss).
+
+**Headline (NOTICEABLE):** caddie fast reliable strategy answers (reasoning effort=none
+default, on-box A/B: p50 2.4s vs 5.9s at effort=low, quality-gated 6/6 validator PASS + Red-1
+anti-left 3/3; synth timeout 10->18s + client budget 8->20s aligned; clean
+engine-fields-only degraded line) + course descriptions live (validator over-strict length
+cap fixed 700->950/1600; Red + Pebble seeded enriched, already live via data) + hazard-aware
+aim line ("Aim at the flag — carry the water at 140" on Augusta-12-class holes; clean holes
+byte-identical). Silent: verdict negation fix, hole_number Optional fix, multi-turn
+conversation evals (10 scenarios), Red-9 truth pin, ingest hardening (composite refs, dup
+dedupe, Overpass honesty), eval split-line matcher.
+
 ## DONE — 2026-07-17 — aim-point hazard-aware recommendation line (PR #147)
 Worktree agent-ace76f1f2f65f2edb, base `origin/integration/next` @ 6d65a31. Implemented
 `specs/aim-point-hazard-aware-recommendation-line-plan.md` exactly as written — pure backend
