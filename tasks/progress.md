@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-17 red9-waste-complex-hole-assignment — RESOLVED as NOT-A-BUG (premise falsified); worktree agent-a6eab552a7402ecdc, base @608ceb0
+Diagnosed OSM relation 19545022 (claimed "Red-9 waste complex mis-assigned to hole 11"). GEOMETRIC
+TRUTH (3 independent evidence lines): the relation is a ~20x19 m greenside bunker (1 outer ring + 5 m
+island), OSM **version 1, created 2025-08-31, never edited** — never a large complex. Centroid
+(-73.45612, 40.75158) is **14 m from hole 11's centerline, 256 m from hole 9's**. No centerline passes
+through it (Tier-1 overlap = 0) → Tier-2 vote → nearest hole 11. Evidence: (1) authoritative Overpass
+fetch; (2) offline reproduction — backend/scripts/diag_red9_waste.py + diag_red_bunkers.py (live
+Overpass, no DB): hole 9 ALREADY carries its own 7-bunker cluster (ways 1240889735/736/737/738/749/
+750/751), surfaced by the v1.1.9 BUNKER_CAP 4→6 raise, NOT this relation; (3) read-only prod SSM probe
+(i-0826ae70df62d9fe8; DATABASE_URL read from the running process environ, never echoed; /tmp probe
+removed): prod stores relation/19545022 under Bethpage Red **hole 11** (correct); hole 9 has its 7
+bunkers. Origin of the misbelief: red9-relation-bunker-assembly's why-note ASSUMED it "lands on hole 9";
+bundle #143's ship note already (correctly) called it "the hole-11 waste-complex relation". BEFORE ==
+AFTER: no code change to the heuristic (correct), no prod write (forcing it onto hole 9 would strip
+hole 11 of a real hazard + plant a phantom 256 m away on hole 9). LANDED on integration/next (bundle
+#147, SILENT): real-geometry regression pin TestRed9WasteComplexRealGeometry (3 tests) locking the true
+hole-11 assignment + a clarifying note on the pre-existing synthetic TestMultiPolygonBunkerAssignment +
+the 2 diag scripts. Gates: test_course_spatial 116/116, ruff clean.
+
+## AWAITING — reviewer (fresh eyes) on the NEGATIVE conclusion for red9-waste-complex-hole-assignment
+Pushed to integration/next. Dispatched `reviewer` to adversarially FALSIFY "relation 19545022 belongs
+to hole 11, not hole 9" (owner's weekend course; geometry-claim discipline). Outcomes: **AGREES (no bug)**
+→ mark the backlog reviewer field SHIP, add the SILENT line to PR #147 checklist, done. **DISAGREES /
+finds a real hole-9 miss** → re-open, dispatch builder with the reviewer's specific geometry. Do NOT
+re-run the finished diagnosis; reconcile from the branch (diag scripts + the new test are already
+committed).
+
 ## 2026-07-17 DONE (landed integration/next @f050960, NOTICEABLE rider — owner-directed urgent cluster) — caddie-degraded-line-reliability, worktree agent-aaedc898cc8dd4962, base @b755be2
 Implemented specs/caddie-degraded-line-reliability-plan.md faithfully (no re-plan). Three fixes:
 **Fix A** (backend/app/caddie/strategy_turn.py) — extracted `compose_degraded_line(rec, green_read,
