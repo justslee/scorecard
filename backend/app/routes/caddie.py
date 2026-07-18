@@ -57,7 +57,7 @@ from app.caddie.personalities import (
     personality_visible,
     DEFAULT_PERSONALITY_ID,
 )
-from app.caddie.club_selection import CLUB_DISPLAY_NAMES
+from app.caddie.club_selection import CLUB_DISPLAY_NAMES, normalize_club_distances
 from app.caddie.session import RoundSession, sessions, get_owned_session
 from app.db.engine import async_session
 from app.db.models import PlayerProfile
@@ -346,7 +346,12 @@ async def start_session(
         bg.add_task(_precompute_course_guides, course_id)
 
     if request.club_distances:
-        session.club_distances = request.club_distances
+        # Normalize at the bag assignment (owner P0 2026-07-18) — the
+        # client/profile bag may carry model shorthand ('7i'/'3w') or
+        # GolferProfile camelCase keys; every direct reader of
+        # session.club_distances (e.g. shot_distance_payload) sees the same
+        # canonical keys `generate_recommendation`'s own chokepoint produces.
+        session.club_distances = normalize_club_distances(request.club_distances)
     if request.handicap is not None:
         session.handicap = request.handicap
 

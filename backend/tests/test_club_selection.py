@@ -1,12 +1,101 @@
 """Unit tests for caddie/club_selection.py — pure, no DB/network."""
 
+import logging
+
+import pytest
+
 from app.caddie.club_selection import (
+    canonical_club,
     normalize_club_distances,
     compute_adjustments,
     select_club,
     DEFAULT_CLUB_DISTANCES,
 )
 from app.caddie.types import WeatherConditions
+
+
+# ── canonical_club — the ONE shared alias table (owner P0 2026-07-18) ────────
+
+class TestCanonicalClub:
+    """Every LLM-natural shorthand the owner listed resolves to its
+    canonical CLUB_REFERENCE key; case/space/hyphen-insensitive; unrecognized
+    tokens (and non-str input) degrade to None, never raise."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            # Already-canonical keys pass through.
+            ("driver", "driver"),
+            ("3wood", "3wood"),
+            ("5wood", "5wood"),
+            ("hybrid", "hybrid"),
+            ("7iron", "7iron"),
+            ("pw", "pw"),
+            ("gw", "gw"),
+            ("sw", "sw"),
+            ("lw", "lw"),
+            # Display-name-derived aliases.
+            ("Driver", "driver"),
+            ("3 Wood", "3wood"),
+            ("7 Iron", "7iron"),
+            ("7-Iron", "7iron"),
+            # N-letter iron shorthand, all of 4-9.
+            ("4i", "4iron"),
+            ("5i", "5iron"),
+            ("6i", "6iron"),
+            ("7i", "7iron"),
+            ("8i", "8iron"),
+            ("9i", "9iron"),
+            # Wood shorthand.
+            ("3w", "3wood"),
+            ("5w", "5wood"),
+            # Long wedge forms + case/space/hyphen variants.
+            ("pitching wedge", "pw"),
+            ("pitching-wedge", "pw"),
+            ("gap wedge", "gw"),
+            ("sand wedge", "sw"),
+            ("sandwedge", "sw"),
+            ("lob wedge", "lw"),
+            ("lobwedge", "lw"),
+            # Newly-added single-letter/short aliases (owner spec).
+            ("p", "pw"),
+            ("P", "pw"),
+            ("lob", "lw"),
+            ("d", "driver"),
+            ("D", "driver"),
+            ("3h", "hybrid"),
+        ],
+    )
+    def test_known_aliases_resolve(self, raw, expected):
+        assert canonical_club(raw) == expected
+
+    def test_unrecognized_token_returns_none(self):
+        assert canonical_club("shovel") is None
+        assert canonical_club("putter") is None
+
+    def test_non_str_input_never_raises(self):
+        # The int-TypeError half of the P0: a model-supplied int club arg
+        # must never raise inside club resolution.
+        assert canonical_club(7) is None
+        assert canonical_club(None) is None
+
+
+class TestNormalizeClubDistancesAliasesAndDrops:
+    """The bag chokepoint resolves shorthand to correct canonical numbers and
+    DROPS (never crashes on) an unrecognized club, logging a warning."""
+
+    def test_shorthand_resolves_to_correct_canonical_key(self):
+        # '3w' must yield the 3wood number, not silently pass through as a
+        # distinct, unmatched key physics has never heard of.
+        result = normalize_club_distances({"3w": 230, "7i": 160})
+        assert result == {"3wood": 230, "7iron": 160}
+
+    def test_unknown_club_dropped_with_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="looper.caddie.club_selection"):
+            result = normalize_club_distances({"driver": 250, "shovel": 999})
+        assert "shovel" not in result
+        assert result == {"driver": 250}
+        assert any("shovel" in rec.message for rec in caplog.records)
 
 
 # ── normalize_club_distances ──────────────────────────────────────────────────

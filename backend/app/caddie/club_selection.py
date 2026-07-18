@@ -10,10 +10,13 @@ computation behind the `get_shot_distance` tool — so `get_recommendation`
 and `get_shot_distance` can never disagree within a single caddie turn.
 """
 
+import logging
 from typing import Optional
 
 from app.caddie import physics
 from app.caddie.types import ShotAdjustment, WeatherConditions
+
+log = logging.getLogger("looper.caddie.club_selection")
 
 
 # Default club distances (fallback when user hasn't set up profile)
@@ -70,14 +73,65 @@ _PROFILE_KEY_MAP = {
     "lobWedge": "lw",
 }
 
+# Spoken/LLM-natural club shorthand → canonical CLUB_REFERENCE keys. ONE
+# shared table (owner P0 field bug 2026-07-18: an un-normalized '7i' reached
+# `physics._club_ref` and raised, 500ing the strategy endpoint mid-round) —
+# every club ingress (the bag chokepoint below, `record_shot`, the
+# `session.club_distances` assignment) resolves through `canonical_club()`,
+# never a second, divergent vocabulary. Built from the display names
+# ("7 Iron" → "7iron") plus the long wedge forms and the N-letter/hyphenated
+# shorthands the model actually says. `canonical_club` lowercases and strips
+# spaces/hyphens first, so "7 iron", "7-Iron", "sand wedge", and "7iron" all
+# resolve to the same key.
+_CLUB_ALIASES: dict[str, str] = {
+    **{display.lower().replace(" ", ""): key for key, display in CLUB_DISPLAY_NAMES.items()},
+    "pitchingwedge": "pw",
+    "gapwedge": "gw",
+    "sandwedge": "sw",
+    "lobwedge": "lw",
+    **{f"{n}i": f"{n}iron" for n in range(4, 10)},
+    "3w": "3wood",
+    "5w": "5wood",
+    "p": "pw",
+    "lob": "lw",
+    "d": "driver",
+    "3h": "hybrid",
+}
+
+
+def canonical_club(raw: object) -> Optional[str]:
+    """Resolve a spoken/model club token to its canonical `CLUB_REFERENCE`
+    key, or `None` if unrecognized. Coerces `raw` to `str` first so a
+    model-supplied non-str arg (e.g. an int) can never raise here — the
+    `expected string or bytes-like object, got 'int'` half of the P0."""
+    key = str(raw).strip().lower().replace(" ", "").replace("-", "")
+    if key in physics.CLUB_REFERENCE:
+        return key
+    return _CLUB_ALIASES.get(key)
+
 
 def normalize_club_distances(raw: dict[str, int]) -> dict[str, int]:
-    """Normalize club distance keys from GolferProfile format."""
+    """Normalize club distance keys from GolferProfile format AND any
+    spoken/model shorthand ('7i', '3w', 'sand wedge', ...) to canonical
+    `CLUB_REFERENCE` keys.
+
+    This is the ONE bag chokepoint every recommendation passes through
+    (`generate_recommendation` -> `compute_adjustments`/`select_club`). A key
+    still unrecognized after aliasing is DROPPED with a `log.warning` rather
+    than passed to physics — physics must never see a non-canonical club
+    again (owner P0 2026-07-18: `physics._club_ref('7i')` raised inside
+    `build_strategy_payload`, escaping to a 500 mid-round;
+    [[no-fake-data-fallbacks]] — dropped, not fabricated, and always logged).
+    """
     result: dict[str, int] = {}
     for key, value in raw.items():
         if not value or value <= 0:
             continue
-        normalized = _PROFILE_KEY_MAP.get(key, key)
+        mapped = _PROFILE_KEY_MAP.get(key, key)
+        normalized = canonical_club(mapped)
+        if normalized is None:
+            log.warning("normalize_club_distances: dropping unrecognized club %r", key)
+            continue
         result[normalized] = value
     return result
 
