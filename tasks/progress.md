@@ -20058,3 +20058,99 @@ by read, not touched, per the duplicate-keys lesson: no json.load/dump).
 
 Merge SHA: `3a23937243cef7ffac62137e703a287a613d3ba4`. TestFlight: v1.1.15 build 202607181041,
 processing VALID. Fresh integration/next head: `3a23937243cef7ffac62137e703a287a613d3ba4`.
+
+## DONE — 2026-07-18 — caddie-tee-club-expected-strokes (P0 fix, NOTICEABLE)
+
+Owner field report (live round, v1.1.15, verbatim): "The caddie is extremely conservative. Tells
+me to hit 7 iron instead of driver." Implemented `specs/caddie-tee-club-expected-strokes-plan.md`
+(fable plan) exactly — replaced `_select_club_fitting_corridor` (a hard ±1.5σ dispersion-window
+fit-wall with no expected-strokes tradeoff — driver rejected as a WALL on any ordinary tree-lined
+corridor, regardless of distance/probability/severity) with `_select_club_expected_strokes`: walks
+the bag, computes `E = approach_expected_strokes(leave, hcp) + P_left*cost(left_source) +
+P_right*cost(right_source)` per candidate (Gaussian lateral model, σ=dispersion_width/4, aim at
+the danger-corridor midpoint, Φ via `math.erf`), picks strict-min E with ties ≤0.02 strokes going
+to the LONGER club. Guardrails: floor (never lay back >100y off the longest ceiling-surviving
+club absent the bend-cap) and the extended `approach_expected_strokes` (linear past the
+`_FAIRWAY_TABLE`'s 260y head at the table's own 0.005-strokes/yd terminal slope — load-bearing for
+monotonicity, verified strictly increasing 30-500y + continuous at the 260y seam).
+
+Files touched:
+- `backend/app/caddie/strokes_gained.py` — `approach_expected_strokes` + `_FAIRWAY_EXT_SLOPE`.
+- `backend/app/caddie/aim_point.py` — `_phi`, `_PENALTY_COST` (trees 0.7, water 1.4),
+  `_trouble_probability`, `_trouble_words`, `ExpectedStrokesFit`,
+  `_select_club_expected_strokes` (replaces `_select_club_fitting_corridor`); rewired the
+  `if hole.corridor:` block in `generate_recommendation`; new `corridor_note` wording (no-swap:
+  "Driver leaves about X with roughly Y% tree risk — nothing shorter beats that trade."; swap:
+  "5 Iron lays back short of the water pinch at Z — about A% wet versus B% with Driver, leaves
+  about C."). `corridor=None` stays byte-identical (pinned).
+- `backend/app/caddie/types.py` — `TeeShotNumbers` additive fields: `corridor_trouble_pct`,
+  `corridor_alt_club`, `corridor_alt_trouble_pct`, `corridor_alt_leave_yards`, plus one field
+  beyond the plan's literal list — `corridor_alt_total_yards` (the alt club's own landing total;
+  needed to ground the swap note's "at Z" pinch-location number, which the plan's template used
+  but never listed a payload field for — closing that gap rather than leaving an ungrounded
+  number or silently dropping the clause). Retired pinch-shaped fields (`corridor_pinch_*`,
+  `corridor_capped_from_*`, `corridor_club_window_yards`) are KEPT present-but-None, NOT deleted —
+  deviation from the plan's "grep shows only aim_point.py writes them" claim: `voice_prompts.py`'s
+  `format_tee_numbers_line` IS a real reader (renders a "Corridor: pinches to..." clause for the
+  realtime voice caddie's "Last recommendation" prompt line, used by `strategy.py`/`routes/
+  caddie.py`/multiple pinned tests). Added a new additive clause to that same function rendering
+  the new fields (gated on `corridor_trouble_pct is not None`), so the voice caddie doesn't lose
+  its tee-shot trouble/tradeoff grounding now that the old mechanism never fires.
+- Tests: new `backend/tests/test_tee_club_expected_strokes.py` (15 tests — open/unknown/None
+  hole→driver P≈0, tight-trees-w40→driver with E-ordering pinned, water-pinch→layup with
+  payload-grounded note, guardrail across width 10-80, floor test (constructed a severe-water
+  corridor where an unbounded model would want a 9-iron 147y back; floor correctly holds driver),
+  `approach_expected_strokes` monotone+continuous, real fixtures (`bethpage_red_trees.json` H1→
+  driver/leave-210, H6→5iron/leave-100 via bend-cap unchanged), assembled Red from
+  `bethpage_overpass.json` (all 14 par-4/5 holes→driver, corridor-None byte-identity), competition-
+  legal same-club check, par-3 untouched-path check). Rewrote `backend/tests/
+  test_corridor_width_selection.py` (8 tests) per plan §6: tests 3/5/6/7 carried over
+  (unknown-never-rejects, corridor-None byte-identity incl. new fields, reachable-branch-untouched,
+  rounding-tie-doesn't-swap re-targeted at the new function/type), tests 1/2/4 RE-PINNED with
+  per-test comments explaining why (test 2's old hard-wall cut hybrid→7iron on a further pinch;
+  the E-model now grounds that same evidence on the KEPT club instead of cutting further — the
+  fix's whole point; test 4's old "nothing fits→silent fallback" becomes a genuine, grounded
+  driver-wins-anyway with an honest high-risk note). Added test 8 (payload-grounding on a genuine
+  E-model swap, since old test 2 no longer produces one). Never weakened an assertion — every
+  re-pin verified against a real run of this implementation, documented in-file.
+
+Verification: `ruff check .` clean (whole backend). Targeted gate suite (as specified) — 431
+passed, 0 failed:
+```
+tests/test_tee_club_expected_strokes.py tests/test_corridor_width_selection.py
+tests/test_corridor_bend_cap.py tests/test_aim_point.py tests/test_tee_shot_numbers.py
+tests/test_bethpage_validation.py tests/test_positioning_shot.py tests/test_red1_acceptance.py
+tests/test_hazards.py tests/test_tree_hazards.py tests/test_numbers_coherence_prompt.py
+tests/test_decision_grounding_prompt.py
+```
+Broader offline sweep (`tests/ -k "not asyncio and not db" --ignore=tests/eval`): 2111 passed.
+DB-backed integration tests not run locally (no local Postgres, per standing rule) — rely on CI.
+Frontend voice-tests smoke NOT run — this worktree has no `frontend/node_modules` installed
+(pre-existing environment gap, unrelated to this change); the change is backend-only (no
+`frontend/src` files touched), so this is a low-risk skip, noted rather than worked around.
+
+BEFORE/AFTER (verified by temporarily swapping in the pre-change `aim_point.py` via `git show
+HEAD:...`, running the identical scenario, then restoring — diff/tests confirmed clean restore):
+- Synthetic 40y-wide tree corridor, 467y par-4, `{driver:280,3wood:240,5wood:220,hybrid:200,
+  7iron:160}` bag, hcp 15 — BEFORE: **7 Iron**, leaves 300 (driver's 56.25y dispersion window >
+  40y corridor width → hard-rejected, cascades all the way to 7iron, the owner's exact bug).
+  AFTER: **Driver**, leaves 185, note: "Driver leaves about 185 with roughly 29% tree risk —
+  nothing shorter beats that trade."
+- `bethpage_red_trees.json` hole 1 (real geodesic tree data, 467y par-4, DEFAULT_CLUB_DISTANCES,
+  hcp 15) — BEFORE: **Driver**, leaves 210 (unknown-width-never-rejects already saved this one
+  pre-fix). AFTER: **Driver**, leaves 210, unchanged club/leave, now with a grounded "0% trouble"
+  note (unknown width at driver's own landing → honest P=0).
+- `bethpage_red_trees.json` hole 6 (287y par-4, bend-cap only, no corridor profile) — BEFORE/AFTER
+  both **5 Iron**, leaves 100 (v1 bend-cap composes unchanged — this fix doesn't touch it).
+
+Risk: backend-only club-selection logic change on the positioning-shot tee-club path (the exact
+mechanism behind the owner's incident); no schema/API-shape break (additive fields only,
+`corridor=None` byte-identical, existing pinch fields kept for cache compat). Noticeable — the
+owner will see driver recommended on tee shots that used to get shortchanged to a mid-iron on
+tree-lined holes; this is the direct fix for his report.
+
+Not shipped/pinged this pass (routing directive: report to eng-lead, don't self-ship). Files:
+`backend/app/caddie/strokes_gained.py`, `backend/app/caddie/aim_point.py`,
+`backend/app/caddie/types.py`, `backend/app/caddie/voice_prompts.py`,
+`backend/tests/test_tee_club_expected_strokes.py` (new),
+`backend/tests/test_corridor_width_selection.py` (rewritten).

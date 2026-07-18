@@ -353,6 +353,29 @@ def format_tee_numbers_line(n: TeeShotNumbers) -> str:
             f"~{n.corridor_club_window_yards} fits."
         )
 
+    # Expected-strokes club selection (specs/caddie-tee-club-expected-
+    # strokes-plan.md §4) — REPLACES the pinch-shaped mechanism above for any
+    # turn produced by the current engine (the fields above only survive on
+    # OLD cached recommendations now; the two clauses are mutually exclusive
+    # in practice but not enforced as such, so both stay independently
+    # append-only). Same append-only contract: every number here is a
+    # TeeShotNumbers field, so the realtime mouth can re-derive under
+    # challenge, never invent. Omitted entirely when the fields are None
+    # (v1/corridor-absent turns, pinned by test).
+    if n.corridor_trouble_pct is not None:
+        if n.corridor_alt_club is not None:
+            alt_display = CLUB_DISPLAY_NAMES.get(n.corridor_alt_club, n.corridor_alt_club)
+            line += (
+                f" Corridor: {club_display} trouble ~{n.corridor_trouble_pct}% versus "
+                f"{alt_display} ~{n.corridor_alt_trouble_pct}% (leaves {n.corridor_alt_leave_yards}) "
+                "— the layup is the play."
+            )
+        else:
+            line += (
+                f" Corridor: {club_display} trouble ~{n.corridor_trouble_pct}% "
+                "— nothing shorter beats that trade."
+            )
+
     return line
 
 

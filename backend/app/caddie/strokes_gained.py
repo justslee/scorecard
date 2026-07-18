@@ -190,6 +190,38 @@ def expected_strokes(
     return base * _handicap_multiplier(handicap)
 
 
+# ── Approach expected-strokes, extended past the table head (specs/caddie-
+# tee-club-expected-strokes-plan.md §3.1) ───────────────────────────────────
+#
+# `expected_strokes(leave, "fairway", handicap)` clamps flat at the
+# `_FAIRWAY_TABLE` head (260y) — fine for a strokes-gained lookup, but fatal
+# for club selection: a flat clamp lets a shorter club "buy" risk reduction
+# for zero distance cost past 260y, which breaks the monotonicity the
+# expected-strokes club model depends on (a mid-iron would "win" against a
+# genuine water gauntlet by laying back into the flat zone). This helper
+# extends the table LINEARLY past 260y at the table's own terminal slope so
+# the curve stays strictly increasing and continuous at the seam.
+_FAIRWAY_EXT_SLOPE: float = 0.005  # strokes/yd, scratch — the table's own 220->260 slope
+
+
+def approach_expected_strokes(
+    leave_yards: float,
+    handicap: Optional[float] = None,
+) -> float:
+    """Expected strokes to hole out from a fairway leave, strictly increasing
+    in `leave_yards` with no flat clamp — see module note above. Within the
+    `_FAIRWAY_TABLE` range this is identical to
+    `expected_strokes(leave_yards, "fairway", handicap)` (no personal_sg —
+    this is the pure engine curve the club-selection model reasons over).
+    """
+    table_head_distance, table_head_strokes = _FAIRWAY_TABLE[0]
+    if leave_yards <= table_head_distance:
+        return expected_strokes(leave_yards, "fairway", handicap)
+
+    scratch = table_head_strokes + _FAIRWAY_EXT_SLOPE * (leave_yards - table_head_distance)
+    return scratch * _handicap_multiplier(handicap)
+
+
 def strokes_gained(
     strokes_taken: int,
     start_distance: float,
