@@ -3,6 +3,61 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — 2026-07-18 — P0 caddie-yardage-selector: club-alias fix + all-courses tee-selector audit + fix + log observability (item caddie-yardage-selector-p0, NOTICEABLE)
+Plan(fable) → specs/caddie-yardage-selector-p0-plan.md. Implemented all 3 leads on
+`integration/next` (commits ace9d8a Lead1, c97d0ed Lead3, 64b0f00 Lead2).
+
+**Lead 1 (club-yardage seam, NOTICEABLE — heals hybrid-carrying golfers):** added `"hy":
+"hybrid"` to `_CLUB_ALIASES` (backend/app/caddie/club_selection.py) — buildClubMap() emitted
+`hybrid -> 'hy'` but the backend had no 'hy' alias (only '3h'), so `normalize_club_distances`
+silently dropped the hybrid for every hybrid-carrying golfer. `_row_to_session` now heals
+legacy short-code session rows through the same chokepoint on every load. Frontend
+`buildClubMap()` now emits canonical keys directly (driver/3wood/5wood/hybrid/4iron..9iron/
+pw/gw/sw/lw) — aliases stay additive-only forever for legacy rows/spoken shorthand. Tests:
+backend/tests/test_club_hybrid_alias.py (5 tests, confirmed RED on unfixed code, GREEN after)
++ frontend/src/lib/caddie/clubs.test.ts.
+
+**Lead 2 (all-courses tee-selector, NOTICEABLE — root fix, the owner's actual symptom):**
+read-only audit (backend/scripts/audit_tee_selector.py) run against prod via SSM
+(i-0826ae70df62d9fe8) — 168 par-4/5 holes, 12 mapped courses, owner+default bags. Convicted
+the bend-cap `corner_trees` filter (aim_point.py): NO upper bound on `h.carry_yards`, so any
+tree past `bend.distance_yards - 20`, even greenside ones 60-280y past the corner, counted as
+"guarding" it. deviation_yards did NOT discriminate legit/bogus (every bogus hole had a real,
+substantial dogleg). Fix: new `CORNER_TREE_FORWARD_YDS=40` bound at the evidence layer only.
+BEFORE/AFTER tables: specs/caddie-tee-selector-audit-before.md / -after.md — 20→14 flagged, 9
+rows changed (every one capped→driver, zero regressions the other way), all legit lay-ups
+(real corner trees, real water pinches) byte-identical. AFTER re-run done from an isolated
+/tmp copy on the box (never touched the deployed app/service — verified md5-identical before
+and after). Protected tests (test_tee_club_expected_strokes.py, test_corridor_bend_cap.py all
+6, test_corridor_width_selection.py 01-08, test_hazards.py, test_aim_point.py — 164 tests)
+pass with ZERO assertion edits. New: backend/tests/test_corner_tree_forward_bound.py — 2 real
+prod-geometry fixtures (Pine Valley 9, Pebble Beach 3) with before/after (monkeypatch-repro)
+assertions + a synthetic boundary unit test.
+
+**Lead 3 (log observability, SILENT):** folded key=value numbers into the log MESSAGE at the
+4 sites (backend/app/routes/caddie.py's 3 `_log_*` helpers + strategy.py:178's guide-drop
+warning, now includes guide_favor/engine_verdict) — `logging.basicConfig`'s default formatter
+only renders `record.getMessage()`, so numbers passed only via `extra=` vanished from
+journalctl in the field. New: backend/tests/test_caddie_log_lines.py (6 tests, caplog).
+**Known collateral, flagged not fixed:** 3 pre-existing tests in test_caddie_caching.py filter
+caplog records via `r.getMessage() == "caddie_usage"` (exact-equality record ID, not a value
+assertion — all real assertions read `extra=` attrs, unaffected) — no longer matches now that
+the message carries numbers. The one-line predicate fix (== → .startswith) was blocked by the
+auto-mode "never edit tests" guard; left red for eng-lead sign-off rather than worked around.
+
+Gates: backend `ruff check .` clean; 277 targeted pytest pass (0 assertion edits, only new
+tests) — the 3 test_caddie_caching.py collateral failures noted above are the only reds, and
+are pre-existing tests whose IDENTIFICATION predicate (not assertion) needs updating for the
+sanctioned Lead-3 message change. Frontend: `tsc --noEmit` clean, `npm run lint` clean (1
+pre-existing unrelated warning in RoundPageClient.tsx), voice-tests 278/278, clubs.test.ts
+4/4. Pushed to origin/integration/next.
+
+NOTICEABLE — the owner should notice fewer jarring mid-round club lay-ups on real courses
+(the missing-upper-bound bug affected every mapped course, not just his home course) plus
+hybrid bags now working correctly. Try it: any hybrid-carrying golfer's bag now keeps the
+hybrid; any par-4/5 tee shot on a mapped course with a real dogleg should only cap when a tree
+actually sits near the corner, not near the green.
+
 ## DONE — 2026-07-18 — deploy health-check startup race fix (item deploy-healthcheck-startup-race, SILENT)
 Fixed the false-fail hit on both the v1.1.14 (#147) and v1.1.15 (#148) deploys: the SSM deploy
 script's fixed `sleep 3` + single `curl localhost:8000/health` raced uvicorn's real ~3-4s bind
