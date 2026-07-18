@@ -46,11 +46,19 @@ items intact). **PR #148 checklist:** P0 item checked [x], reviewer SHIP + QA PA
 **Local re-verify post-land (independent):** ruff clean; 80/80 P0+record_shot tests pass.
 **PR #148:** head `6e67891`, mergeState CLEAN, OPEN.
 
-**AWAITING: PR #148 CI.** Gate = every required check SUCCESS on head `6e67891` (pending==0 AND
+**CI first pass (head 2cd1ce3):** Frontend SUCCESS, E2E SUCCESS, Backend FAILURE — a real but
+benign break the local gates couldn't catch (DB-backed CI-only tests): two assertions in
+`tests/integration/test_caddie_profile_session.py` encoded the OLD record-verbatim club contract
+(`row.club == "7i"`; `[(1,"driver"),(2,"9i")]`). The P0 fix's record_shot_payload canonicalization
+chokepoint now (correctly) stores `"7iron"`/`"9iron"`. Updated BOTH assertions to the sanctioned
+new canonical contract (commit `029acc2`), with rationale in code comments + commit message;
+verified canonical_club('7i')=='7iron', ('9i')=='9iron', ('pw')/('driver') unchanged; confirmed no
+other shorthand STORAGE assertion in the file (ownership/retry tests use shorthand only as input).
+
+**AWAITING: PR #148 CI on head `029acc2`.** Gate = every required check SUCCESS (pending==0 AND
 fail==0 AND Frontend + Backend gates each state:SUCCESS — a CANCELLED gate is NOT a pass). When
-green, the bundle is ready for the owner's ship ask (coordinator takes the ship — NO ship/ping
-from me). Do NOT touch main; never force-push. If a required gate is CANCELLED, push an empty
-commit / re-run and wait for SUCCESS.
+green, the bundle is ready — owner already said "Ship"; coordinator/release-manager takes the
+merge (NO ship/merge/ping from me; NEVER push to main; never force-push).
 
 ## SHIPPED — 2026-07-18 — Bundle #147: caddie fast reliable strategy + course descriptions live + hazard-aware aim line (v1.1.14)
 Owner approved in-session: verbatim **"Ship it"** on the standing #147 ship ask. Pinned head
