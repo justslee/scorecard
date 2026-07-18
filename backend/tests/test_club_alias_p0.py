@@ -244,3 +244,65 @@ async def test_run_strategy_turn_forced_error_degrades_to_honest_unavailable(mon
     assert result["available"] is False
     assert result["strategy"] is None
     assert result["reason"]
+
+
+# ── E: record_shot_payload is the ONE canonicalization chokepoint for both
+#      callers (reviewer follow-up, owner P0, 2026-07-18) — the text
+#      tool-dispatch branch AND the realtime voice path's REST
+#      `POST /session/shot` route (routes/caddie.py) both funnel through it,
+#      so a voice-recorded '7i' and a '7iron' shot no longer double-count in
+#      shot_stats.aggregate_by_club. ─────────────────────────────────────────
+
+
+@pytest.fixture
+def _captured_shots(monkeypatch):
+    """`sessions.append_shot` is the atomic server-side JSONB append (SQL
+    `||`) — it never mutates the in-memory `session.shot_history` passed in,
+    so the only way to observe what CLUB actually got persisted is to
+    capture the `ShotRecord` handed to it (overrides the module's autouse
+    no-op for this fixture's lifetime)."""
+    captured: list = []
+
+    async def _capture(round_id, shot):
+        captured.append(shot)
+
+    monkeypatch.setattr(tools_mod.sessions, "append_shot", _capture)
+    return captured
+
+
+async def test_record_shot_payload_direct_call_canonicalizes_shorthand(_captured_shots):
+    """Simulates the REST `/session/shot` route, which calls
+    `record_shot_payload` directly with the RAW request body club (never
+    through the tool-dispatch branch) — '7i' must still persist as
+    '7iron'."""
+    session = _session()
+    out = await tools_mod.record_shot_payload(
+        session, "round-1", "user-1", hole_number=4, club="7i", distance_yards=160,
+    )
+    assert out["status"] == "recorded"
+    assert _captured_shots[-1].club == "7iron"
+
+
+async def test_resolve_tool_record_shot_dispatch_canonicalizes_shorthand(_captured_shots):
+    """The text tool-dispatch branch resolves the same way, through the same
+    chokepoint (record_shot_payload), not a second normalization site."""
+    session = _session()
+    ctx = ToolContext(session=session, round_id="round-1", user_id="user-1", default_hole=4)
+    out = await resolve_tool(
+        "record_shot", {"hole_number": 4, "club": "3w", "distance_yards": 230}, ctx,
+    )
+    assert out["status"] == "recorded"
+    assert _captured_shots[-1].club == "3wood"
+
+
+async def test_record_shot_payload_unknown_club_recorded_as_given(_captured_shots):
+    """An unrecognized club is still recorded AS TYPED — never dropped —
+    through the single chokepoint, matching the bag chokepoint's opposite
+    (drop-with-warning) discipline: record_shot must never silently discard
+    a shot the golfer actually took."""
+    session = _session()
+    out = await tools_mod.record_shot_payload(
+        session, "round-1", "user-1", hole_number=4, club="shovel", distance_yards=40,
+    )
+    assert out["status"] == "recorded"
+    assert _captured_shots[-1].club == "shovel"

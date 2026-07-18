@@ -404,7 +404,18 @@ async def record_shot_payload(
 ) -> dict:
     """Record a shot to the session history AND the durable ``shots`` table —
     lifted verbatim from the ``/session/shot`` route body (retry-window dedupe
-    + best-effort durable dual-write)."""
+    + best-effort durable dual-write).
+
+    THE canonicalization chokepoint for both callers (the text tool loop's
+    `record_shot` dispatch AND the realtime voice path's `POST
+    /session/shot` route) — owner P0 follow-up 2026-07-18: the REST route
+    posted `request.club` raw, so a voice-recorded `'7i'` and a `'7iron'`
+    shot double-counted as distinct clubs in `shot_stats.aggregate_by_club`,
+    defeating this function's own "parity by construction" claim. Resolves
+    to the canonical key when recognized; an unrecognized token is still
+    recorded AS GIVEN — never drop a shot the golfer actually took
+    ([[no-fake-data-fallbacks]])."""
+    club = _canonical_club(club) or club
     last = session.shot_history[-1] if session.shot_history else None
     if (
         last is not None
@@ -979,13 +990,11 @@ async def resolve_tool(name: str, args: dict, ctx: ToolContext) -> dict:
 
     if name == "record_shot":
         hn = _as_int(args.get("hole_number")) or ctx.default_hole
-        club_raw = str(args.get("club") or "").strip()
-        # Normalize shorthand ('7i'/'3w'/...) to the canonical key so shot
-        # history/stats aggregate consistently (owner P0 2026-07-18); an
-        # unrecognized token (e.g. a freeform club-less note) still records
-        # honestly as typed rather than being dropped — only the bag
-        # chokepoint (normalize_club_distances) drops unknown clubs.
-        club = _canonical_club(club_raw) or club_raw
+        # Club shorthand ('7i'/'3w'/...) normalization now lives INSIDE
+        # `record_shot_payload` itself (owner P0 follow-up 2026-07-18) — the
+        # one chokepoint both this dispatch branch AND the REST
+        # `/session/shot` route share, so they can't drift.
+        club = str(args.get("club") or "").strip()
         distance = _as_int(args.get("distance_yards"))
         if hn is None or not club or distance is None:
             return {"error": "record_shot requires hole_number, club, and distance_yards"}
