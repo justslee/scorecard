@@ -3,6 +3,60 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — 2026-07-17 — aim-point hazard-aware recommendation line (PR #147)
+Worktree agent-ace76f1f2f65f2edb, base `origin/integration/next` @ 6d65a31. Implemented
+`specs/aim-point-hazard-aware-recommendation-line-plan.md` exactly as written — pure backend
+logic, `backend/app/caddie/aim_point.py` + `backend/tests/test_aim_point.py` only.
+
+Fixes the Augusta-12 wart (owner repro, backlog id `aim-point-hazard-aware-recommendation-line`):
+on reachable (approach/tee) shots the RECOMMENDATION line said "Aim at the flag — green light, no
+trouble" even when the same hole's `hazards` list had a carry-relevant water/bunker between the
+player and the green (the hazards line two lines below named it — direct contradiction).
+`classify_pin_position` only escalates off `distance_from_green<=10`, which doesn't see
+tee-anchored `carry_yards` hazards, so `compute_aim_point` fell through to the hardcoded string.
+
+- Added `en_route_carry_hazards(hazards, hole_yards, distance_yards)` — the SAME tee-anchored
+  `carry_yards` frame `drive_zone_hazards`/`carries_payload`/`format_hazards_line` use; returns `[]`
+  (no en-route evidence, legacy behavior), `[h..]` (real en-route trouble), or `None` (hole.yards
+  unknown — honest "can't place the player on the line", never fabricates a carry).
+- Added `_governing_center_carry` (most-severe-then-deepest-carry, deterministic) + `_HAZARD_NOUNS`.
+- `compute_aim_point` gained an optional `distance_yards` kwarg (all existing direct callers pass
+  nothing → byte-identical legacy output); rewrote ONLY the `pin_light == "green"` arm to speak the
+  governing carry ("Aim at the flag — carry the water at 140") or, for lateral-only en-route
+  trouble, the hazard side + `compute_miss_side`-agreeing safe-side clause. Yellow/red strings
+  untouched. Death-side favor-clause disjointness proven in a code comment (any death hazard forces
+  `classify_pin_position` to at least "yellow", so the append never fires on the green arm this
+  plan touches).
+- `generate_recommendation`'s reachable call site now passes `distance_yards=distance_yards`; added
+  a green-pin P1 reasoning arm using the SAME two pure helpers so the aim line and the P1 line can
+  never name different hazards/numbers ("Water at 140 between you and the green — take enough club
+  to carry it").
+- Tests: `TestEnRouteCarryHazards` (5 predicate-unit cases: tee frame, approach frame, zero-carry,
+  unknown-hole-yards ×2, behind-tee clamp) + `TestHazardAwareReachableAim` (8 cases incl. the
+  Augusta-12 headline exact-string test — direct + end-to-end, asserting "water"/"140" present and
+  "no trouble"/"green light" absent, plus the P1 line; the clean-hole byte-identical green-light
+  guard; green-frame-only and past-green/passed-hazard don't-hedge guards; lateral-only +
+  live-checked miss-side agreement; unknown-frame honest; default back-compat). No existing test
+  touched or weakened.
+
+Verified strings (ran directly, pasted verbatim):
+- Augusta-12 direct + end-to-end: `"Aim at the flag — carry the water at 140"`
+- Augusta-12 P1 reasoning line: `"Water at 140 between you and the green — take enough club to carry it"`
+- Clean hole (no hazards), direct + end-to-end: `"Aim at the flag — green light, no trouble"`
+  (byte-identical to pre-change legacy output).
+
+Gates: `ruff check .` clean. Targeted suite from the plan (`test_aim_point.py`,
+`test_positioning_shot.py`, `test_decade_advice.py`, `test_miss_side_grounding.py`,
+`test_tee_shot_numbers.py`, `test_corridor_bend_cap.py`, `test_corridor_width_selection.py`,
+`test_caddie_tools.py`, `tests/eval/test_strategy_tool.py`) — 422 passed, 0 failed. No DB-backed
+tests run locally (no local Postgres per policy; CI covers those). `backlog.json` status flipped
+`open`→`done` for `aim-point-hazard-aware-recommendation-line` via targeted string edit (1-line
+diff, verified with `git diff --stat`). No frontend files touched, no Pydantic model shape change.
+
+No deviation from the plan. SILENT (pure backend logic fix, no new user-visible surface — the
+existing caddie strategy/voice/UI already speak `aim_point.description` verbatim, so the fixed
+string just starts flowing through the same pipes). Rides along on PR #147.
+
 ## DONE — 2026-07-17 — strategy reasoning-effort flip + verdict negation fix + aim_point wart filed (PR #147)
 Worktree agent-a08c83f621081c418, base `origin/integration/next` @ 20ea1a8. Three items from
 tonight's on-box latency experiment (12 keyed calls, quality-gated), landed as 3 commits, pushed
