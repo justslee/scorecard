@@ -3,6 +3,20 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1)
+Working in worktree `agent-ab52416dcf9bc1198` (FF'd to origin/integration/next @ e9615dd).
+Item = prove Clerk HEADLESS custom flows end-to-end BEFORE any UI polish (spec: backlog.json
+`auth-headless-spike` + specs/login-onboarding-redesign-plan.md §5/§6/§7). Deliverable = working
+proof code behind a dev flag (zero user-visible change = SILENT) + a written GO/NO-GO verdict + the
+5 reviewer security gates asserted as offline tests; the LIVE Google/Apple SSO parts are STUBBED to
+the documented Clerk contract shapes (blocked on owner ops item `auth-clerk-enable-social-connections`)
+with live verification marked as the flip-time step.
+Sequence: Plan(fable) → specs/auth-headless-spike-plan.md → builder in THIS worktree (commit locally,
+no push) → reviewer(security lens)+qa+/security-review → eng-lead pushes HEAD:integration/next →
+bundle PR checklist (silent rider) + backlog flip. NEVER touch main; never force-push. Do NOT ship/ping.
+- On resume: reconcile from `git log origin/integration/next` + this worktree's commits; do NOT re-run
+  a finished child. Plan agent is read-only (eng-lead writes the spec from its output).
+
 ## DONE — 2026-07-18 — P0 caddie-yardage-selector: club-alias fix + all-courses tee-selector audit + fix + log observability (item caddie-yardage-selector-p0, NOTICEABLE)
 Plan(fable) → specs/caddie-yardage-selector-p0-plan.md. Implemented all 3 leads on
 `integration/next` (commits ace9d8a Lead1, c97d0ed Lead3, 64b0f00 Lead2).
