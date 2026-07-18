@@ -35,22 +35,26 @@ prod-geometry fixtures (Pine Valley 9, Pebble Beach 3) with before/after (monkey
 assertions + a synthetic boundary unit test.
 
 **Lead 3 (log observability, SILENT):** folded key=value numbers into the log MESSAGE at the
-4 sites (backend/app/routes/caddie.py's 3 `_log_*` helpers + strategy.py:178's guide-drop
-warning, now includes guide_favor/engine_verdict) — `logging.basicConfig`'s default formatter
-only renders `record.getMessage()`, so numbers passed only via `extra=` vanished from
-journalctl in the field. New: backend/tests/test_caddie_log_lines.py (6 tests, caplog).
-**Known collateral, flagged not fixed:** 3 pre-existing tests in test_caddie_caching.py filter
-caplog records via `r.getMessage() == "caddie_usage"` (exact-equality record ID, not a value
-assertion — all real assertions read `extra=` attrs, unaffected) — no longer matches now that
-the message carries numbers. The one-line predicate fix (== → .startswith) was blocked by the
-auto-mode "never edit tests" guard; left red for eng-lead sign-off rather than worked around.
+3 sites the field report actually named (backend/app/routes/caddie.py's `_log_hole_hazards_
+intel`/`_log_caddie_reco_context` + strategy.py:178's guide-drop warning, now includes
+guide_favor/engine_verdict) — `logging.basicConfig`'s default formatter only renders
+`record.getMessage()`, so numbers passed only via `extra=` vanished from journalctl in the
+field. New: backend/tests/test_caddie_log_lines.py (5 tests, caplog).
+**Resolved (eng-lead scope correction, 2026-07-18):** `_log_caddie_usage` was a 4th site the
+plan initially added on top of the field report's 3 — not the yardage field-debug payload the
+owner described, and its numbers were already asserted via `extra=` in the pre-existing
+test_caddie_caching.py (3 tests there filter on the exact bare message). Reverted that one
+site's message back to bare `"caddie_usage"` (extra= unchanged) and removed the now
+out-of-scope speculative test for it — de-scoping the collision at the SOURCE rather than
+editing the pre-existing test (which the harness correctly reserves for a human). All 3
+previously-red test_caddie_caching.py tests now pass with ZERO edits to that file.
 
-Gates: backend `ruff check .` clean; 277 targeted pytest pass (0 assertion edits, only new
-tests) — the 3 test_caddie_caching.py collateral failures noted above are the only reds, and
-are pre-existing tests whose IDENTIFICATION predicate (not assertion) needs updating for the
-sanctioned Lead-3 message change. Frontend: `tsc --noEmit` clean, `npm run lint` clean (1
-pre-existing unrelated warning in RoundPageClient.tsx), voice-tests 278/278, clubs.test.ts
-4/4. Pushed to origin/integration/next.
+Gates (final, after the de-scope): backend `ruff check .` clean; full non-DB suite
+`pytest tests/ --ignore=tests/integration` = **2977 passed, 0 failed**; required §7 list (287
+tests incl. test_caddie_caching.py) all green. Frontend (unchanged by the de-scope, verified
+green in the same session): `tsc --noEmit` clean, `npm run lint` clean (1 pre-existing
+unrelated warning in RoundPageClient.tsx), voice-tests 278/278, clubs.test.ts 4/4. Pushed to
+origin/integration/next @11d5fe9.
 
 NOTICEABLE — the owner should notice fewer jarring mid-round club lay-ups on real courses
 (the missing-upper-bound bug affected every mapped course, not just his home course) plus
