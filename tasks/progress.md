@@ -55,12 +55,20 @@ NOTICEABLE — owner field report. Do NOT ship/ping this cycle (task directive).
 
 **Base:** origin/integration/next @ 51a19ed. Work in worktree `agent-a9939cd5dc98a975f` (branch
 `worktree-agent-a9939cd5dc98a975f`, tracks integration/next), land via fast-forward push.
-**Status: Plan(fable) DONE @153815e** (spec saved: specs/caddie-tee-club-expected-strokes-plan.md).
-**Builder DISPATCHED** to implement the plan on integration/next. On resume: check builder's
-commits on origin/integration/next (git log); if builder landed → dispatch reviewer(adversarial,
-recklessness check) + qa(full gates + Red before/after table) in parallel; else re-check builder.
-Do NOT re-run finished children — reconcile from branch commits. NOTICEABLE; do NOT ship/ping this
-cycle (task directive).
+**Status: Plan(fable) DONE @153815e; Builder DONE @321f333** (landed on integration/next).
+Builder verified BEFORE/AFTER: 40y tree corridor 467y par-4 went 7-Iron(leave 300) → Driver(leave
+185); Red-1 driver/leave-210 unchanged (unknown-width-never-rejects already saved it, now grounded
+0%-risk note); Red-6 5-Iron via v1 bend-cap UNCHANGED. Ruff clean; 431 targeted + 2111 broader
+offline tests green. TWO documented deviations: (1) KEPT the retired pinch `TeeShotNumbers` fields
+present-but-None — plan's grep was WRONG, `voice_prompts.py::format_tee_numbers_line` really reads
+them (feeds the realtime voice "Last recommendation" line); builder added a parallel clause so
+voice grounding isn't lost. (2) Added `corridor_alt_total_yards` field (swap-note template needs a
+payload-grounded number the plan didn't list). Files: strokes_gained.py, aim_point.py, types.py,
+voice_prompts.py + 2 test files.
+**Reviewer(FABLE, adversarial recklessness check) + QA DISPATCHED in parallel @321f333.**
+On resume: read both verdicts. reviewer SHIP + qa PASS → update bundle PR checklist (NOTICEABLE),
+mark backlog done, STOP (do NOT ship/ping — task directive). BLOCKING → re-dispatch builder with
+findings, re-review. Do NOT re-run finished children — reconcile from branch commits.
 
 ---
 
