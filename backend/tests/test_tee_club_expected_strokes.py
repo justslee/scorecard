@@ -31,13 +31,21 @@ from app.caddie.hazards import (
     extract_hole_bend,
     extract_hole_hazards,
 )
-from app.caddie.strokes_gained import _FAIRWAY_TABLE, approach_expected_strokes
+from app.caddie.strokes_gained import _FAIRWAY_TABLE, _handicap_multiplier, approach_expected_strokes
 from app.caddie.types import CorridorSample, HoleIntelligence
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
 _BAG: dict[str, int] = {"driver": 280, "3wood": 240, "5wood": 220, "hybrid": 200, "7iron": 160}
+# The plan's canonical water-pinch bag (specs/caddie-tee-club-expected-
+# strokes-plan.md §3's worked example — DEFAULT_CLUB_DISTANCES-shaped, driver
+# 250) AND a genuinely longer bag (driver 280) — reviewer B2 requires the
+# layup to hold for BOTH, not just a short-driver bag tuned to lay up.
 _WATER_BAG: dict[str, int] = {
+    "driver": 250, "3wood": 230, "5wood": 215, "hybrid": 200,
+    "5iron": 180, "6iron": 170, "7iron": 160,
+}
+_WATER_BAG_LONG: dict[str, int] = {
     "driver": 280, "3wood": 240, "5wood": 220, "hybrid": 200,
     "5iron": 180, "6iron": 165, "7iron": 150,
 }
@@ -59,9 +67,11 @@ def _uniform_corridor(width: int, lo: int = 60, hi: int = 360, step: int = 10, s
     ]
 
 
-def _water_pinch_corridor(water_width: int = 20) -> list[CorridorSample]:
+def _water_pinch_corridor(water_width: int = 28) -> list[CorridorSample]:
     """Wide (70y) trees to 190y, then a tight (`water_width`) water pinch
-    from 200y on — the honest layup case (plan §3's worked example)."""
+    from 200y on — the honest layup case (plan §3's worked example, which
+    specifies width 28 — pin the SPEC's geometry, never a width tuned to
+    whichever bag happens to lay up)."""
     samples = []
     for d in range(60, 200, 10):
         samples.append(CorridorSample(
@@ -140,7 +150,10 @@ def test_04_tight_trees_w40_driver_wins_e_ordering_pinned():
 
     # E strictly increases as the bag gets shorter on this profile — pin the
     # full ordering, not just the winner (verified against a real run of
-    # this exact fixture; tolerance covers cross-platform float noise).
+    # this exact fixture; tolerance covers cross-platform float noise). Cost
+    # is handicap-scaled (reviewer B2 fix) by the SAME multiplier
+    # approach_expected_strokes already applies to the approach term.
+    hcp_mult = _handicap_multiplier(15)
     es: dict[str, float] = {}
     for club, dist in _BAG.items():
         total = _physics_total(club, dist)
@@ -148,12 +161,12 @@ def test_04_tight_trees_w40_driver_wins_e_ordering_pinned():
         e_ap = approach_expected_strokes(leave, 15)
         sample = corridor_sample_at(corridor, total)
         p_left, p_right = _trouble_probability(sample, club, 15)
-        cost = _PENALTY_COST["trees"]
+        cost = _PENALTY_COST["trees"] * hcp_mult
         es[club] = e_ap + p_left * cost + p_right * cost
 
     ordered = sorted(es, key=lambda c: es[c])
     assert ordered == ["driver", "3wood", "5wood", "hybrid", "7iron"]
-    assert es["driver"] == pytest.approx(4.036, abs=0.01)
+    assert es["driver"] == pytest.approx(4.080, abs=0.01)
     assert fit.e_total == pytest.approx(es["driver"], abs=1e-6)
 
     # Full generate_recommendation path: driver stays, note states the
@@ -171,10 +184,16 @@ def test_04_tight_trees_w40_driver_wins_e_ordering_pinned():
 
 
 # ── 3. Water pinch -> honest layup, both clubs' P in the payload ───────────
+#
+# Width PINNED at the plan's spec value (28), never narrowed to whichever
+# width a given bag happens to lay up at (reviewer B1). Checked against BOTH
+# the plan's canonical (driver-250) bag AND a genuinely longer (driver-280)
+# bag — reviewer B2's fix (handicap-scaled `_PENALTY_COST`) must lay up for
+# both, not just a short-driver bag.
 
 
 def test_05_water_pinch_lays_up_note_numbers_match_payload():
-    corridor = _water_pinch_corridor(water_width=20)
+    corridor = _water_pinch_corridor(water_width=28)
     hole = _hole(corridor=corridor, yards=440)
     rec = generate_recommendation(hole, 440, _WATER_BAG, handicap=15)
 
@@ -185,15 +204,16 @@ def test_05_water_pinch_lays_up_note_numbers_match_payload():
     assert n.corridor_alt_club == "driver"
     assert n.corridor_alt_trouble_pct is not None
     assert n.corridor_alt_leave_yards is not None
-    # The layup club's own wet% is much lower than driver's — the honest
+    # The layup club's own trouble% is much lower than driver's — the honest
     # tradeoff the swap note narrates.
     assert n.corridor_trouble_pct < n.corridor_alt_trouble_pct
+    assert n.corridor_alt_trouble_pct >= 35  # driver is genuinely reckless here
 
     note = next((line for line in rec.reasoning if "lays back" in line), None)
     assert note is not None
     assert "5 Iron" in note
     assert "Driver" in note
-    assert "water" in note or "wet" in note
+    assert "water" in note  # the pinch location is named from the water evidence
 
     payload_ints = {
         int(v) for v in (
@@ -210,10 +230,26 @@ def test_05_water_pinch_lays_up_note_numbers_match_payload():
     assert note_ints <= payload_ints, f"{note_ints - payload_ints} not in payload"
 
 
-def test_06_water_pinch_competition_legal_same_club_as_physics(monkeypatch=None):
+def test_05b_water_pinch_lays_up_for_a_long_driver_bag_too():
+    """Reviewer B1's mandated long-bag regression: the SAME width-28 pinch
+    must ALSO lay up for a 280y-driver bag, not just a short-driver bag —
+    otherwise the flat-cost bug (B2) that kept driver reckless for longer
+    bags would still be masked."""
+    corridor = _water_pinch_corridor(water_width=28)
+    hole = _hole(corridor=corridor, yards=440)
+    rec = generate_recommendation(hole, 440, _WATER_BAG_LONG, handicap=15)
+    n = rec.tee_shot_numbers
+    assert n is not None
+    assert n.club != "driver"
+    assert n.corridor_alt_club == "driver"
+    assert n.corridor_alt_trouble_pct is not None
+    assert n.corridor_alt_trouble_pct >= 35  # driver's own risk here is genuinely high
+
+
+def test_06_water_pinch_competition_legal_same_club_as_physics():
     """competition_legal walks stored numbers — same club chosen as the
     physics walk when weather is None (plan §6's competition-legal gate)."""
-    corridor = _water_pinch_corridor(water_width=20)
+    corridor = _water_pinch_corridor(water_width=28)
     hole = _hole(corridor=corridor, yards=440)
     rec_physics = generate_recommendation(hole, 440, _WATER_BAG, handicap=15, competition_legal=False)
     rec_legal = generate_recommendation(hole, 440, _WATER_BAG, handicap=15, competition_legal=True)

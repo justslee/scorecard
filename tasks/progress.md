@@ -20180,3 +20180,58 @@ Not shipped/pinged this pass (routing directive: report to eng-lead, don't self-
 `backend/app/caddie/types.py`, `backend/app/caddie/voice_prompts.py`,
 `backend/tests/test_tee_club_expected_strokes.py` (new),
 `backend/tests/test_corridor_width_selection.py` (rewritten).
+
+## DONE — 2026-07-18 — caddie-tee-club-expected-strokes: fable reviewer BLOCKING (B1+B2) fixed
+
+Fable adversarial review found a BLOCKING recklessness overshoot in the fix above (commit
+`321f333`): the model's own `_PENALTY_COST` (trees 0.7, water 1.4) was FLAT while every
+`approach_expected_strokes` term is handicap-multiplied (×1.22 at hcp 15, up to ×1.55 at hcp 30)
+— so the value of distance was inflated 22-55% relative to the cost of trouble, and on the plan's
+own canonical water pinch (440y par-4, 70y trees to 190, 28y water pinch from 200) driver stayed
+at ~39-52% water-landing probability with "nothing shorter beats that trade" — the plan's own
+definition of the WRONG pick, worse than the P0 conservatism being fixed. The gate test had also
+been narrowed from the plan's spec width (28) to width 20 (the only width the test's bag happened
+to lay up at), masking B2 rather than catching it.
+
+**B2 fix (root cause):** handicap-scale `_PENALTY_COST` at the point of use in
+`_select_club_expected_strokes` — multiply by `strokes_gained._handicap_multiplier(handicap)`, the
+SAME multiplier the approach term already carries. Verified empirically:
+- Canonical water pinch (width 28, hcp 15), **default (driver-250) bag**: driver E=4.591 (P=45.5%
+  wet-ish, mostly water) vs 5-iron E=4.366 → **5-iron lays up** (was driver-reckless before this
+  fix).
+- SAME pinch, **long (driver-280) bag**: also **5-iron lays up**, driver's own risk 46% — confirms
+  the fix isn't bag-specific (this is the long-bag regression B1 mandated).
+- Width-40 tree corridor (the P0 case): driver E=4.080 (up from the pre-fix flat-cost 4.036, since
+  cost is now hcp-scaled too, but ordering unchanged) — **driver still wins**, confirming the fix
+  doesn't reintroduce the original over-conservatism.
+
+**B1 fix:** `test_tee_club_expected_strokes.py`'s `_water_pinch_corridor` default restored to
+width 28 (the plan's spec, was narrowed to 20); added `test_05b_water_pinch_lays_up_for_a_long_driver_bag_too`
+(driver-280 bag, same width-28 pinch, asserts layup + driver's own risk ≥35%).
+
+**Non-blockers folded in:**
+- NB1 (asymmetric-corridor understatement): `_trouble_probability`'s both-edges-known path now
+  uses each side's OWN measured offset (`left_yards`/`right_yards`) instead of `width/2` under an
+  unspoken midpoint-aim assumption — byte-identical on symmetric corridors, honest on asymmetric
+  ones (verified: water-10y-right/trees-40y-left corridor now correctly shows 29.7% water risk on
+  the tight side vs 1.6% tree risk on the wide side, instead of averaging both to 18%). Width-40
+  canonical case confirmed unchanged (E=4.080, same as B2's own number).
+- NB2 (swap-note hazard-word mislabel): the CHOSEN club's own `{pct}% {adjective}` now labels from
+  `fit.sample` (its own evidence), not `fit.alt_sample` — the "pinch at Z" LOCATION phrase still
+  correctly names the ALT's hazard (what's being avoided), but the number attached to the chosen
+  club's own risk is no longer mislabeled with the alt's hazard word.
+- NB3: `corridor_width_yards` repopulated on the corridor-present path from the chosen club's own
+  sample width (kept in the schema for cache compat, was never written post-rewrite).
+- NB5: `voice_prompts.py`'s swap clause now guards on ALL three alt fields being present before
+  rendering; if `corridor_alt_club` is set but the payload is genuinely incomplete, the clause is
+  omitted entirely (never falls back to "nothing shorter beats that trade," which would misstate a
+  real swap as a no-swap).
+
+**Gates:** `ruff check .` clean. Targeted suite (8 files) — 295 passed, 0 failed. Full
+`test_tee_club_expected_strokes.py` (16 tests, incl. new long-bag regression) — 16 passed. Broader
+offline sweep (`tests/ -k "not asyncio and not db" --ignore=tests/eval`) — 2112 passed (1 more than
+the prior pass's 2111, from the added long-bag test).
+
+Files touched this pass: `backend/app/caddie/aim_point.py`, `backend/app/caddie/voice_prompts.py`,
+`backend/tests/test_tee_club_expected_strokes.py`. Not shipped/pinged — reporting back to
+eng-lead per routing directive.

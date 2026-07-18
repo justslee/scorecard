@@ -23,7 +23,12 @@ from app.caddie.club_selection import (
 )
 from app.caddie.dispersion import get_dispersion
 from app.caddie.hazards import corridor_sample_at
-from app.caddie.strokes_gained import expected_strokes, personal_lookup, approach_expected_strokes
+from app.caddie.strokes_gained import (
+    expected_strokes,
+    personal_lookup,
+    approach_expected_strokes,
+    _handicap_multiplier,
+)
 from app.caddie.slope_advice import slope_miss_advice
 from app.caddie.shot_line_advice import shot_line_advice
 from app.caddie.decade_advice import (
@@ -666,11 +671,23 @@ def _select_club_capped_at(
 # (possibly already-capped) club's drive_total_yards — it can only shorten
 # further, never relax the bend-cap (take-the-shorter composition).
 
-# Severity cost of finishing in trouble on one side, in strokes (plan §3.3):
-# trees ≈ a punch-out (~1 stroke) minus the value of the yardage advanced
-# (~0.65-0.7 net); water ≈ stroke-and-distance/lateral drop (~1.2-1.4, biased
-# honestly toward avoiding it). Unknown/other source falls back to the
-# trees-level generic (never the harsher water number on unlabeled evidence).
+# Severity cost of finishing in trouble on one side, in SCRATCH strokes (plan
+# §3.3): trees ≈ a punch-out (~1 stroke) minus the value of the yardage
+# advanced (~0.65-0.7 net); water ≈ stroke-and-distance/lateral drop
+# (~1.2-1.4, biased honestly toward avoiding it). Unknown/other source falls
+# back to the trees-level generic (never the harsher water number on
+# unlabeled evidence).
+#
+# HANDICAP-SCALED at the point of use (reviewer B2, blocking): every
+# `approach_expected_strokes` term IS handicap-multiplied (×1.22 at hcp 15,
+# up to ×1.55 at hcp 30), so a FLAT cost here inflates the value of distance
+# relative to the cost of trouble by that same 22-55% for every handicap
+# above scratch — on the plan's own canonical water pinch this kept driver
+# at ~39-52% water-landing probability with a "nothing shorter beats that
+# trade" note, the plan's own definition of the wrong pick. Multiplying by
+# the SAME `_handicap_multiplier` the approach term already carries restores
+# the two terms to a commensurate scale for every handicap, not just
+# scratch — see `_select_club_expected_strokes` for the multiplication.
 _PENALTY_COST: dict[str, float] = {"trees": 0.7, "water": 1.4}
 _DEFAULT_PENALTY_COST: float = 0.7
 
@@ -698,18 +715,20 @@ def _trouble_probability(
     handicap: float,
 ) -> tuple[float, float]:
     """Per-side tail probability `(P_left, P_right)` of finishing in trouble,
-    aiming at the danger-corridor MIDPOINT (plan §3.2). σ = this club's
-    dispersion `width_yards` / 4 (the table's ±2σ lateral spread).
+    aiming at the CENTERLINE (the honest default when no aim instruction is
+    emitted — plan §3.2 reviewer follow-up NB1). σ = this club's dispersion
+    `width_yards` / 4 (the table's ±2σ lateral spread).
 
-    - Both danger edges known (`sample.width_yards is not None`): aim is the
-      midpoint between them, so EACH side's own clearance is `width/2` —
-      `P_side = 1 - Φ((width/2)/σ)`, same formula both sides (only the
-      SEVERITY cost the caller multiplies by differs per side's source).
-    - Only one edge known (`width_yards is None`): that side's clearance is
-      its own measured offset (`left_yards`/`right_yards`); the unknown side
-      contributes 0 — never penalize missing data
-      ([[no-fake-data-fallbacks]]).
-    - `sample is None` (no evidence at this landing distance) -> `(0.0, 0.0)`.
+    Each side's clearance is that side's OWN measured danger-edge offset
+    (`sample.left_yards` / `sample.right_yards`) — `P_side = 1 -
+    Φ(offset/σ)`. This is byte-identical to a symmetric corridor (where
+    `left_yards == right_yards == width/2`, the old midpoint-aim formula) but
+    honest on an ASYMMETRIC one: a corridor with water 10y right / trees 40y
+    left no longer understates the tight side by averaging it into a
+    width/2-from-the-midpoint aim that was never actually spoken as an
+    instruction. An unknown edge on a side contributes 0 — never penalize
+    missing data ([[no-fake-data-fallbacks]]). `sample is None` (no evidence
+    at this landing distance) -> `(0.0, 0.0)`.
     """
     if sample is None:
         return 0.0, 0.0
@@ -718,10 +737,6 @@ def _trouble_probability(
     if dispersion_width <= 0:
         return 0.0, 0.0
     sigma = dispersion_width / 4.0
-
-    if sample.width_yards is not None:
-        p = 1.0 - _phi((sample.width_yards / 2.0) / sigma)
-        return p, p
 
     p_left = 1.0 - _phi(sample.left_yards / sigma) if sample.left_yards is not None else 0.0
     p_right = 1.0 - _phi(sample.right_yards / sigma) if sample.right_yards is not None else 0.0
@@ -791,8 +806,14 @@ def _select_club_expected_strokes(
     exceeds the ceiling — caller keeps today's club, same "no club helps,
     don't fabricate a cap" contract as `_select_club_capped_at`/
     `_select_club_fitting_corridor` before it.
+
+    `_PENALTY_COST` is HANDICAP-SCALED here (reviewer B2, blocking) by the
+    SAME `_handicap_multiplier` `approach_expected_strokes` already applies
+    to the approach term — without it the flat cost understates trouble
+    relative to distance for every handicap above scratch.
     """
     bag = clubs or DEFAULT_CLUB_DISTANCES
+    hcp_mult = _handicap_multiplier(handicap)
     survivors: list[tuple[str, int, int, Optional[CorridorSample], float, float, float, int]] = []
     longest_total: Optional[int] = None
 
@@ -823,8 +844,8 @@ def _select_club_expected_strokes(
         e_ap = approach_expected_strokes(leave, handicap)
         sample = corridor_sample_at(corridor, total)
         p_left, p_right = _trouble_probability(sample, candidate, handicap)
-        cost_left = _PENALTY_COST.get(sample.left_source, _DEFAULT_PENALTY_COST) if sample is not None else 0.0
-        cost_right = _PENALTY_COST.get(sample.right_source, _DEFAULT_PENALTY_COST) if sample is not None else 0.0
+        cost_left = (_PENALTY_COST.get(sample.left_source, _DEFAULT_PENALTY_COST) * hcp_mult) if sample is not None else 0.0
+        cost_right = (_PENALTY_COST.get(sample.right_source, _DEFAULT_PENALTY_COST) * hcp_mult) if sample is not None else 0.0
         e_total = e_ap + p_left * cost_left + p_right * cost_right
 
         survivors.append((candidate, dist, total, sample, p_left, p_right, e_total, leave))
@@ -1027,13 +1048,28 @@ def generate_recommendation(
                     club_display = CLUB_DISPLAY_NAMES.get(club, club)
                     trouble_pct = round((fit.p_left + fit.p_right) * 100)
                     tee_shot_numbers.corridor_trouble_pct = trouble_pct
+                    # NB3 (reviewer): repopulate the grounding width number
+                    # (kept in the schema for cache compat) from the CHOSEN
+                    # club's own sample — never fabricated, only when the
+                    # danger-to-danger width at this landing distance is
+                    # actually known (both edges known -> width_yards set).
+                    if fit.sample is not None and fit.sample.width_yards is not None:
+                        tee_shot_numbers.corridor_width_yards = fit.sample.width_yards
 
                     if fit.alt_club is not None:
-                        # Words come from the ALT (rejected-longer) club's own
-                        # sample — that's the hazard actually being laid back
-                        # from (the chosen club's own landing evidence, if
-                        # any, is incidental to WHY it was picked).
-                        _, pinch_noun, swap_adj = _trouble_words(fit.alt_sample)
+                        # NB2 (reviewer): the "at Z" PINCH LOCATION names what
+                        # the ALT (rejected-longer) club is being laid back
+                        # from — its own sample. But the "{pct}% {adj}"
+                        # attached to the CHOSEN club's OWN number must be
+                        # labeled from the CHOSEN club's OWN sample, never the
+                        # alt's — the two landing spots can carry different
+                        # hazards (e.g. the layup club is still in a tree
+                        # section while the alt reaches the water pinch), and
+                        # mislabeling the chosen club's tree-risk number as
+                        # "wet" misattributes it even though the digit itself
+                        # is payload-true.
+                        _, pinch_noun, _ = _trouble_words(fit.alt_sample)
+                        _, _, chosen_adj = _trouble_words(fit.sample)
                         alt_display = CLUB_DISPLAY_NAMES.get(fit.alt_club, fit.alt_club)
                         alt_pct = round(((fit.alt_p_left or 0.0) + (fit.alt_p_right or 0.0)) * 100)
                         tee_shot_numbers.corridor_alt_club = fit.alt_club
@@ -1045,7 +1081,7 @@ def generate_recommendation(
                         # bend-cap) note, same convention as v1's width note.
                         corridor_note = (
                             f"{club_display} lays back short of the {pinch_noun} pinch at "
-                            f"{fit.alt_total} — about {trouble_pct}% {swap_adj} versus "
+                            f"{fit.alt_total} — about {trouble_pct}% {chosen_adj} versus "
                             f"{alt_pct}% with {alt_display}, leaves about {tee_shot_numbers.leave_yards}."
                         )
                     elif corridor_note is None:
