@@ -26,12 +26,22 @@ defensive boundary coercion (`canonical_club()` does `str(raw)` first) regardles
 the class. Note for owner: exact prod frame unconfirmed; defensive fix in place.
 
 **Bundle PR:** #148 (integration/next → main), P0 item marked NOTICEABLE.
-**Waiting on:** reviewer + qa (parallel) on `5a5d303`.
-- both green → update PR checklist (mark item done), update progress; do NOT ship/ping (owner
-  brings the ship ask).
-- reviewer/qa BLOCKING → re-dispatch builder with findings, re-review.
-- On resume: reconcile from branch (`git log origin/integration/next`), do NOT re-run a finished
-  child. Never touch main; never force-push.
+**Reviewer: SHIP** on `5a5d303` — P0 500 fully closed (bag chokepoint drop/alias + Layer-2
+try/except degrade, correct 3wood numbers, all alias targets valid, degrade shape consumed
+safely, no injection/DoS, int-args coerced). **QA: PASS** — ruff clean, 2925/2925 offline tests
+(77/77 target files), sanity-drive confirms '3w'/'7i'→correct numbers, unknown/int degrade
+gracefully, no 500. Reviewer's one non-blocking note: REST `/session/shot` (caddie.py:455 →
+record_shot_payload) doesn't canonicalize the raw club → stats double-count '7i' vs '7iron'
+(no crash, never reaches physics un-normalized). Closing it (reviewer-prescribed) by centralizing
+canonicalization inside `record_shot_payload` so both callers share one chokepoint.
+
+**Waiting on:** builder parity fix (record_shot_payload single-chokepoint canonicalization) on
+this branch, on top of `16d7ec7`.
+- builder DONE → reconcile from branch, land via ff push to integration/next, re-run offline
+  targeted tests to confirm, then verify PR #148 CI green (Frontend + Backend gates == SUCCESS on
+  the pushed head, not merely fail==0), mark the item done in the PR checklist + progress.
+- Do NOT ship/ping (owner brings the ship ask). Never touch main; never force-push.
+- On resume: reconcile from branch, do NOT re-run a finished child.
 
 ## SHIPPED — 2026-07-18 — Bundle #147: caddie fast reliable strategy + course descriptions live + hazard-aware aim line (v1.1.14)
 Owner approved in-session: verbatim **"Ship it"** on the standing #147 ship ask. Pinned head
