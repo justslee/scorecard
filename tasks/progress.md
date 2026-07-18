@@ -19827,3 +19827,14 @@ evidence; stay consistent with miss_side; keep genuine green-light for truly cle
 Status: dispatched Plan (fable) → specs/<id>-plan.md. On resume, reconcile from branch:
 `git log origin/integration/next`; if plan committed, dispatch builder on the plan; then
 reviewer + qa. NEVER ship/ping this pass (task directive). Never touch main; never force-push.
+
+## AWAITING (2026-07-17 — aim-point hazard-aware, review stage, #147)
+Builder landed @5089acc on integration/next (aim_point.py green-arm hazard-aware + tests; backlog
+flipped to done; Augusta-12 line "Aim at the flag — carry the water at 140"; clean-hole byte-
+identical; builder-local gates ruff clean + 422 pytest pass). Reviewer + QA dispatched (both read-
+only). On resume, reconcile from branch, do NOT re-run finished children. Outcomes:
+- reviewer SHIP + qa PASS → update PR #147 checklist (add this NOTICEABLE item) + progress; STOP
+  (task directive: do NOT ship/ping this pass — the bundle already has noticeable items; owner ask
+  is deferred).
+- reviewer BLOCKING or qa FAIL (real, not DB/container-env) → re-dispatch builder with the specific
+  issue, then re-review. Never touch main; never force-push.
