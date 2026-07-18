@@ -362,3 +362,20 @@ VERIFICATION CHECKLIST in the verdict file (live web-dev pass, Google/Apple live
 pending `auth-clerk-enable-social-connections`, on-device Gate 2/3 matrix, native Swift source
 read). SILENT work (dev-flag only) — no owner ping, no ship. Committed to `integration/next`,
 not pushed (eng-lead pushes after review).
+
+---
+
+## AWAITING (eng-lead cycle, 2026-07-18) — login-screen-visual (Slice 2, NOTICEABLE)
+Base synced to origin/integration/next @7b6dc0c (spike landed CONSTRAINED-GO, reviewer SHIP,
+QA PASS, CI green #150). Building Slice 2: replace the ancient prebuilt-Clerk login with the
+designed Augusta-vibe custom headless screen (STATIC hero; self-drawing animation is Slice 3).
+FLIP DECISION (confirmed from plan §4.2/§5): the new screen REPLACES SignInClient's internals
+outright — NOT gated behind NEXT_PUBLIC_AUTH_SPIKE (that flag only gates the throwaway
+/dev/auth-spike + /sso-callback dev-reachability). New login is ON by default for the owner's
+next build; only Google/Apple OAuth buttons render live-DISABLED ("coming online shortly")
+behind the pending auth-clerk-enable-social-connections ops item. Email password+code flows are
+fully live via the spike-proven Future API.
+
+AWAITING: Plan(fable) on specs/login-screen-visual-plan.md. On plan return -> dispatch builder
+to implement on integration/next; then designer(BLOCKING, live screenshots) + reviewer + qa;
+iterate; update PR #150 checklist NOTICEABLE; records. Do NOT ship/ping this cycle.
