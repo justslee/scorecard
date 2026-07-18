@@ -91,25 +91,25 @@ def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str], call_in
     """One structured line proving prompt-cache engagement (or an honest
     below-floor no-op) — cache_read/cache_creation vs plain input tokens.
     `call_index` tags which model call of a (possibly multi-call) tool-loop
-    turn this was. Logging must never break a reply, so this never raises."""
+    turn this was. Logging must never break a reply, so this never raises.
+
+    Message kept BARE (not folded like the other three Lead-3 sites,
+    specs/caddie-yardage-selector-p0-plan.md §4): this isn't the yardage
+    field-debug payload the owner's report named, and its numbers are
+    already asserted via `extra=` in test_caddie_caching.py — folding them
+    into the message bought nothing new and only collided with that
+    existing coverage."""
     try:
-        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
-        input_tokens = getattr(usage, "input_tokens", 0) or 0
-        output_tokens = getattr(usage, "output_tokens", 0) or 0
         log.info(
-            "caddie_usage context=%s persona=%s call=%d cache_read=%d "
-            "cache_creation=%d input=%d output=%d",
-            context, persona_id, call_index, cache_read, cache_creation,
-            input_tokens, output_tokens,
+            "caddie_usage",
             extra={
                 "caddie_context": context,
                 "persona_id": persona_id,
                 "call_index": call_index,
-                "cache_read_input_tokens": cache_read,
-                "cache_creation_input_tokens": cache_creation,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
+                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+                "output_tokens": getattr(usage, "output_tokens", 0) or 0,
             },
         )
     except Exception:  # noqa: BLE001 — logging must never break a reply

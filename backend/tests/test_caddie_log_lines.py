@@ -1,12 +1,19 @@
-"""Lead 3 (specs/caddie-yardage-selector-p0-plan.md §4): the four caddie
-log sites' NUMBERS must live in `record.getMessage()`, not only `extra=`.
+"""Lead 3 (specs/caddie-yardage-selector-p0-plan.md §4): the THREE named
+yardage field-debug log sites' NUMBERS must live in `record.getMessage()`,
+not only `extra=` — `hole_hazards_intel`, `caddie_reco_context`, and the
+strategy.py guide-drop warning.
 
 Root cause: `app/main.py` uses `logging.basicConfig(level=INFO)`, whose
 default formatter renders only `record.getMessage()` — every number passed
-via `extra=` at these four sites vanished from journalctl in the field,
-leaving only the bare event label. The fix folds the values into the
-printf-style message itself (kept `extra=` too, for a future structured
-sink) — no formatter change, so this is a local, zero-risk fix at each site.
+via `extra=` at these sites vanished from journalctl in the field, leaving
+only the bare event label. The fix folds the values into the printf-style
+message itself (kept `extra=` too, for a future structured sink) — no
+formatter change, so this is a local, zero-risk fix at each site.
+
+`_log_caddie_usage` (a 4th site the plan initially added) is deliberately
+NOT folded — it isn't the yardage field-debug payload the owner's report
+named, and its numbers are already asserted via `extra=` in
+test_caddie_caching.py; see `_log_caddie_usage`'s own docstring.
 
 No network, no Postgres — these are pure/direct calls to the logging
 helpers (route module import only; DB engine is lazy).
@@ -39,32 +46,6 @@ def _no_db_persist(monkeypatch):
 
     monkeypatch.setattr(tools_mod.sessions, "set_recommendation", _noop_set_recommendation)
     monkeypatch.setattr(tools_mod.memory_mod, "get_player_profile", _no_profile)
-
-
-class _FakeUsage:
-    def __init__(self, cache_read=7, cache_creation=11, input_tokens=42, output_tokens=13):
-        self.cache_read_input_tokens = cache_read
-        self.cache_creation_input_tokens = cache_creation
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
-
-
-def test_log_caddie_usage_numbers_in_message(caplog):
-    with caplog.at_level(logging.INFO, logger="looper.caddie"):
-        caddie_routes._log_caddie_usage(
-            _FakeUsage(cache_read=7, cache_creation=11, input_tokens=42, output_tokens=13),
-            context="voice_json", persona_id="classic", call_index=2,
-        )
-    records = [r for r in caplog.records if r.getMessage().startswith("caddie_usage")]
-    assert len(records) == 1
-    message = records[0].getMessage()
-    assert "context=voice_json" in message
-    assert "persona=classic" in message
-    assert "call=2" in message
-    assert "cache_read=7" in message
-    assert "cache_creation=11" in message
-    assert "input=42" in message
-    assert "output=13" in message
 
 
 def test_log_hole_hazards_intel_numbers_in_message(caplog):
