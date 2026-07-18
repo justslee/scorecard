@@ -3,7 +3,48 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — 2026-07-18 — P0 strategy-500 club-alias (item caddie-strategy-500-club-alias-normalization, NOTICEABLE)
+## AWAITING — 2026-07-18 — P0 caddie tee-club over-conservatism (item caddie-tee-club-expected-strokes, NOTICEABLE)
+Owner P0 field report (live round today, v1.1.15): "The caddie is extremely conservative. Tells
+me to hit 7 iron instead of driver." MECHANISM CONFIRMED by code trace (eng-lead, this cycle):
+`_select_club_fitting_corridor` (backend/app/caddie/aim_point.py:695-764) is a HARD FIT
+CONSTRAINT — it walks the bag descending and accepts the longest club whose ±1.5σ landing window
+(`_club_fit_window_yds` = 0.75 × dispersion width_yards; 15-hcp: driver 56y / 3wood 49y / hybrid
+45y / long-iron 42y / mid-iron 36y) is <= the corridor's danger-to-danger `width_yards` at that
+club's landing distance. Since the tree-span fix enriched `extract_corridor_profile` danger edges
+(tree/woods runs populate width_yards on most tree-lined holes, ~40-55y danger-to-danger),
+driver's 56y window exceeds the corridor → rejected → cascades down to a mid-iron. NO
+expected-strokes tradeoff: window⊄corridor is a hard wall regardless of distance sacrificed
+(leave 120 vs 220 = ~0.62 strokes on _FAIRWAY_TABLE), true trouble PROBABILITY (a 56y window ~6y
+wider than a 50y corridor = only the cone tails catch trees, not certain trouble), or hazard
+SEVERITY (trees==water==generic wall). The v1 bend-cap (aim_point.py:870-901) is a separate,
+narrower mechanism (flying a mapped dogleg corner into moderate+ trees) — likely legitimate, plan
+to review it doesn't ALSO over-lay-back.
+
+FIX DIRECTION (owner spec): replace the hard fit with expected-strokes club choice. Per club:
+E[strokes] = P(safe)·E_approach(leave|fairway, _FAIRWAY_TABLE) + P(trouble)·penalty(severity);
+P(trouble) from the Gaussian cone (σ=width/4) tail outside the danger edges; severity tiers
+water/OB >> woods/trees > bunker > rough. Pick min E; open hole ⇒ driver. Simple, monotone,
+one-sentence explainable. Ingredients in place: `strokes_gained._FAIRWAY_TABLE` (approach curve),
+`dispersion.get_dispersion` (per-club width), `hazards.corridor_sample_at` (width + source at a
+landing distance). Bar: Red par4/5 driver-or-3wood on the large majority; NO par4/5 shorter than
+hybrid/long-iron unless corridor provably punitive; Red 1 driver-favor-right; par-3s unchanged;
+8-bearing invariance + all caddie suites green.
+
+PROCESS this cycle: Plan on **fable** → `specs/caddie-tee-club-expected-strokes-plan.md` (the
+model design is the crux). Then builder (implements plan on integration/next), reviewer (fresh,
+adversarial: does the recalibration overshoot into recklessness — water carries now recommended?
+severity tiers honest? dispersion labeled?), qa (full gates + Red/Black before/after table).
+NOTICEABLE — owner field report. Do NOT ship/ping this cycle (task directive).
+
+**Base:** origin/integration/next @ 51a19ed. Work in worktree `agent-a9939cd5dc98a975f` (branch
+`worktree-agent-a9939cd5dc98a975f`, tracks integration/next), land via fast-forward push.
+**Status: Plan(fable) dispatched.** On resume: read specs/caddie-tee-club-expected-strokes-plan.md
+if present (Plan done) → dispatch builder; else re-check Plan agent. Do NOT re-run finished
+children — reconcile from branch commits.
+
+---
+
+## AWAITING(shipped #148) — 2026-07-18 — P0 strategy-500 club-alias (item caddie-strategy-500-club-alias-normalization, NOTICEABLE)
 Owner P0 field bug (live round today, v1.1.14). Root cause CONFIRMED by code trace: LLM club
 shorthand ('7i'/'3w') enters un-normalized club ingress (record_shot tools.py:994; route bag-set
 routes/caddie.py:349), lands in `session.club_distances`; `normalize_club_distances` passes
