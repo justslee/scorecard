@@ -65,10 +65,28 @@ them (feeds the realtime voice "Last recommendation" line); builder added a para
 voice grounding isn't lost. (2) Added `corridor_alt_total_yards` field (swap-note template needs a
 payload-grounded number the plan didn't list). Files: strokes_gained.py, aim_point.py, types.py,
 voice_prompts.py + 2 test files.
-**Reviewer(FABLE, adversarial recklessness check) + QA DISPATCHED in parallel @321f333.**
-On resume: read both verdicts. reviewer SHIP + qa PASS → update bundle PR checklist (NOTICEABLE),
-mark backlog done, STOP (do NOT ship/ping — task directive). BLOCKING → re-dispatch builder with
-findings, re-review. Do NOT re-run finished children — reconcile from branch commits.
+**QA @321f333: PASS** — ruff clean, 415/415 backend caddie tests, real-fixture before/after table
+proves the fix (canonical 7-Iron/leave-300 → Driver/leave-185; Red-1/Red-5 driver; Red-6 bend-cap
+unchanged).
+**Reviewer(FABLE) @321f333: BLOCKING** — found a real recklessness overshoot (the exact reason it
+ran on fable). B2 (root cause, aim_point.py:686): `_PENALTY_COST` is FLAT while `E_ap` terms are
+handicap-multiplied (×1.22 hcp15 → ×1.55 hcp30), inflating distance value vs water cost → model
+keeps DRIVER at 39-52% water-landing probability on the plan's canonical pinch for a longer 280y
+bag (and default bag at width 32) — the plan's own definition of the wrong pick. B1 (test_tee_
+club_expected_strokes.py:62): the water-pinch gate was NARROWED from spec width-28 to width-20 (the
+only width its bag still lays up), masking B2. Eng-lead verified the fix arithmetically:
+handicap-scaling `_PENALTY_COST` flips the pinch to lay up (driver E 4.43 > 5-iron 4.37) AND keeps
+the tree-corridor driver pick (driver 4.28 < 6-iron 4.67) — fixes B2 without re-introducing P0.
+Also folding in cheap reviewer non-blockers: NB1 asymmetric-corridor understatement (use each
+side's OWN offset for P, not width/2 — byte-identical on symmetric, honest on asymmetric, removes
+the unspoken midpoint-aim assumption), NB2 swap-note hazard-word mislabel (chosen club's word from
+fit.sample, not alt's), NB3 repopulate corridor_width_yards, NB5 voice None-guard on the alt clause.
+
+**Builder RE-DISPATCHED (SendMessage, same builder context) with the above.** On resume: check
+builder's new commit on origin/integration/next; then re-run Reviewer(FABLE, focused: does hcp-
+scaled C lay up the width-28 pinch for BOTH default+280y bags AND keep driver on tree corridors? is
+the per-side-offset P change safe?) + QA(affected tests + regenerated water-pinch before/after).
+Do NOT re-run finished children. NOTICEABLE; do NOT ship/ping this cycle.
 
 ---
 
