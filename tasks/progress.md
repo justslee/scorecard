@@ -19757,3 +19757,19 @@ pre-existing DB-gated skips / 0 failed (unchanged baseline). No DB-backed tests 
 — CI backend gate covers those. Landed on `integration/next` @21a1364 (fix) + f654421 (backlog
 flip), base `origin/integration/next` @e5aa0ca, fast-forward push, PR #147. Silent rider — no ping,
 no ship-ask needed.
+
+## AWAITING (2026-07-17 cycle — aim-point-hazard-aware-recommendation-line, #147)
+Item: aim-point-hazard-aware-recommendation-line (backlog `open`, p2). NOTICEABLE lean (owner
+heard the "no trouble" wart on Augusta 12 during the strategy-latency A/B). Base
+origin/integration/next @d0edeb8. Bug: `compute_aim_point`/`classify_pin_position`
+(backend/app/caddie/aim_point.py) on the REACHABLE branch escalate the pin light ONLY off
+`penalty_severity in (severe,death)` AND `distance_from_green<=10`, so tee/approach carry hazards
+(the `carry_yards`-from-tee frame the hazards_line/carries actually use) never escalate → the line
+free-lances "Aim at the flag — green light, no trouble" contradicting the hole's own hazard list.
+Fix (root, general, reuse existing hazard structures, NO new geometry): make the reachable aim line
+hazard-EVIDENCE-aware for carry-relevant hazards between player and target; never claim "no
+trouble"/"green light" when they exist; state the governing carry or safe miss-side per per-side
+evidence; stay consistent with miss_side; keep genuine green-light for truly clean holes.
+Status: dispatched Plan (fable) → specs/<id>-plan.md. On resume, reconcile from branch:
+`git log origin/integration/next`; if plan committed, dispatch builder on the plan; then
+reviewer + qa. NEVER ship/ping this pass (task directive). Never touch main; never force-push.
