@@ -82,11 +82,17 @@ side's OWN offset for P, not width/2 — byte-identical on symmetric, honest on 
 the unspoken midpoint-aim assumption), NB2 swap-note hazard-word mislabel (chosen club's word from
 fit.sample, not alt's), NB3 repopulate corridor_width_yards, NB5 voice None-guard on the alt clause.
 
-**Builder RE-DISPATCHED (SendMessage, same builder context) with the above.** On resume: check
-builder's new commit on origin/integration/next; then re-run Reviewer(FABLE, focused: does hcp-
-scaled C lay up the width-28 pinch for BOTH default+280y bags AND keep driver on tree corridors? is
-the per-side-offset P change safe?) + QA(affected tests + regenerated water-pinch before/after).
-Do NOT re-run finished children. NOTICEABLE; do NOT ship/ping this cycle.
+**Builder FIX DONE @b0eb319.** B2 root-caused: `_PENALTY_COST` now handicap-scaled at use (same
+multiplier as approach strokes). Canonical width-28 water pinch lays up for BOTH default AND
+driver-280 bags (driver E=4.591 @46% water vs 5i 4.366); width-40 tree corridor still picks driver
+(ordering unchanged). B1: gate test restored to width-28 + new long-bag layup regression. NBs
+folded: per-side P uses each side's own offset (asymmetric honest: 29.7% tight-water vs 1.6%
+wide-trees, no averaging), swap-note % from chosen club's own sample, corridor width repopulated,
+voice swap clause guards all 3 alt fields. Gates: ruff clean, 295+16 targeted, 2112 broader offline.
+**Re-review(FABLE, focused) + re-QA DISPATCHED in parallel @b0eb319.** On resume: reviewer SHIP +
+qa PASS → finalize (full Red par4/5 before/after table in report, bundle PR checklist NOTICEABLE,
+backlog flip to done, progress), then STOP — coordinator takes the ship ask with the table; do NOT
+ship/ping. BLOCKING → re-dispatch builder. Do NOT re-run finished children.
 
 ---
 
