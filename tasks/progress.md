@@ -3,6 +3,22 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — 2026-07-17 — eval-multiturn-conversation-router (SILENT test rider, PR #147)
+Worktree agent-afcbd1f423e532a67, base `origin/integration/next` @ 07e51c1. Item: build CONVERSATION-
+level (multi-turn) evals of the two-tier intent router in `backend/tests/eval/`. OFFLINE ONLY (no keyed
+LLM calls, no prod). Seams: `app/caddie/routing.py::classify_intent` (pure), `app/caddie/strategy_turn.py
+::run_strategy_turn` (ADVICE brain; `synthesize_strategy` is the stub seam + module `_CACHE`),
+`app/routes/caddie.py::session_voice` (real dispatch: ADVICE→run_strategy_turn, SCORE→`_SCORE_TEXT_
+HANDOFF_LINE`, FACT/OTHER→Claude `run_caddie_turn`). Answer-time hole = `request.hole_number or
+session.current_hole`. Offline-drive idioms exist in `tests/eval/test_strategy_tool.py` (_FakeSynth
+counting stub, get_owned_session monkeypatch, throwaway FastAPI app + current_user_id override,
+_CACHE.clear fixture, _no_db_persist).
+STATE: Plan agent (fable) dispatched → `specs/eval-multiturn-conversation-router-plan.md`.
+NEXT: plan done → dispatch builder ON this branch; then reviewer (fresh eyes: non-vacuous assertions?
+stub fidelity vs real seam contracts?) + qa (offline backend sweep + new scenarios). Land silent rider
+on #147. DO NOT ship/ping. On resume: check the plan file exists + `git log origin/integration/next`
+for builder commits BEFORE re-dispatching anything.
+
 ## 2026-07-17 red9-waste-complex-hole-assignment — RESOLVED as NOT-A-BUG (premise falsified); worktree agent-a6eab552a7402ecdc, base @608ceb0
 Diagnosed OSM relation 19545022 (claimed "Red-9 waste complex mis-assigned to hole 11"). GEOMETRIC
 TRUTH (3 independent evidence lines): the relation is a ~20x19 m greenside bunker (1 outer ring + 5 m
