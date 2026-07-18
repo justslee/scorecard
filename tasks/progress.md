@@ -179,14 +179,24 @@ ship/ping. BLOCKING → re-dispatch builder. Do NOT re-run finished children.
 
 ---
 
-## AWAITING
-Reviewer + QA on P0 caddie-yardage-selector, head @ 3c1eff0 (Leads 1-3 landed by builder;
-de-scope of caddie_usage fold done, full non-DB suite 2977 passed / 0 failed).
-- reviewer: adversarial BOTH directions — (a) Lead 1 heal-on-load must not corrupt a correct
-  profile; (b) CORNER_TREE_FORWARD_YDS=40 must not UN-cap a real corner guard — verify the 9
-  newly-driver holes against actual geometry + protected dogleg/water lay-ups hold.
-- qa: full gates + BOTH audit tables (specs/caddie-tee-selector-audit-{before,after}.md) +
-  the 14 remaining flags judged.
-On both green -> bundle PR checklist NOTICEABLE ("caddie: your real yardages for every club +
-selector corner fix across all courses"), backlog flips (targeted/validated), progress, final
-report. NO ship/ping this pass (coordinator takes the ship ask).
+## 2026-07-18 — P0 caddie yardage+selector: DONE on integration/next (PR #150), NOT shipped
+
+Reviewer **SHIP** (both directions) + QA **PASS**. Head `3c1eff0` (records at `510922f`+). Bundle
+PR **#150** opened (NOTICEABLE). No ship/ping this pass — coordinator takes the ship ask.
+
+- **Lead 1 (seam):** `hy`->hybrid alias + `buildClubMap` canonical keys + `_row_to_session`
+  heal-on-load. Idempotent/lossless on a correct profile (reviewer-verified). Repro tests red->green.
+- **Lead 2 (selector, owner's actual symptom):** bend-cap `corner_trees` filter had NO forward
+  bound -> greenside trees falsely 'guarded' corners -> mid-iron off the tee (amplified by owner's
+  no-hybrid 40y gap). Fix `CORNER_TREE_FORWARD_YDS=40`: **20->14 flags, 9 holes capped->driver,
+  zero the other way.** Reviewer: +40 separates legit guards (<=+25y) from bogus (>=+45y), ~20y
+  margin, no false-negative. Audit tables: specs/caddie-tee-selector-audit-{before,after}.md.
+- **Lead 3 (logging):** 3 field-report-named sites folded to key=value message strings;
+  `caddie_usage` kept bare (already extra=-asserted) to avoid a governance-blocked pre-existing
+  test edit.
+- **Gates:** ruff clean · backend non-DB 2977 passed/0 failed · targeted 271 passed · frontend
+  tsc clean · lint 0 err · voice 278/278 · vitest 4/4.
+- **Records:** backlog item `caddie-yardage-selector-corner-tree-bound` = done-on-bundle (targeted
+  string insert, JSON validated); plan `specs/caddie-yardage-selector-p0-plan.md`.
+
+Bundle #150 now carries ONE noticeable item (this) — ready for the coordinator's ship ask when chosen.
