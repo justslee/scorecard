@@ -4,18 +4,22 @@ The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
 ## AWAITING — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1)
-Working in worktree `agent-ab52416dcf9bc1198` (FF'd to origin/integration/next @ e9615dd).
-Item = prove Clerk HEADLESS custom flows end-to-end BEFORE any UI polish (spec: backlog.json
-`auth-headless-spike` + specs/login-onboarding-redesign-plan.md §5/§6/§7). Deliverable = working
-proof code behind a dev flag (zero user-visible change = SILENT) + a written GO/NO-GO verdict + the
-5 reviewer security gates asserted as offline tests; the LIVE Google/Apple SSO parts are STUBBED to
-the documented Clerk contract shapes (blocked on owner ops item `auth-clerk-enable-social-connections`)
-with live verification marked as the flip-time step.
-Sequence: Plan(fable) → specs/auth-headless-spike-plan.md → builder in THIS worktree (commit locally,
-no push) → reviewer(security lens)+qa+/security-review → eng-lead pushes HEAD:integration/next →
-bundle PR checklist (silent rider) + backlog flip. NEVER touch main; never force-push. Do NOT ship/ping.
-- On resume: reconcile from `git log origin/integration/next` + this worktree's commits; do NOT re-run
-  a finished child. Plan agent is read-only (eng-lead writes the spec from its output).
+Builder DONE @ **b7401b7**, PUSHED to origin/integration/next (bundle PR #150 head updated → CI running).
+Plan(fable) → specs/auth-headless-spike-plan.md. Builder implemented the full dev-flag-gated
+(`NEXT_PUBLIC_AUTH_SPIKE=1`) Clerk-headless spike; all offline gates green locally; verdict
+CONSTRAINED-GO (specs/auth-headless-spike-verdict.md). `clerk_auth.py` byte-unchanged (confirmed via diff).
+Lockfile: npm-10 in-place add of `@capgo/capacitor-social-login@8.3.35`; only benign `utf-8-validate`
+optional-peer dedup removed (NOT platform bindings) — QA must `npm ci` to confirm.
+**Now AWAITING reviewer + qa (dispatched in isolated worktrees off b7401b7):**
+- reviewer (security lens: 5 gates genuinely gated, no token leakage, sign-out invariant provable) +
+  runs /security-review + /code-review (auth = major). SHIP → proceed; BLOCKING → re-dispatch builder.
+- qa: `npm ci` + tsc + lint + both builds (flag off/on) + vitest + voice-tests smoke + no-credential-log +
+  test:native-crash + ruff + test_clerk_jwt_parity; existing auth suites untouched-green.
+- CI on PR #150: Frontend + Backend gates must be SUCCESS on head b7401b7 (authoritative lockfile check).
+Then: fold in blockers → bundle PR checklist (silent rider) + backlog flip (targeted) + progress DONE.
+Do NOT ship/ping (spike is silent). NEVER touch main; never force-push.
+- On resume: reconcile from `git log origin/integration/next` (head should be b7401b7+) + child commits;
+  do NOT re-run a finished child. If reviewer/qa already reported, act on their verdict.
 
 ## DONE — 2026-07-18 — P0 caddie-yardage-selector: club-alias fix + all-courses tee-selector audit + fix + log observability (item caddie-yardage-selector-p0, NOTICEABLE)
 Plan(fable) → specs/caddie-yardage-selector-p0-plan.md. Implemented all 3 leads on
