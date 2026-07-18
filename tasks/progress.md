@@ -19686,3 +19686,34 @@ ONLY, zero production/runtime code touched (no production impact). Gates: `ruff 
 Landed on `integration/next` @ 7c9e870 (base `origin/integration/next` @ 8de71ed, fast-forward push).
 backlog.json item flipped to `done-on-bundle` (targeted string edit, JSON validated with `json.load`
 — never a full load/dump per the duplicate-keys lesson). Silent rider — no ping, no ship-ask needed.
+
+## DONE — 2026-07-17 — caddie-hole-number-truthy-default-fallback-dead (SILENT fix, PR #147 rider)
+Worktree agent-a5e8c97fb212ecad2, base `origin/integration/next` @e5aa0ca. Fixed the wart the
+eval-multiturn-conversation-router lane filed: `SessionVoiceRequest.hole_number: int = 1`
+(backend/app/routes/caddie.py) was a TRUTHY default, so the answer-time `request.hole_number or
+session.current_hole` fallback could never fire for a client that omitted the field. FIX:
+`Optional[int] = None`. AUDIT of every request.hole_number read in the touched routes found a
+worse latent bug than the dead fallback itself: `_build_session_voice_prompt` wrote raw
+request.hole_number straight into `session.current_hole` and the DB via `set_current_hole` — an
+omitted field would have NULLED OUT the round's live current_hole. Fixed by resolving `hole` ONCE
+right after `get_owned_session` and using it everywhere in that function (set_current_hole,
+session.current_hole, hole_intel lookup, yardage-line labeling). Also fixed: session_voice's SCORE
+branch never resolved a hole at all (now mirrors ADVICE); several message-ledger persistence call
+sites used raw possibly-None request.hole_number instead of the turn's resolved hole. ToolContext.
+default_hole (already Optional[int]=None) and tools.py's `... or ctx.default_hole` chain were
+already None-safe, left unchanged. CLIENT CONTRACT VERIFIED: frontend/src/lib/caddie/api.ts
+sessionVoice/sessionVoiceStream both type hole_number as required `number` — no client omits it
+today, so zero current user-visible behavior change (latent-bug fix, not a live regression fix).
+EVAL STRENGTHENED per the backlog item's "do not weaken that scenario" instruction — ADDED a turn,
+left the existing hole_number=0 turn untouched: `ConversationTurn.hole_number` is now
+`Optional[int]` and the runner genuinely omits the JSON key when None (previously always sent an
+int, so the true client-omission path was never actually exercised even by the "falsy 0" turn);
+`fact-then-advice-hole-pin` scenario gained a 3rd turn with `hole_number=None` asserting it
+resolves to the same pinned hole (9) with a byte-identical cache-hit reply. Rewrote the stale
+docstring NOTE in test_conversation_router.py that said the fallback was dead in production.
+Gates: ruff clean; tests/eval/test_conversation_router.py 21/21 (was 20); test_conversation_teeth.py
+8/8; targeted session-voice/caddie-prompt test files 109/109; full offline sweep 2853 passed / 133
+pre-existing DB-gated skips / 0 failed (unchanged baseline). No DB-backed tests run locally (policy)
+— CI backend gate covers those. Landed on `integration/next` @21a1364 (fix) + f654421 (backlog
+flip), base `origin/integration/next` @e5aa0ca, fast-forward push, PR #147. Silent rider — no ping,
+no ship-ask needed.
