@@ -20,7 +20,31 @@ untouched). No product code changed -> no frontend/backend gates apply (workflow
 Backlog item filed + flipped done-on-bundle in the same commit. Rider on the open bundle PR,
 SILENT (ops-only, not user-visible) -- no ship/ping needed for this alone.
 
-## AWAITING — 2026-07-18 — P0 caddie tee-club over-conservatism (item caddie-tee-club-expected-strokes, NOTICEABLE)
+## DONE — 2026-07-18 — P0 caddie tee-club over-conservatism (item caddie-tee-club-expected-strokes, NOTICEABLE)
+COMPLETE on integration/next @b0eb319 (NOTICEABLE; on the open bundle PR, awaiting owner ship —
+coordinator takes the ship ask with the Red before/after table). Plan(fable) →
+specs/caddie-tee-club-expected-strokes-plan.md. Commits 321f333 (impl) + b0eb319 (fable-review
+B1/B2 recklessness fix). REPLACED the hard corridor fit-wall with an expected-strokes selector:
+E[club] = approach_expected_strokes(leave, hcp) + P_left*C(src) + P_right*C(src); per-side P =
+1-Phi(clearance/sigma) from each side's OWN danger-edge offset, C = HANDICAP-SCALED trees0.7/
+water1.4 (the B2 fix — flat costs let a 280y bag keep driver at 46% water; scaling makes penalty
+commensurate with the hcp-scaled approach term), strict-min E, open/unknown corridor -> DRIVER.
+v1 bend-cap kept verbatim as ceiling. BEFORE/AFTER (QA, executed): width-40 tree 467y par-4
+7-Iron/300 -> Driver/185; width-28 water pinch now LAYS UP for BOTH default AND 280y bags (long-bag
+driver E flipped 4.251-win -> 4.391-lose to 5i 4.366); all 14 Red par4/5 driver-majority; Red-1
+driver, Red-6 bend-cap unchanged, par-3s never enter selector.
+VERDICTS: Reviewer(FABLE) SHIP (round 1 caught the B1/B2 recklessness overshoot — the exact reason
+it ran on fable; round 2 re-review SHIP by independent recompute: not overcorrected, driver still
+wins tree/open at hcp 0-36, per-side-offset byte-identical on symmetric corridors, 102 tests). QA
+PASS both rounds (ruff clean, 416/416 targeted offline; DB-integration on CI). No frontend sync.
+FOLLOW-UP filed: caddie-tee-club-tree-severity-calibration (p3 — hcp-30 still gets driver on a 20y
+tree chute ~72% trees; calibration, not a bug; + thin long-bag water-pinch margin note).
+Process note: a stray `fork` agent was launched by an eng-lead dispatch typo (placeholder prompt);
+aborted cleanly with zero changes (branch head verified unmoved). Builder continued via SendMessage.
+
+--- (original AWAITING record, now resolved, below) ---
+
+## RESOLVED — 2026-07-18 — P0 caddie tee-club over-conservatism (mechanism trace)
 Owner P0 field report (live round today, v1.1.15): "The caddie is extremely conservative. Tells
 me to hit 7 iron instead of driver." MECHANISM CONFIRMED by code trace (eng-lead, this cycle):
 `_select_club_fitting_corridor` (backend/app/caddie/aim_point.py:695-764) is a HARD FIT
