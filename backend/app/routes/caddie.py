@@ -275,7 +275,15 @@ class SessionVoiceRequest(BaseModel):
     round_id: str
     transcript: str
     personality_id: str = "classic"
-    hole_number: int = 1
+    # Optional (not a truthy int default — caddie-hole-number-truthy-default
+    # -fallback-dead): every read of this field falls back to
+    # `session.current_hole` when the caller omits it, matching the rest of
+    # this file's `hole_number or session.current_hole` idiom. A default of
+    # `1` here would be truthy and permanently defeat that fallback. The live
+    # orb always sends an explicit hole (frontend/src/lib/caddie/api.ts
+    # `sessionVoice`/`sessionVoiceStream` both type it as required `number`),
+    # so this only changes behavior for a caller that genuinely omits it.
+    hole_number: Optional[int] = None
     # Additive/backward-compatible (specs/caddie-yardage-gps-selected-tee-plan.md
     # §2.4) — an older build omitting these keeps working; the prompt just
     # falls back to par-only / "yardage unknown", never a fabricated number.
@@ -826,16 +834,20 @@ async def _build_session_voice_prompt(
         else "classic"
     )
     personality = await load_personality(persona_id)
+    # Resolve the turn's hole ONCE — an omitted hole_number falls back to the
+    # session's live current_hole (caddie-hole-number-truthy-default-fallback
+    # -dead) rather than silently pinning hole 1 or nulling out current_hole.
+    hole = request.hole_number or session.current_hole
     # Bump current_hole atomically (no read-modify-write of the whole row).
-    await sessions.set_current_hole(request.round_id, request.hole_number)
-    session.current_hole = request.hole_number
+    await sessions.set_current_hole(request.round_id, hole)
+    session.current_hole = hole
 
     memories_block = ""
     if session.user_id:
         memories = await memory_mod.get_top_memories(session.user_id)
         memories_block = memory_mod.render_memories_for_prompt(memories)
 
-    hole_intel = session.hole_intel.get(request.hole_number)
+    hole_intel = session.hole_intel.get(hole)
 
     # Build rich context from session state. The yardage line is the ONE
     # ground-truth number (spec §2.4) — GPS-to-green beats the golfer's
@@ -845,7 +857,7 @@ async def _build_session_voice_prompt(
     # may be stale/mock-derived on an older cached session.
     context_parts = [
         _format_yardage_line(
-            hole_number=request.hole_number,
+            hole_number=hole,
             par=hole_intel.par if hole_intel else None,
             distance_to_green_yards=request.distance_to_green_yards,
             hole_yards=request.hole_yards,
@@ -1021,16 +1033,18 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cad
             request.round_id,
             user_content=request.transcript,
             assistant_content=response_text,
-            hole_number=request.hole_number,
+            hole_number=hole,
         )
         return VoiceCaddieResponse(response=response_text)
 
     if intent is Intent.SCORE:
+        session = await get_owned_session(request.round_id, user_id)
+        hole = request.hole_number or session.current_hole
         await sessions.append_message_pair(
             request.round_id,
             user_content=request.transcript,
             assistant_content=_SCORE_TEXT_HANDOFF_LINE,
-            hole_number=request.hole_number,
+            hole_number=hole,
         )
         return VoiceCaddieResponse(response=_SCORE_TEXT_HANDOFF_LINE)
 
@@ -1079,7 +1093,9 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cad
             request.round_id,
             user_content=request.transcript,
             assistant_content=response_text,
-            hole_number=request.hole_number,
+            # session.current_hole is already resolved (never None) here —
+            # _build_session_voice_prompt persisted it before this refetch.
+            hole_number=session.current_hole,
         )
 
         return VoiceCaddieResponse(response=response_text)
@@ -1219,7 +1235,9 @@ async def _intercepted_reply_stream(
         request.round_id,
         user_content=request.transcript,
         assistant_content=response_text,
-        hole_number=request.hole_number,
+        # `hole` is already resolved by the caller (request.hole_number or
+        # session.current_hole) — never the possibly-None raw request field.
+        hole_number=hole,
     )
     yield "event: done\ndata: {}\n\n"
 
@@ -1275,7 +1293,9 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
             log_context="session_voice_stream",
             round_id=request.round_id,
             transcript=request.transcript,
-            hole_number=request.hole_number,
+            # session.current_hole is already resolved (never None) here —
+            # _build_session_voice_prompt persisted it before this refetch.
+            hole_number=session.current_hole,
             persona_id=persona_id,
             ctx=ctx,
         ),

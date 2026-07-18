@@ -231,14 +231,26 @@ _fact_then_advice_hole_pin = ConversationScenario(
             "how far to the front?", hole_number=9,
             expect=TurnExpect(intent=Intent.FACT, fact_delta=1, reply_equals_fact_answer=True),
         ),
-        # hole_number=0 (falsy) deliberately exercises the route's answer-time
-        # `request.hole_number or session.current_hole` fallback — see the
-        # NOTE in test_conversation_router.py on `SessionVoiceRequest.hole_
-        # number`'s truthy default (int = 1), which makes this fallback
-        # unreachable from a real default-sending client.
+        # hole_number=0 (falsy but explicitly SENT) exercises the route's
+        # answer-time `request.hole_number or session.current_hole` fallback
+        # the same way it always could, even under the old truthy `int = 1`
+        # default (a caller can always send an explicit 0).
         ConversationTurn(
             "should I go for it?", hole_number=0,
             expect=TurnExpect(intent=Intent.ADVICE, synth_delta=1),
+        ),
+        # hole_number=None means the field is genuinely OMITTED from the wire
+        # request — the real-client-omission case
+        # (caddie-hole-number-truthy-default-fallback-dead). Under the OLD
+        # `int = 1` default this was indistinguishable from an explicit `1`
+        # (truthy) and the fallback could never fire; now that the model
+        # default is `Optional[int] = None`, an omitted field resolves to
+        # `session.current_hole` (still 9, pinned by turn 0) exactly like the
+        # explicit-`0` turn above — same ground truth, same cached
+        # recommendation, byte-identical reply, zero new synth calls.
+        ConversationTurn(
+            "should I go for it, one more time?", hole_number=None,
+            expect=TurnExpect(intent=Intent.ADVICE, synth_delta=0, same_reply_as_turn=1),
         ),
     ),
 )

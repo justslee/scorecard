@@ -152,27 +152,33 @@ async def test_hole_swap_advice_resolves_fresh_hole_and_engine_club_each_turn(mo
 
 async def test_fact_then_advice_hole_pin_answer_time_fallback_resolves_prior_hole(monkeypatch):
     """P5 (conversation-level pin): turn 0 (FACT, hole 9) pins `session.
-    current_hole` via `set_current_hole`; turn 1 sends `hole_number=0`
-    (falsy) so the route's `request.hole_number or session.current_hole`
-    fallback must resolve the SAME turn's `run_strategy_turn` call to hole 9,
-    not a stale/default hole.
+    current_hole` via `set_current_hole`; turn 1 sends an explicit falsy
+    `hole_number=0` and turn 2 OMITS `hole_number` entirely (the real-client
+    shape) — both must resolve the route's answer-time `request.hole_number
+    or session.current_hole` fallback to hole 9, not a stale/default hole.
 
-    NOTE (plan §9 contingency, filed for the eng-lead / backlog rather than
-    silently changed): `SessionVoiceRequest.hole_number: int = 1` is a
-    TRUTHY default. A real client that omits `hole_number` (rather than this
-    scenario's deliberate `hole_number=0`) would send `1`, which is also
-    truthy, so the `or session.current_hole` fallback is DEAD from any
-    default-sending client in production — it only fires when a caller
-    explicitly sends `0`. This scenario proves the fallback logic itself is
-    correct when reached; whether real clients ever reach it is a separate,
-    real question this eval surfaced but does not fix (out of scope — no
-    product/runtime code changed here)."""
+    FIXED (caddie-hole-number-truthy-default-fallback-dead, was filed from
+    this same eval lane): `SessionVoiceRequest.hole_number` was `int = 1`, a
+    TRUTHY default — a real client that omitted `hole_number` would receive
+    the default `1` (also truthy), so the `or session.current_hole` fallback
+    was DEAD from any default-sending client in production; it only fired
+    when a caller explicitly sent `0`. Now `Optional[int] = None`, so a
+    genuinely omitted field resolves through the fallback exactly like the
+    deliberate-`0` case. Turn 2 (hole_number=None, no key sent at all) proves
+    this: same resolved hole (9), same cached recommendation, byte-identical
+    reply to turn 1, zero new synth calls — asserted below via
+    `hole_tracker.calls`, `strategy_turn_hole`, and the scenario's
+    `same_reply_as_turn=1` pin (checked by `check_turn_expectations` /
+    `check_no_dupes` in the full-suite run)."""
     scenario = next(s for s in CONVERSATION_SCENARIOS if s.id == "fact-then-advice-hole-pin")
     result = await run_conversation(scenario, monkeypatch)
 
     assert result.hole_tracker.calls == [9]
     assert result.session.current_hole == 9
     assert result.turns[1].strategy_turn_hole == 9
+    assert result.turns[2].strategy_turn_hole == 9
+    assert result.turns[2].hole_number_sent is None
+    assert result.turns[2].reply == result.turns[1].reply
 
 
 async def test_score_multi_player_then_fact_never_touches_the_brain(monkeypatch):

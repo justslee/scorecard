@@ -108,7 +108,14 @@ class TurnExpect:
 @dataclass(frozen=True)
 class ConversationTurn:
     transcript: str
-    hole_number: int
+    # None = genuinely OMITTED from the wire request (never sent as a JSON
+    # key at all) — the real-client-omission case
+    # (caddie-hole-number-truthy-default-fallback-dead). Distinct from
+    # sending an explicit falsy `0`, which some scenarios use to exercise the
+    # `request.hole_number or session.current_hole` fallback logic under the
+    # OLD truthy-default regime; None exercises it the way an actual client
+    # that never sends the field would.
+    hole_number: Optional[int]
     expect: TurnExpect
     distance_to_green_yards: Optional[int] = None
     hole_yards: Optional[int] = None
@@ -131,7 +138,7 @@ class TurnRecord:
     `run_strategy_turn` was called with), never a value the runner invented."""
 
     transcript: str
-    hole_number_sent: int
+    hole_number_sent: Optional[int]
     intent: Intent
     reply: str
     synth_delta: int
@@ -396,8 +403,11 @@ async def run_conversation(
             "round_id": session.round_id,
             "transcript": turn.transcript,
             "personality_id": "classic",
-            "hole_number": turn.hole_number,
         }
+        # None = genuinely omit the key (real-client-omission case); a
+        # scenario that wants the falsy-but-present `0` still sends it.
+        if turn.hole_number is not None:
+            body["hole_number"] = turn.hole_number
         if turn.distance_to_green_yards is not None:
             body["distance_to_green_yards"] = turn.distance_to_green_yards
         if turn.hole_yards is not None:
