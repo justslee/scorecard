@@ -3,6 +3,29 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — 2026-07-18 — P0 strategy-500 club-alias (item caddie-strategy-500-club-alias-normalization, NOTICEABLE)
+Owner P0 field bug (live round today, v1.1.14). Root cause CONFIRMED by code trace: LLM club
+shorthand ('7i'/'3w') enters un-normalized club ingress (record_shot tools.py:994; route bag-set
+routes/caddie.py:349), lands in `session.club_distances`; `normalize_club_distances` passes
+unknown keys straight to physics `_club_ref` (physics.py:363) → `ValueError: unknown club '7i'`
+raised INSIDE `build_strategy_payload` (strategy.py:112/147), before run_strategy_turn's synth
+degrade guard → unhandled → 500 → voice fails. Plus an int-typed-arg TypeError (12:54:12).
+Plan: `specs/caddie-strategy-500-club-alias-plan.md` (owner spec A/B/C/D). Process (owner-set):
+builder + reviewer + qa (NO separate Plan agent this cycle — owner supplied the full plan). Fix:
+hoist the existing `_CLUB_ALIASES`/`_canonical_club` (tools.py:717) to a shared module + reuse at
+every ingress; drop-unknown-with-warning in `normalize_club_distances`; try/except degrade around
+`build_strategy_payload`; fix int frame; tests A-D.
+
+**Base:** origin/integration/next @ 0756ae5. Work happens on worktree branch
+`worktree-agent-a27ae28a590fb2294`, landed onto `integration/next` via fast-forward push.
+**Waiting on:** builder implementing the plan on this worktree branch.
+- builder DONE → run reviewer (adversarial: alias table matches voice-pipeline semantics; graceful
+  fallback logs so it can't mask real bugs; NO 500 path reachable from tool args) + qa (offline
+  gates: ruff, tsc, build, voice-tests smoke) in parallel; then land + open/update bundle PR.
+- reviewer/qa BLOCKING → re-dispatch builder with the findings, re-review.
+- On resume: reconcile from branch (`git log`), do NOT re-run a finished child. Do NOT ship/ping
+  (owner brings the ship ask). Never touch main; never force-push.
+
 ## SHIPPED — 2026-07-18 — Bundle #147: caddie fast reliable strategy + course descriptions live + hazard-aware aim line (v1.1.14)
 Owner approved in-session: verbatim **"Ship it"** on the standing #147 ship ask. Pinned head
 `7bc79b3` (stable for hours, all three gates SUCCESS repeatedly — Backend, Frontend, E2E
