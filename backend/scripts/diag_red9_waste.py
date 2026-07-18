@@ -106,7 +106,7 @@ async def run() -> None:
 
     coll = cs.build_course_feature_collection(holes, bunkers, TARGET)
     for hd in coll:
-        for f in hd["features"]:
+        for f in hd["features"]["features"]:
             if (f.get("properties") or {}).get("osm_id") == REL_ID:
                 print(f">> In final collection: {REL_ID} landed on hole {hd['number']}")
 

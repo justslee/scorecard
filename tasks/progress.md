@@ -22,13 +22,15 @@ hole 11 of a real hazard + plant a phantom 256 m away on hole 9). LANDED on inte
 hole-11 assignment + a clarifying note on the pre-existing synthetic TestMultiPolygonBunkerAssignment +
 the 2 diag scripts. Gates: test_course_spatial 116/116, ruff clean.
 
-## AWAITING — reviewer (fresh eyes) on the NEGATIVE conclusion for red9-waste-complex-hole-assignment
-Pushed to integration/next. Dispatched `reviewer` to adversarially FALSIFY "relation 19545022 belongs
-to hole 11, not hole 9" (owner's weekend course; geometry-claim discipline). Outcomes: **AGREES (no bug)**
-→ mark the backlog reviewer field SHIP, add the SILENT line to PR #147 checklist, done. **DISAGREES /
-finds a real hole-9 miss** → re-open, dispatch builder with the reviewer's specific geometry. Do NOT
-re-run the finished diagnosis; reconcile from the branch (diag scripts + the new test are already
-committed).
+### reviewer verdict: AGREE — no bug (RESOLVED)
+Fresh-eyes reviewer independently reproduced every number against live Overpass (centroid 14.0 m to
+hole 11 vs 256.5 m to hole 9; Tier-1 overlap 0.0 for all 18 holes -> Tier-2 vote -> hole 11 @6.73 m;
+hole 9 has its own 7 bunkers; collection lands it on hole 11). All adversarial falsification attempts
+failed (no large hole-9 sand feature being dropped; forcing it onto hole 9 would be wrong). Test sound,
+116/116. Fixed the one non-blocking nit the reviewer flagged (diag_red9_waste.py final loop iterated
+hd["features"] instead of hd["features"]["features"]). Backlog reviewer field = AGREE. PR #147 checklist
+updated with the SILENT investigation line. Landed on integration/next; NO code change to the heuristic,
+NO prod write. Cycle complete.
 
 ## 2026-07-17 DONE (landed integration/next @f050960, NOTICEABLE rider — owner-directed urgent cluster) — caddie-degraded-line-reliability, worktree agent-aaedc898cc8dd4962, base @b755be2
 Implemented specs/caddie-degraded-line-reliability-plan.md faithfully (no re-plan). Three fixes:
