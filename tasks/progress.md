@@ -19652,6 +19652,6 @@ and 265-480y`, geodesic-verified in specs/caddie-tree-span-gap-plan.md §1d "Aft
 proved red against the old matcher via `git stash` before landing the fix, green after. TEST-HARNESS
 ONLY, zero production/runtime code touched (no production impact). Gates: `ruff check .` clean;
 `tests/eval` + `test_tree_span_gap.py` + `test_hazards.py` + `test_tree_hazards.py` = 304 passed.
-Landed on `integration/next` @ 8b06fc1 (base `origin/integration/next` @ 8de71ed, fast-forward push).
+Landed on `integration/next` @ 7c9e870 (base `origin/integration/next` @ 8de71ed, fast-forward push).
 backlog.json item flipped to `done-on-bundle` (targeted string edit, JSON validated with `json.load`
 — never a full load/dump per the duplicate-keys lesson). Silent rider — no ping, no ship-ask needed.
