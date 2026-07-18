@@ -751,6 +751,43 @@ def test_compose_degraded_line_clean_reachable_approach_sane_numbers_and_favor_s
     assert line == "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
 
 
+_COMP_LEGAL_REC = {
+    "club": "driver",
+    "raw_yards": 430,
+    "target_yards": 430,
+    "shot_kind": "positioning",
+    "leave_yards": 145,
+    "miss_side": {"preferred": "right"},
+    "tee_shot_numbers": {
+        "hole_number": 3,
+        "to_green_yards": 430,
+        "yardage_basis": "tee-card",
+        "plays_like_yards": 430,        # competition-legal: no physics -> == to_green
+        "club": "driver",
+        "club_stored_yards": 285,
+        "drive_carry_yards": None,      # competition-legal: no carry frame
+        "drive_total_yards": 285,       # == stored in competition-legal
+        "leave_exact_yards": 145,
+        "leave_yards": 145,
+    },
+}
+_COMP_LEGAL_GREEN_READ = {"available": False}
+_COMP_LEGAL_CARRIES = {"carries": []}
+
+
+def test_compose_degraded_line_competition_legal_none_carry_uses_stored_phrasing():
+    """Competition-legal tee shot (`drive_carry_yards=None`, no environmental
+    physics): the numbers phrase falls to "{stored} stored" — never a `None`
+    leak, never a fabricated carry — and omits the plays-like clause when
+    plays_like == to_green. Locks the branch the reviewer flagged as untested."""
+    line = compose_degraded_line(_COMP_LEGAL_REC, _COMP_LEGAL_GREEN_READ, _COMP_LEGAL_CARRIES)
+
+    _assert_no_forbidden_substrings(line)
+    assert "None" not in line
+    assert "plays like" not in line
+    assert line == "Driver off the tee — 430 to the green; 285 stored, leaves about 145 in. Favor the right."
+
+
 # ── Route-level tests: POST /session/strategy (Task A, QA-found gap) ───────
 #
 # `session_strategy` (app/routes/caddie.py ~lines 633-776) and its degraded
