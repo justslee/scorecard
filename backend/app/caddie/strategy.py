@@ -175,9 +175,11 @@ async def build_strategy_payload(
         # it — on disagreement.
         guide = intel.strategy_guide if intel is not None else None
         if guide is not None and not verdict_mod.guide_agrees_with_verdict(guide, recommendation):
+            guide_favor = verdict_mod.extract_favor_side(f"{guide.play_line} {guide.miss_side}")
+            engine_verdict = (recommendation.get("miss_side") or {}).get("preferred")
             log.warning(
-                "strategy guide dropped at read time: favor-side disagrees with engine verdict hole=%s",
-                hole_number,
+                "strategy guide dropped at read time: hole=%s guide_favor=%s engine_verdict=%s",
+                hole_number, guide_favor, engine_verdict,
             )
             guide = None
 

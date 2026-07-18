@@ -93,16 +93,23 @@ def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str], call_in
     `call_index` tags which model call of a (possibly multi-call) tool-loop
     turn this was. Logging must never break a reply, so this never raises."""
     try:
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        input_tokens = getattr(usage, "input_tokens", 0) or 0
+        output_tokens = getattr(usage, "output_tokens", 0) or 0
         log.info(
-            "caddie_usage",
+            "caddie_usage context=%s persona=%s call=%d cache_read=%d "
+            "cache_creation=%d input=%d output=%d",
+            context, persona_id, call_index, cache_read, cache_creation,
+            input_tokens, output_tokens,
             extra={
                 "caddie_context": context,
                 "persona_id": persona_id,
                 "call_index": call_index,
-                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
-                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
-                "input_tokens": getattr(usage, "input_tokens", 0) or 0,
-                "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+                "cache_read_input_tokens": cache_read,
+                "cache_creation_input_tokens": cache_creation,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             },
         )
     except Exception:  # noqa: BLE001 — logging must never break a reply
@@ -116,14 +123,22 @@ def _log_hole_hazards_intel(intel: HoleIntelligence, tee: Optional[dict]) -> Non
     course geometry only, no PII/user GPS/keys — greppable from journalctl
     by event name for the next field report. Never raises."""
     try:
+        hazards_line = format_hazards_line(intel.hole_number, intel.hazards)
+        tee_lat = (tee or {}).get("lat")
+        tee_lng = (tee or {}).get("lng")
+        tee_str = (
+            f"{tee_lat:.5f},{tee_lng:.5f}" if tee_lat is not None and tee_lng is not None
+            else "unknown"
+        )
         log.info(
-            "hole_hazards_intel",
+            "hole_hazards_intel hole=%s n_hazards=%d tee=%s hazards=%s",
+            intel.hole_number, len(intel.hazards), tee_str, hazards_line,
             extra={
                 "hole": intel.hole_number,
-                "hazards_line": format_hazards_line(intel.hole_number, intel.hazards),
+                "hazards_line": hazards_line,
                 "n_hazards": len(intel.hazards),
-                "tee_lat": (tee or {}).get("lat"),
-                "tee_lng": (tee or {}).get("lng"),
+                "tee_lat": tee_lat,
+                "tee_lng": tee_lng,
             },
         )
     except Exception:  # noqa: BLE001 — logging must never break a reply
@@ -138,13 +153,16 @@ def _log_caddie_reco_context(hole_number: int, hazards_line: str, tsn: Optional[
     fields are `None` when absent. Never raises."""
     try:
         tsn = tsn or {}
+        to_green = tsn.get("to_green_yards")
+        drive_total = tsn.get("drive_total_yards")
         log.info(
-            "caddie_reco_context",
+            "caddie_reco_context hole=%s to_green=%s drive_total=%s hazards=%s",
+            hole_number, to_green, drive_total, hazards_line,
             extra={
                 "hole": hole_number,
                 "hazards_line": hazards_line,
-                "to_green_yards": tsn.get("to_green_yards"),
-                "drive_total_yards": tsn.get("drive_total_yards"),
+                "to_green_yards": to_green,
+                "drive_total_yards": drive_total,
             },
         )
     except Exception:  # noqa: BLE001 — logging must never break a reply
