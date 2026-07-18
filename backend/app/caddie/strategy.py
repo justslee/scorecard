@@ -79,8 +79,14 @@ def _strategy_model() -> str:
 
 
 def _strategy_reasoning_effort() -> str:
-    # 'low' for the ~2s speakable budget; 'none' is a faster A/B (plan §5).
-    return os.getenv("CADDIE_STRATEGY_REASONING_EFFORT", "low")
+    # Default 'none' (2026-07-17 on-box A/B, 12 keyed calls, quality-gated):
+    # p50 2.4s vs 5.9s at effort=low; validator 6/6 PASS; Red-1 anti-left 3/3;
+    # the ONLY variant that consistently named Augusta-12's center-bunker/
+    # water carries; zero reasoning tokens observed = zero non-payload
+    # numbers to hallucinate. Also unblocks streaming later — effort=none's
+    # first-delta lands ~0.5-1s, which 'low' or higher can't match (plan §5).
+    # CADDIE_STRATEGY_REASONING_EFFORT still overrides for a future A/B.
+    return os.getenv("CADDIE_STRATEGY_REASONING_EFFORT", "none")
 
 
 # 1024 comfortably covers low-effort reasoning + a ~110-token (~80-word)

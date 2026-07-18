@@ -286,7 +286,7 @@ async def test_request_shape_has_no_sampling_params_and_correct_reasoning_field(
 
     assert len(_FakeAsyncClient.captured) == 1
     body = _FakeAsyncClient.captured[0]["json"]
-    assert body["reasoning"] == {"effort": "low"}
+    assert body["reasoning"] == {"effort": "none"}
     assert body["max_output_tokens"] == 1024
     assert "instructions" in body and body["instructions"]
     assert "input" in body and "GROUND TRUTH block" in body["input"]
@@ -294,6 +294,20 @@ async def test_request_shape_has_no_sampling_params_and_correct_reasoning_field(
     assert "temperature" not in body
     assert "top_p" not in body
     assert "tools" not in body
+
+
+def test_strategy_reasoning_effort_defaults_to_none(monkeypatch):
+    """2026-07-17 on-box A/B (12 keyed calls): effort=none beat effort=low on
+    latency (p50 2.4s vs 5.9s) with equal-or-better validator/quality results
+    — see `_strategy_reasoning_effort`'s docstring comment for the full
+    evidence. Pin the default so a future edit can't silently regress it."""
+    monkeypatch.delenv("CADDIE_STRATEGY_REASONING_EFFORT", raising=False)
+    assert strategy_mod._strategy_reasoning_effort() == "none"
+
+
+def test_strategy_reasoning_effort_env_override_still_works(monkeypatch):
+    monkeypatch.setenv("CADDIE_STRATEGY_REASONING_EFFORT", "low")
+    assert strategy_mod._strategy_reasoning_effort() == "low"
 
 
 async def test_synthesize_strategy_raises_without_openai_api_key(monkeypatch):

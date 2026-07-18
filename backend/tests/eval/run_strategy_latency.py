@@ -144,8 +144,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Override CADDIE_STRATEGY_MODEL for this run (e.g. gpt-5.6-terra, gpt-5.6-luna).",
     )
     parser.add_argument(
-        "--effort", type=str, default="low", choices=["none", "low", "medium", "high", "xhigh", "max"],
-        help="Reasoning effort to A/B (default: low, the owner default).",
+        "--effort", type=str, default="none", choices=["none", "low", "medium", "high", "xhigh", "max"],
+        help="Reasoning effort to A/B (default: none, the production default as of the "
+        "2026-07-17 on-box A/B — see strategy._strategy_reasoning_effort).",
     )
     args = parser.parse_args(argv)
 
