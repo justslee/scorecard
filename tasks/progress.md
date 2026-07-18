@@ -3,21 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — 2026-07-17 — eval-multiturn-conversation-router (SILENT test rider, PR #147)
-Worktree agent-afcbd1f423e532a67, base `origin/integration/next` @ 07e51c1. Item: build CONVERSATION-
-level (multi-turn) evals of the two-tier intent router in `backend/tests/eval/`. OFFLINE ONLY (no keyed
-LLM calls, no prod). Seams: `app/caddie/routing.py::classify_intent` (pure), `app/caddie/strategy_turn.py
-::run_strategy_turn` (ADVICE brain; `synthesize_strategy` is the stub seam + module `_CACHE`),
-`app/routes/caddie.py::session_voice` (real dispatch: ADVICE→run_strategy_turn, SCORE→`_SCORE_TEXT_
-HANDOFF_LINE`, FACT/OTHER→Claude `run_caddie_turn`). Answer-time hole = `request.hole_number or
-session.current_hole`. Offline-drive idioms exist in `tests/eval/test_strategy_tool.py` (_FakeSynth
-counting stub, get_owned_session monkeypatch, throwaway FastAPI app + current_user_id override,
-_CACHE.clear fixture, _no_db_persist).
-STATE: Plan agent (fable) dispatched → `specs/eval-multiturn-conversation-router-plan.md`.
-NEXT: plan done → dispatch builder ON this branch; then reviewer (fresh eyes: non-vacuous assertions?
-stub fidelity vs real seam contracts?) + qa (offline backend sweep + new scenarios). Land silent rider
-on #147. DO NOT ship/ping. On resume: check the plan file exists + `git log origin/integration/next`
-for builder commits BEFORE re-dispatching anything.
+## DONE — 2026-07-17 — eval-multiturn-conversation-router (SILENT test rider, PR #147)
+Worktree agent-afcbd1f423e532a67, base `origin/integration/next` @ 2ccad08 (plan commit). Implemented
+`specs/eval-multiturn-conversation-router-plan.md` exactly as written — offline conversation-runner for
+the two-tier intent router, `backend/tests/eval/` only, zero product/runtime code changed.
+New files: `conversation_runner.py` (sequence executor: `ConversationTurn`/`TurnExpect`/
+`ConversationScenario`/`TurnRecord`/`ConversationResult` dataclasses, stub/spy installers —
+`_ScriptedSynth`, `_FakeCaddieTurn`, `_Ledger`/`_LedgerNoHistoryFeed`, `_HoleTracker`,
+`_ResolveToolSpy`, `_ClassifyIntentSpy`, `_RunStrategyTurnSpy` — `run_conversation()`, and 4 pure
+sequence-check functions: `check_turn_expectations`/`check_no_dupes`/`check_club_consistency`/
+`check_history_renders_in_order`), `conversations.py` (10 python-defined scenarios + hole 5/7/9/12
+session fixtures — hole 9 added beyond the plan's named trio for `fact-then-advice-hole-pin`'s own
+target hole; hole 12 tuned to 300y so the engine calls 3-wood there vs driver on hole 5, making the
+hole-swap club-distinctness check non-vacuous), `test_conversation_router.py` (21 tests: the
+parametrized P1+P2 sweep over all 10 scenarios + 10 scenario-specific P3/P4/P5/P6 assertions),
+`test_conversation_teeth.py` (M1-M7, all 7 mutants proven red), README.md section + mutation-drill
+step 5-7 (manually ran + reverted — real IndexError red captured, see PR).
+Real bug found (plan §9, NOTED not fixed): `SessionVoiceRequest.hole_number: int = 1` is a TRUTHY
+default, so the ADVICE answer-time `request.hole_number or session.current_hole` fallback is DEAD from
+any real default-sending client (only reachable if a caller explicitly sends `0`). `fact-then-advice-
+hole-pin` scenario exercises the fallback correctly (it deliberately sends `hole_number=0`) — no test
+was weakened. Filed for backlog, not fixed in this PR (bigger than a regex-row fix per §9's own bar).
+One judgment call vs. the plan's literal wording: `check_no_dupes`'s "adjacent distinct-transcript
+turns must have different replies" rule needed 2 explicit, narrow sanctions beyond the plan's named S4
+case — a real P3 cache-hit on a genuinely different question (`followup-club-advice-same-hole`) and two
+SCORE turns sharing the constant handoff line (`score-multi-player-then-fact`) — both gated on an
+explicit per-turn expectation field, never an unexplained pass; noted here for the reviewer.
+Gates: `ruff check .` clean repo-wide; `tests/eval` = 205 passed (176 pre-existing + 29 new: 21 router +
+8 teeth); full offline sweep = 2853 passed, 133 skipped (pre-existing Postgres-gated integration tests,
+skipped not failed — no local Postgres per policy, CI backend gate covers them).
+NOT shipped/pinged — silent rider, rides PR #147 with no owner action needed.
 
 ## 2026-07-17 red9-waste-complex-hole-assignment — RESOLVED as NOT-A-BUG (premise falsified); worktree agent-a6eab552a7402ecdc, base @608ceb0
 Diagnosed OSM relation 19545022 (claimed "Red-9 waste complex mis-assigned to hole 11"). GEOMETRIC
