@@ -20,11 +20,98 @@ import logging
 from typing import Optional
 
 from app.caddie import strategy as strategy_mod
+from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.session import RoundSession
 from app.caddie.types import TeeShotNumbers
-from app.caddie.voice_prompts import format_tee_numbers_line
 
 log = logging.getLogger("looper.caddie.strategy_turn")
+
+
+def compose_degraded_line(rec: dict, green_read: dict, carries: dict) -> str:
+    """Deterministic degraded-line composer — built PURELY from engine
+    FIELDS, never reused prose (specs/caddie-degraded-line-reliability-plan.md
+    Fix A). The old closure this replaces reused `format_tee_numbers_line`
+    (whose string carries prompt scaffold — "AUTHORITATIVE — they close" /
+    "Speak ONLY these numbers" — that got TTS'd verbatim) and `*.description`
+    free text (`aim_point.description` defaults to "Aim at the flag — green
+    light, no trouble", which both aims an unreachable flag on a positioning
+    shot and claims "no trouble" even when drive-zone hazards exist). Every
+    clause here is composed from a structured field and omitted outright
+    (never a placeholder, never "no trouble", never "at the flag/pin") when
+    its source is empty/None/the literal string "none" — including the
+    `uphill_leave_side == "none"` flat-green case that used to render the
+    literal bug string "the none".
+
+    Module-level + pure so it is directly unit-testable
+    (`tests/eval/test_strategy_tool.py`) and the ONE implementation both the
+    live degrade path and the route tests exercise — no hand-reconstructed
+    duplicate to drift out of sync.
+    """
+    club_key = rec.get("club") or ""
+    club_display = CLUB_DISPLAY_NAMES.get(club_key, club_key) or "your club"
+
+    parts: list[str] = []
+
+    # 1. Club + numbers.
+    tee_numbers = rec.get("tee_shot_numbers")
+    if tee_numbers:
+        n = TeeShotNumbers.model_validate(tee_numbers)
+        lead = f"{club_display} off the tee — {n.to_green_yards} to the green"
+        if n.plays_like_yards != n.to_green_yards:
+            lead += f", plays like {n.plays_like_yards}"
+        if n.drive_carry_yards is not None:
+            lead += f"; carries {n.drive_carry_yards}, totals {n.drive_total_yards}"
+        else:
+            lead += f"; {n.club_stored_yards} stored"
+        if n.leave_exact_yards <= 0:
+            lead += ", reaches the green"
+        else:
+            lead += f", leaves about {n.leave_yards} in"
+        parts.append(lead + ".")
+    elif rec.get("shot_kind") == "positioning":
+        lead = f"{club_display} — position it, {rec.get('raw_yards')} to the green"
+        if rec.get("leave_yards"):
+            lead += f", leaves about {rec['leave_yards']} in"
+        parts.append(lead + ".")
+    else:
+        raw_yards = rec.get("raw_yards")
+        target_yards = rec.get("target_yards")
+        lead = f"{club_display}, {raw_yards} to the green"
+        if target_yards and target_yards != raw_yards:
+            lead += f", plays like {target_yards}"
+        parts.append(lead + ".")
+
+    # 2. Favor-side.
+    pref = (rec.get("miss_side") or {}).get("preferred")
+    if pref in ("left", "right"):
+        parts.append(f" Favor the {pref}.")
+    elif pref == "short":
+        parts.append(" Favor short.")
+    elif pref == "long":
+        parts.append(" Favor long.")
+    # "center" / falsy -> omit (never "no trouble" / "no strong side").
+
+    # 3. Hazard clause from the drive-zone/frame carries.
+    hz = [c for c in (carries.get("carries") or []) if c.get("carry_yards")]
+    if hz:
+        parts.append(
+            " Watch "
+            + ", ".join(f"{c['type']} {c['side']} at {c['carry_yards']}" for c in hz)
+            + "."
+        )
+    # empty / carries unavailable -> omit (no "no trouble" ever).
+
+    # 4. Green read.
+    gr = green_read.get("uphill_leave_side")
+    if green_read.get("available") and gr in ("left", "right"):
+        parts.append(f" Green: a miss {gr} leaves the uphill putt.")
+    elif green_read.get("available") and gr == "none":
+        depth = green_read.get("uphill_leave_depth")
+        if depth in ("short", "long"):
+            parts.append(f" Green: leave it {depth} for the uphill putt.")
+    # else -> omit. Never emit the substring "the none".
+
+    return "".join(parts)
 
 
 async def run_strategy_turn(
@@ -92,25 +179,6 @@ async def run_strategy_turn(
             "degraded": False, "reason": rec["error"], "numbers": numbers,
         }
 
-    def _degraded_line() -> str:
-        """Deterministic line composed purely from engine data — the honest
-        fallback on any reject/error/missing-key."""
-        tee_numbers = rec.get("tee_shot_numbers")
-        aim = (rec.get("aim_point") or {}).get("description") or "the center of the green"
-        miss = (rec.get("miss_side") or {}).get("preferred") or "unknown"
-        club = rec.get("club") or "unknown"
-        if tee_numbers:
-            line = (
-                f"{club}. {format_tee_numbers_line(TeeShotNumbers.model_validate(tee_numbers))} "
-                f"Aim: {aim}. Miss: {miss}."
-            )
-        else:
-            line = f"{club}. Aim: {aim}. Miss: {miss}."
-        gr_side = green_read.get("uphill_leave_side")
-        if green_read.get("available") and gr_side:
-            line += f" Green: the uphill putt leaves from the {gr_side}."
-        return line
-
     model = strategy_mod._strategy_model()
     ground_truth = strategy_mod.format_strategy_ground_truth(payload)
     key = strategy_mod.cache_key(ground_truth, model)
@@ -133,7 +201,7 @@ async def run_strategy_turn(
                 log.warning("session_strategy: verdict-pin reject (%s) hole=%s", pin_reason, hole)
             else:
                 log.warning("session_strategy: validator rejected narrative for hole=%s", hole)
-            strategy_text = _degraded_line()
+            strategy_text = compose_degraded_line(rec, green_read, carries)
             degraded = True
         else:
             strategy_text = validated
@@ -144,7 +212,7 @@ async def run_strategy_turn(
         # exists here (the honest-empty branch above already returned), so
         # the degraded line is always groundable.
         log.exception("session_strategy: synthesis failed for hole=%s", hole)
-        strategy_text = _degraded_line()
+        strategy_text = compose_degraded_line(rec, green_read, carries)
         degraded = True
 
     if not degraded:

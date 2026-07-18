@@ -648,7 +648,14 @@ export async function startSetupSession(params: {
 const VOICE_REPLY_TIMEOUT_MS = 10_000;      // terminal /caddie/voice, per attempt
 const VOICE_REPLY_RETRIES = 1;              // terminal call gets ONE transient retry
 const VOICE_REPLY_RETRY_BACKOFF_MS = 500;   // brief pause so the retry doesn't hit the same dead air
-const SESSION_VOICE_TIMEOUT_MS = 8_000;     // session-first call — fail fast into the stateless fallback
+// Session-first call. MUST stay >= the backend strategy synth timeout
+// (backend/app/caddie/strategy.py::_STRATEGY_TIMEOUT_S, 18s) — the ADVICE
+// branch of /session/voice runs run_strategy_turn INLINE
+// (backend/app/routes/caddie.py:1009), so a shorter client budget aborts to
+// the stateless talkToCaddie fallback before a good, slow-but-real synth
+// returns (specs/caddie-degraded-line-reliability-plan.md, client-budget
+// alignment). 18s synth + ~2s overhead = 20s.
+const SESSION_VOICE_TIMEOUT_MS = 20_000;
 const SPEAK_TIMEOUT_MS = 10_000;            // best-effort TTS
 
 // Calm, human degradation for an exhausted-transient voice reply. Deliberately
