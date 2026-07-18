@@ -200,3 +200,25 @@ PR **#150** opened (NOTICEABLE). No ship/ping this pass — coordinator takes th
   string insert, JSON validated); plan `specs/caddie-yardage-selector-p0-plan.md`.
 
 Bundle #150 now carries ONE noticeable item (this) — ready for the coordinator's ship ask when chosen.
+
+---
+
+## 2026-07-18 — AWAITING: login/onboarding redesign PLAN (plan-first pass, no ship)
+
+OWNER EPIC (verbatim): hates the login screen; wants full-screen Augusta-vibe animation,
+first-time onboarding, modern/clean/exciting login (Google etc.); build our own SECURE auth
+only if design freedom requires it. THIS PASS = the plan + backlog steps only (build later).
+
+Dispatched IN PARALLEL (all read-only planning): product-manager (experience spec) +
+designer (visual concept, BLOCKING input) + Plan-on-fable (auth decision + architecture +
+security). Base origin/integration/next @ba04656. Current auth = Clerk with a substantial
+headless native-token bridge already built (AuthProvider.tsx window.__internal_onBeforeRequest
+FAPI hooks + Keychain token store + Svix webhook revocation + require_member authz) — but the
+sign-in screen still renders Clerk's PREBUILT <SignIn> widget (the thing the owner hates).
+Likely answer: Clerk HEADLESS/custom-flow (keep the security slices, full custom UI). Homegrown
+= huge security surface for zero design gain — plan must present the tradeoff honestly. FLAG:
+App Store REQUIRES Sign in with Apple when offering Google login (owner didn't mention it).
+
+On resume: collect the 3 agent outputs -> synthesize specs/login-onboarding-redesign-plan.md
+-> reviewer sanity pass on the auth recommendation -> append 5-8 backlog items (targeted edits,
+validate JSON) -> commit SILENT on integration/next -> progress note. NEVER touch main. No ship.
