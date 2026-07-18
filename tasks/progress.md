@@ -20365,8 +20365,11 @@ next bundle; NOTICEABLE caddie fix. Do NOT ship/ping this pass.
   journalctl. Fold key=value into the message string (key-free/PII-free).
 
 ## AWAITING
-Plan (fable) on P0 caddie-yardage-selector fix — approach for: (1) hy-alias + frontend canonical
-keys at the seam, (2) the all-courses tee-selector audit + root-fix of any systematic bogus
-cap class (reviewer adversarial BOTH directions — water-pinch/dogleg must stay laying up),
-(3) Lead 3 log-string fix. On plan → dispatch builder on integration/next. Branch state is the
-source of truth; head @ recut 2b0622d + this checkpoint.
+Builder on P0 caddie-yardage-selector fix. Plan (fable) DONE -> specs/caddie-yardage-selector-p0-plan.md
+(Lead 1 hy-alias + heal-on-load + frontend canonical keys; Lead 2 all-courses tee-selector audit +
+mechanism-level root fix of bogus caps; Lead 3 log key=value message strings). Builder implements that
+spec on integration/next, runs the audit READ-ONLY against prod (SSM i-0826ae70df62d9fe8), commits +
+pushes. On builder done -> reviewer (fresh, adversarial BOTH directions: water-pinch/dogleg lay-ups
+MUST stay) + qa (full gates + both audit tables). Branch = source of truth.
+NOTE: shared checkout /Users/justinlee/projects/scorecard holds integration/next (git ops here);
+eng-lead Edit/Write is sandboxed to worktree agent-aa7c7e29be3b829a8 — mirror files across via cp.
