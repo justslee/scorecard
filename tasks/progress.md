@@ -19588,3 +19588,24 @@ AWAITING: builder on the plan. Outcomes:
   - On resume, reconcile from origin/integration/next log; do NOT re-dispatch a finished builder.
 Then: bounded LIVE on-box re-smoke via materialize/shim (~4 keyed calls: Red 1 fresh, Red 6, Augusta 12,
 one repeat) reporting completion rate + wall times + verbatim degraded line. Update PR #147 checklist.
+
+## DONE — 2026-07-17 — caddie degraded-line reliability cluster GREEN (resolves the AWAITING above)
+Landed on integration/next: f050960 (builder) + 8ea2058 (reviewer fold-in test). PR #147 checklist
+updated (NOTICEABLE: "caddie: reliable strategy answers + clean fallback").
+- Fix A: compose_degraded_line(rec, green_read, carries) — module-level, pure, engine-fields-only.
+  Kills the 3 spoken bugs (prompt-scaffold leak, "the none", "at the flag/no trouble" on positioning).
+- Fix B: _STRATEGY_TIMEOUT_S 10.0->18.0; max_output_tokens kept 1024 (cap, not latency lever); effort
+  left "low". Client alignment: SESSION_VOICE_TIMEOUT_MS 8000->20000 (text-mouth ADVICE runs synth
+  inline, caddie.py:1009); realtime orb path native-fetch unbounded, already >=18s.
+- Fix C: retry SKIPPED (18s + retry > 20s bridge budget).
+Reviewer: SHIP (evidence-pure composer; 18s safe end-to-end — nginx proxy_read_timeout 60s, no ALB
+idle timeout, no wait_for wrapper; both client paths >=18s). Nit folded: competition-legal None-carry
+"stored" phrasing test.
+Gates: ruff clean, strategy suite 53/53, lint+tsc clean, voice-tests 278/278 (builder), DB tests in CI.
+LIVE on-box re-smoke of the FIXED code (SSM i-0826ae70df62d9fe8, DB-free overlay shim, real gpt-5.6-sol,
+temp dir cleaned): 4/4 COMPLETE — Red-1 10.4s, Red-6 8.6s, Augusta-12 9.9s, Red-1 repeat 12.6s (all
+< 18s; the two >10s would have degraded under the old 10s cap). Verbatim degraded line rendered clean
+on-box: "3 Wood off the tee — 410 to the green, plays like 415; carries 215, totals 260, leaves about
+150 in. Favor the right. Watch trees right at 220." (degraded_line_clean=OK).
+NOT shipped/pinged — owner handles the ship ask (his round is this weekend). Bundle PR #147 now has 2
+noticeable items, gates green, ready when the owner says "ship it".
