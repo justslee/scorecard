@@ -20327,3 +20327,46 @@ SUCCESS on it before proceeding.
 of driver" P0 fixed; driver back on tree-lined/open par 4/5s, water pinches still correctly lay up
 (fable review caught + fixed a 46%-water recklessness overshoot pre-ship), dogleg bend-cap intact.
 **Silent:** deploy health-check bounded retry — proven clean-first-try on this very ship.
+
+---
+
+## 2026-07-18 — P0 field report: wrong club yardages + irons where they shouldn't (v1.1.16)
+
+**Owner (verbatim):** "Did this apply to all courses. Still recommending irons where it
+shouldn't and also is getting my yardages wrong for certain clubs."
+
+Fresh `integration/next` recut from main `2b0622d` (prev bundle #149 shipped). This is the
+next bundle; NOTICEABLE caddie fix. Do NOT ship/ping this pass.
+
+### Diagnosis (eng-lead audit, read-only prod probe via SSM on i-0826ae70df62d9fe8)
+- **Owner's REAL bag** (prod `golfer_profiles.bag_clubs`, camelCase): driver 300, threeWood 270,
+  fourIron 230, fiveIron 215, sixIron 195, sevenIron 180, eightIron 170, nineIron 155, pw 140,
+  gw 127, sw 115, lw 90. **NO hybrid, NO 5wood.** 40-yard gap between 3wood(270) and 4iron(230).
+- All 12 of his clubs canonicalize correctly; his live `caddie_sessions.club_distances` contain
+  all 12 (both normalized `3wood,4iron,...` and legacy short-code `3w,4i,...` rows seen). So NO
+  club of HIS is dropped, and still-air per-club spoken yardages match stored within ~5y
+  (3wood −5, driver −1, rest ~0). His symptom is NOT a per-club drop.
+- **LATENT bug (real, but not the owner's):** frontend `buildClubMap()`
+  (`frontend/src/lib/caddie/clubs.ts:16`) sends `'hy'` for hybrid; backend `_CLUB_ALIASES`
+  (`club_selection.py`) has NO `'hy'` (only `'3h'`→hybrid) → `canonical_club('hy')` = None →
+  `normalize_club_distances` DROPS the hybrid for ANY user who carries one. Regression from
+  v1.1.15 (pre-fix `'hy'` at least passed through as `'hy'` into `select_club`'s candidate list).
+  Repro confirmed. Fix at the seam + frontend.
+- **Lead 2 mechanism (owner's actual symptom):** `_select_club_expected_strokes`
+  (`aim_point.py:784`) + bend-cap (`aim_point.py:980`) skip driver/3wood when a
+  `ceiling_total_yards` (bend-cap) or trouble-cost caps below ~265 → longest survivor is his
+  **4iron (232 total)** → "iron off the tee." His 40y gap AMPLIFIES any phantom/over-aggressive
+  cap into a jarring mid-iron (a player with a hybrid would land on ~225 hybrid). Needs the
+  all-courses audit against real prod geometry to separate legit caps (real dogleg/water pinch)
+  from bogus (phantom corners, sparse-geometry corridor/danger-edge artifacts).
+- **Lead 3 confirmed:** `backend/app/main.py:17` `logging.basicConfig(level=INFO)` default
+  formatter drops `extra=` fields. `_log_hole_hazards_intel` / `_log_caddie_reco_context` /
+  `_log_caddie_usage` / strategy guide-drop print only the event label — numbers invisible in
+  journalctl. Fold key=value into the message string (key-free/PII-free).
+
+## AWAITING
+Plan (fable) on P0 caddie-yardage-selector fix — approach for: (1) hy-alias + frontend canonical
+keys at the seam, (2) the all-courses tee-selector audit + root-fix of any systematic bogus
+cap class (reviewer adversarial BOTH directions — water-pinch/dogleg must stay laying up),
+(3) Lead 3 log-string fix. On plan → dispatch builder on integration/next. Branch state is the
+source of truth; head @ recut 2b0622d + this checkpoint.
