@@ -57,7 +57,12 @@ const hairlinePill: CSSProperties = {
 const quietLink: CSSProperties = {
   background: "none",
   border: "none",
-  padding: 0,
+  // Invisible hit-padding — 13px underline text alone was under the 44pt
+  // one-handed touch target. Negative margin cancels the padding's layout
+  // footprint so surrounding flex `gap` reads exactly as before — bigger tap
+  // area, no visual shift.
+  padding: "15px 8px",
+  margin: "-15px -8px",
   fontFamily: T.sans,
   fontSize: 13,
   color: T.pencil,
@@ -251,6 +256,11 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
           padding: "20px 24px max(24px, env(safe-area-inset-bottom))",
           display: "flex",
           flexDirection: "column",
+          // Short steps (email/code) have little content and otherwise pin to
+          // the top, leaving a dead lower third. Centering composes them; the
+          // taller `method` step (OAuth + divider + 2 buttons) fills enough
+          // of the sheet that centering reads the same as top-aligned there.
+          justifyContent: "center",
         }}
       >
         <AnimatePresence mode="wait" initial={false}>
@@ -317,6 +327,8 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
                   autoCapitalize="none"
                   autoCorrect="off"
                   aria-label="Email address"
+                  placeholder="you@email.com"
+                  className="auth-input"
                   style={underlineInput}
                 />
               </div>
@@ -334,6 +346,8 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
                     onFocus={onFocusScroll}
                     autoComplete={state.intent === "signIn" ? "current-password" : "new-password"}
                     aria-label="Password"
+                    placeholder="Your password"
+                    className="auth-input"
                     style={underlineInput}
                   />
                 </div>
@@ -402,6 +416,8 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 aria-label="Six-digit code"
+                placeholder="000000"
+                className="auth-input"
                 style={{
                   ...underlineInput,
                   fontFamily: T.mono,
@@ -459,6 +475,17 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Inline styles can't target ::placeholder (no pseudo-element in the
+          CSSProperties style prop) — a scoped styled-jsx rule is the smallest
+          way to give the boxless underline inputs a findable placeholder
+          without introducing a new styling approach. */}
+      <style jsx>{`
+        .auth-input::placeholder {
+          color: ${T.pencilSoft};
+          opacity: 1;
+        }
+      `}</style>
     </div>
   );
 }

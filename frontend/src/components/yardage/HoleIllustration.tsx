@@ -88,6 +88,19 @@ function fairwayRibbon(pts: Array<[number, number]>, widthStart = 0.18, widthEnd
   );
 }
 
+// Hero-only hazard override (login-screen-visual designer iteration): the
+// hero's greenside bunker in HOLES[3] ({x:0.5,y:0.22,r:0.05}) sits almost
+// directly under the green ({x:0.5,y:0.14}, r=5 scaled units) — near-equal
+// visual weight at ~8 scaled units apart fuses them into a stacked "lollipop"
+// blob. This does NOT touch HOLES[] (still indexed by every interactive
+// caller) — it's swapped in ONLY when `isHero` is true, moving the same
+// signature dogleg's bunker to a classic short-right defended position so
+// the green reads as its own disc-with-flag and the bunker as a distinct
+// defended feature.
+const HERO_HAZARD_OVERRIDES: Record<number, HoleSpec["hazards"]> = {
+  4: [{ t: "bunker", x: 0.62, y: 0.28, r: 0.035 }],
+};
+
 export type AimReadout = { fromTee: number; toGreen: number };
 
 /** Imperative escape hatch for the ONE action a parent needs to trigger on
@@ -139,10 +152,21 @@ const HoleIllustration = forwardRef<
   const hole = HOLES[(holeNumber - 1) % HOLES.length];
   const VB = 100;
   const scale = (v: number) => v * VB;
-  const pathD = smoothPath(hole.path.map(([x, y]) => [scale(x), scale(y)] as [number, number]));
-  const ribbonD = fairwayRibbon(hole.path.map(([x, y]) => [scale(x), scale(y)] as [number, number]));
+  const scaledPath = hole.path.map(([x, y]) => [scale(x), scale(y)] as [number, number]);
+  const pathD = smoothPath(scaledPath);
+  // `fairwayRibbon`'s width args are UNSCALED (0–1 fractions) while `pts` are
+  // pre-scaled into the 0–100 viewBox — the interactive call below relies on
+  // that exact (unscaled-width) mismatch and MUST NOT change (byte-identical
+  // contract, HoleCard indexes this in production round views). It renders a
+  // ~0.1–0.2 unit hairline there today; that's the existing, unchanged look.
+  // The hero is a NEW static surface with no such contract, so it scales the
+  // widths to match the viewBox and gets a bold, commanding fairway corridor.
+  const ribbonD = isHero
+    ? fairwayRibbon(scaledPath, scale(0.18), scale(0.11))
+    : fairwayRibbon(scaledPath);
   const tee = hole.path[0];
   const green = hole.path[hole.path.length - 1];
+  const hazards = isHero && HERO_HAZARD_OVERRIDES[holeNumber] ? HERO_HAZARD_OVERRIDES[holeNumber] : hole.hazards;
 
   // ── Draggable aim target (owner ask 2026-07-17) ──────────────────────────
   // Aim state lives INSIDE this component — no lift to HoleCard, `shotPoint`
@@ -310,15 +334,40 @@ const HoleIllustration = forwardRef<
           <stop offset="0%" stopColor="#a8c98a" />
           <stop offset="100%" stopColor="#6b8a52" />
         </radialGradient>
+        {isHero && (
+          <>
+            {/* Feathers the rough texture so it dissolves into the paper
+                instead of terminating at the viewBox's hard square edge —
+                without this the hero reads as a bordered card panel (the
+                designer's "no card chrome" block). Interactive keeps its
+                current full-opacity full-rect texture untouched below. */}
+            <radialGradient id={`rough-fade-${holeNumber}`} cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0%" stopColor="#fff" stopOpacity="1" />
+              <stop offset="65%" stopColor="#fff" stopOpacity="0.7" />
+              <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+            </radialGradient>
+            <mask id={`rough-mask-${holeNumber}`}>
+              <rect x="0" y="0" width={VB} height={VB} fill={`url(#rough-fade-${holeNumber})`} />
+            </mask>
+          </>
+        )}
       </defs>
 
       {!isHero && <rect x="0" y="0" width={VB} height={VB} fill="#ece7db" />}
-      <rect x="0" y="0" width={VB} height={VB} fill={`url(#rough-${holeNumber})`} opacity={isHero ? 0.25 : 0.3} />
+      <rect
+        x="0"
+        y="0"
+        width={VB}
+        height={VB}
+        fill={`url(#rough-${holeNumber})`}
+        opacity={isHero ? 0.25 : 0.3}
+        mask={isHero ? `url(#rough-mask-${holeNumber})` : undefined}
+      />
 
       <path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" />
       <path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" />
 
-      {hole.hazards.map((h, i) => {
+      {hazards.map((h, i) => {
         if (h.t === "bunker") {
           return <circle key={i} cx={scale(h.x)} cy={scale(h.y)} r={scale(h.r)} fill="#e8d9a8" stroke="#b8a878" strokeWidth="0.25" />;
         }
