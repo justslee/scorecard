@@ -379,3 +379,9 @@ fully live via the spike-proven Future API.
 AWAITING: Plan(fable) on specs/login-screen-visual-plan.md. On plan return -> dispatch builder
 to implement on integration/next; then designer(BLOCKING, live screenshots) + reviewer + qa;
 iterate; update PR #150 checklist NOTICEABLE; records. Do NOT ship/ping this cycle.
+
+## AWAITING update (2026-07-18) — builder dispatched
+Plan landed @a0a088d (specs/login-screen-visual-plan.md, Fable). Builder dispatched to
+implement on integration/next in the main checkout. On builder return -> designer(BLOCKING,
+live screenshots) + reviewer + qa in parallel; iterate on BLOCKING; update PR #150 checklist
+NOTICEABLE; backlog flip; progress. Do NOT ship/ping this cycle.
