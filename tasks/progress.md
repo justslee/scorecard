@@ -19535,3 +19535,29 @@ guides. Silent: ingest-code fixes (composite hole-ref parsing, duplicate-hole-re
 Worktrees used: `.claude/worktrees/ship-146` (VERSION bump branch, merged) and
 `.claude/worktrees/ship-146-main` (TestFlight build source) — both cleaned up after this ship.
 Fresh integration/next cut from the merge SHA, pushed, next.
+
+## AWAITING — 2026-07-17 — caddie degraded-line reliability (pre-round fix cluster, NOTICEABLE)
+Owner-directed urgent cluster from tonight's live prod smoke of v1.1.13 (Bethpage Red this weekend).
+Plan: specs/caddie-degraded-line-reliability-plan.md (my investigation is the builder's contract).
+Base: origin/integration/next @ 04f1c6e. Target: land on integration/next, PR #147 checklist item
+"caddie: reliable strategy answers + clean fallback". DO NOT ship/ping (owner handles the ship ask).
+
+Scope (3 files):
+  A. backend/app/caddie/strategy_turn.py — extract `compose_degraded_line(rec, green_read, carries)`
+     module-level, composed PURELY from engine FIELDS (no format_tee_numbers_line, no *.description
+     prose). Kills: prompt-scaffold leak (AUTHORITATIVE/Speak ONLY), "the none" (uphill_leave_side
+     string "none"), and "at the flag/no trouble" unreachable-aim on positioning shots. + test battery
+     in backend/tests/eval/test_strategy_tool.py w/ Red-6 + Augusta-12 fixtures; rewire _expected_
+     degraded_line to delegate to the composer.
+  B. backend/app/caddie/strategy.py — _STRATEGY_TIMEOUT_S 10.0 -> 18.0. Keep max_output_tokens=1024
+     (cap != latency lever; lowering risks incomplete-degrades). Keep effort "low", validator as-is.
+  C. retry: SKIP (18s + retry = 36s worst case > 20s budget).
+  Client-budget alignment (VERIFIED): text-mouth /session/voice ADVICE runs run_strategy_turn inline
+  (caddie.py:1009) but frontend guards it at SESSION_VOICE_TIMEOUT_MS=8000 (caddie/api.ts:651) < 18s ->
+  raise to 20000. Realtime orb path (getStrategy->fetchAPI native fetch, no app timeout) already aligned.
+
+AWAITING: builder on the plan. Outcomes:
+  - builder pushes clean -> dispatch reviewer (degraded-line composition + timeout + client-budget) + qa gates.
+  - On resume, reconcile from origin/integration/next log; do NOT re-dispatch a finished builder.
+Then: bounded LIVE on-box re-smoke via materialize/shim (~4 keyed calls: Red 1 fresh, Red 6, Augusta 12,
+one repeat) reporting completion rate + wall times + verbatim degraded line. Update PR #147 checklist.
