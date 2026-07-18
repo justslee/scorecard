@@ -618,6 +618,22 @@ CORNER_MIN_DISTANCE_YDS: int = 120
 # that punishes flying through the bend itself.
 CORNER_TREE_LOOKBACK_YDS: int = 20
 
+# Tree evidence must ALSO sit within this many yards PAST the mapped corner
+# to count as "guarding" it (all-courses audit, specs/caddie-yardage-
+# selector-p0-plan.md §3.5 Class A, 2026-07-18: the filter below had NO
+# upper bound on `h.carry_yards` — ANY tree hazard anywhere past
+# `bend.distance_yards - CORNER_TREE_LOOKBACK_YDS`, even one clustered near
+# or past the GREEN, silently counted as "guarding" the corner. The audit's
+# prod sweep (166 par-4/5 holes, 12 mapped courses) convicted this exact
+# mechanism: every bogus bend-cap FLAG had its nearest qualifying tree
+# 60-280y PAST the corner (i.e. greenside, unrelated to the dogleg) while
+# every legit cap had a tree within ~30y of the corner in EITHER direction —
+# deviation_yards did NOT separate the two classes (the bogus holes' bends
+# were real, substantial doglegs; a deviation threshold alone would not have
+# caught them). This constant closes that gap at the evidence-qualification
+# layer, never touching the E-model or water costs.
+CORNER_TREE_FORWARD_YDS: int = 40
+
 _SEVERITY_RANK: dict[str, int] = {"mild": 1, "moderate": 2, "severe": 3, "death": 5}
 _MODERATE_RANK: int = _SEVERITY_RANK["moderate"]
 
@@ -988,7 +1004,9 @@ def generate_recommendation(
             corner_trees = [
                 h for h in hole.hazards
                 if h.type == "trees"
-                and h.carry_yards >= bend.distance_yards - CORNER_TREE_LOOKBACK_YDS
+                and bend.distance_yards - CORNER_TREE_LOOKBACK_YDS
+                    <= h.carry_yards
+                    <= bend.distance_yards + CORNER_TREE_FORWARD_YDS
                 and _SEVERITY_RANK.get(h.penalty_severity, 0) >= _MODERATE_RANK
             ]
             if corner_trees:
