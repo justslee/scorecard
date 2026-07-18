@@ -447,3 +447,16 @@ and email/password steps have loose empty vertical rhythm — likely BLOCKING vi
 adjudicate. Reviewer+qa run in parallel (auth-logic/security stable regardless of visual polish).
 On verdicts: BLOCKING visual -> re-dispatch builder for CSS/hero polish + re-shoot + re-designer;
 reviewer/qa BLOCKING -> builder. Then PR #150 checklist NOTICEABLE + backlog flip. Do NOT ship/ping.
+
+## AWAITING update (2026-07-18) — designer BLOCKING; builder iteration dispatched
+Verdicts on login-screen-visual @811a898: reviewer SHIP (/security-review, no changes), qa PASS
+(all 9 gates + backend ruff + zero-diff invariant green), designer BLOCKING (hero underperforms).
+Designer's 3 blockers are all no-new-dep/no-animation: (1) fairwayRibbon width unscaled -> hero
+reads as a thin line (HoleIllustration.tsx:65/143/318); (2) green+bunker lollipop overlap
+(HOLES[3] bunker too close/large); (3) rough-texture rect still reads as a card panel (needs
+feathering). CONSTRAINT: HoleIllustration is also rendered by HoleCard.tsx in PRODUCTION rounds
+(HOLES[3]=hole 4 is user-facing), and plan §4 promises interactive=byte-identical -> ALL three
+fixes MUST be HERO-SCOPED (no shared HOLES[] mutation, no shared ribbon-width change). Folding in
+designer polish 4/5/6 (input placeholders, justifyContent:center on short steps, link hit-padding).
+Builder iteration dispatched. On return -> re-shoot + re-designer; if SHIP -> PR #150 checklist
+NOTICEABLE + backlog flip + progress. Do NOT ship/ping.
