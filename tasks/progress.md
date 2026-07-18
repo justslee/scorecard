@@ -435,3 +435,15 @@ Pushed to `origin/integration/next` @811a898. AWAITING: designer (BLOCKING, live
 screenshots/clip against specs/login-screen-visual-plan.md §3 + epic §3.2) + reviewer +
 qa — dispatch next. Do NOT ship/ping this cycle (bundle still needs designer+reviewer+qa
 before the NOTICEABLE-bundle approval ask).
+
+## AWAITING update (2026-07-18) — designer+reviewer+qa dispatched (login-screen-visual @7a7385b)
+Builder DONE @811a898 (9 gates green, zero-diff invariants confirmed). Eng-lead captured REAL
+renders of the new SignInScreen (throwaway harness: format-valid fake Clerk pk + AUTH_BYPASS,
+/sign-in via Playwright at 375/430) — saved in scratchpad (login-{375,430}-{1-method,2-email-code,
+3-email-password}.png). Initial eng-lead read: strong wordmark/pill language; but hero reads
+small/abstract (green+bunker circles, thin dogleg) not a commanding signature hole, the retained
+0.25 rough-texture SQUARE still creates a card-like boundary (undercuts §3.2 full-bleed/no-chrome),
+and email/password steps have loose empty vertical rhythm — likely BLOCKING visual, designer to
+adjudicate. Reviewer+qa run in parallel (auth-logic/security stable regardless of visual polish).
+On verdicts: BLOCKING visual -> re-dispatch builder for CSS/hero polish + re-shoot + re-designer;
+reviewer/qa BLOCKING -> builder. Then PR #150 checklist NOTICEABLE + backlog flip. Do NOT ship/ping.
