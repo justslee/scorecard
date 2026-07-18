@@ -460,3 +460,38 @@ fixes MUST be HERO-SCOPED (no shared HOLES[] mutation, no shared ribbon-width ch
 designer polish 4/5/6 (input placeholders, justifyContent:center on short steps, link hit-padding).
 Builder iteration dispatched. On return -> re-shoot + re-designer; if SHIP -> PR #150 checklist
 NOTICEABLE + backlog flip + progress. Do NOT ship/ping.
+
+## AWAITING update (2026-07-18) — login hero iteration DONE @8a2e4b1, awaiting re-designer
+Builder iteration landed on `integration/next` (pushed `1bfb8c1..8a2e4b1`). All 3 BLOCKING fixes
+applied, HERO-SCOPED (gated on `isHero` in HoleIllustration.tsx) — interactive path (HoleCard,
+production rounds, HOLES[3]=hole 4) byte-identical, confirmed via diff (no HOLES[] literal touched,
+interactive `fairwayRibbon(scaledPath)`/`hole.hazards` call unchanged):
+1. Fairway ribbon: hero now calls `fairwayRibbon(scaledPath, scale(0.18), scale(0.11))` — bold,
+   commanding corridor instead of the ~0.1-0.2 unit hairline. Interactive keeps the exact old
+   (unscaled-width) call.
+2. Green/bunker lollipop: new `HERO_HAZARD_OVERRIDES` map (hero-only, keyed by holeNumber) moves
+   hole 4's bunker to `{x:0.62,y:0.28,r:0.035}` (classic short-right) — green now reads as its own
+   disc-with-flag. `HOLES[]` itself is untouched.
+3. Card-panel edge: rough-texture rect gets a hero-only radial-gradient alpha `mask` so it fades
+   to transparent at the edges and dissolves into paper instead of a hard square. Interactive
+   keeps its current full-opacity full-rect texture.
+Polish 4/5/6 folded in: placeholder text (`you@email.com` / `Your password` / `000000`) via a
+scoped `<style jsx>` `.auth-input::placeholder` rule in `T.pencilSoft` (inline styles can't target
+`::placeholder`); `justifyContent:"center"` on the sheet wrapper so short email/code steps don't
+pin to the top; `quietLink` gets `padding:"15px 8px"` + offsetting `margin:"-15px -8px"` invisible
+hit-padding for the 44pt touch target.
+
+**All gates green:** lint (0 errors, 1 pre-existing unrelated warning), `tsc --noEmit` clean,
+`next build` AND `NEXT_PUBLIC_AUTH_SPIKE=1 next build` both "Compiled successfully",
+`assert-no-credential-log.mjs`/`assert-no-auth-bypass.mjs` exit 0, `vitest run` 149 files / 2791
+tests (0 failures, incl. `yardage-book-target.test.ts`, `bethpage-hole3.test.ts`,
+`hole-yardage.test.ts` unchanged), voice-tests smoke 278/278. Re-screenshotted (throwaway harness,
+`/sign-in` via Playwright, AUTH_BYPASS) at 375/430 — dev server killed after, `node_modules`
+verified intact — fairway now reads as a bold shape, bunker is a distinct short-right feature,
+no visible card-panel edge, placeholders visible, short steps compose better. Screenshots in
+scratchpad (overwritten): `login-{375,430}-{1-method,2-email-code,3-email-password}.png`.
+
+AWAITING: re-designer verdict against the same bar (Augusta vibe, "stop and look"); if SHIP ->
+reviewer/qa already SHIP/PASS on the underlying logic (no auth/data changes this iteration, purely
+SVG/CSS) — confirm no re-run needed, then PR #150 checklist NOTICEABLE + backlog flip + progress.
+Do NOT ship/ping this cycle.
