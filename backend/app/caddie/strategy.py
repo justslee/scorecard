@@ -131,56 +131,87 @@ async def build_strategy_payload(
     Side effect (intended, inherited from `recommend_payload`):
     `sessions.set_recommendation` persists, so both mouths' "Last
     recommendation" context agrees with the strategy this tool returns.
+
+    Layer 2 of the club-alias P0 fix (owner field bug 2026-07-18): the whole
+    assembly is wrapped fail-closed. Club aliasing/dropping (Layer 1, `app.
+    caddie.club_selection.normalize_club_distances`) already keeps physics
+    from ever seeing a non-canonical club, but this catch is defense in
+    depth for ANY other exception in the assembly — never let one escape to
+    the route as a 500 mid-round. On any exception this degrades to the same
+    honest `recommendation: {"error": ...}` shape the no-yardage-known branch
+    already returns, which `run_strategy_turn` already handles as an honest
+    `available: False` answer — never a fabricated strategy
+    ([[no-fake-data-fallbacks]]). Always logged (`log.exception`) so a real
+    bug can't be silently masked.
     """
-    intel = session.hole_intel.get(hole_number)
+    try:
+        intel = session.hole_intel.get(hole_number)
 
-    if distance_to_green_yards is not None:
-        resolved_yards: Optional[int] = distance_to_green_yards
-        resolved_basis: Optional[str] = "gps"
-    elif hole_yards is not None:
-        resolved_yards = hole_yards
-        resolved_basis = yardage_basis
-    else:
-        resolved_yards = intel.yards if intel is not None else None
-        resolved_basis = None
+        if distance_to_green_yards is not None:
+            resolved_yards: Optional[int] = distance_to_green_yards
+            resolved_basis: Optional[str] = "gps"
+        elif hole_yards is not None:
+            resolved_yards = hole_yards
+            resolved_basis = yardage_basis
+        else:
+            resolved_yards = intel.yards if intel is not None else None
+            resolved_basis = None
 
-    recommendation = await recommend_payload(
-        session,
-        round_id,
-        hole_number,
-        par=intel.par if intel is not None else 4,
-        yards=resolved_yards,
-        yardage_basis=resolved_basis,
-    )
+        recommendation = await recommend_payload(
+            session,
+            round_id,
+            hole_number,
+            par=intel.par if intel is not None else 4,
+            yards=resolved_yards,
+            yardage_basis=resolved_basis,
+        )
 
-    # Read-time verdict gate (specs/caddie-two-tier-routing-plan.md §5) —
-    # distinct from guide_writer.validate_guide's WRITE-time hazard/side/
-    # carry grounding. A guide can name a hazard correctly and STILL advise
-    # favoring/aiming straight into it (the Red-1 poison class); this checks
-    # the guide's own favor/miss claim against the engine's LIVE verdict for
-    # THIS turn and drops it — never edits or launders it — on disagreement.
-    guide = intel.strategy_guide if intel is not None else None
-    if guide is not None and not verdict_mod.guide_agrees_with_verdict(guide, recommendation):
-        log.warning(
-            "strategy guide dropped at read time: favor-side disagrees with engine verdict hole=%s",
+        # Read-time verdict gate (specs/caddie-two-tier-routing-plan.md §5) —
+        # distinct from guide_writer.validate_guide's WRITE-time hazard/side/
+        # carry grounding. A guide can name a hazard correctly and STILL
+        # advise favoring/aiming straight into it (the Red-1 poison class);
+        # this checks the guide's own favor/miss claim against the engine's
+        # LIVE verdict for THIS turn and drops it — never edits or launders
+        # it — on disagreement.
+        guide = intel.strategy_guide if intel is not None else None
+        if guide is not None and not verdict_mod.guide_agrees_with_verdict(guide, recommendation):
+            log.warning(
+                "strategy guide dropped at read time: favor-side disagrees with engine verdict hole=%s",
+                hole_number,
+            )
+            guide = None
+
+        return {
+            "hole_number": hole_number,
+            "recommendation": recommendation,
+            "conditions": conditions_payload(session, hole_number),
+            "carries": carries_payload(session, hole_number),
+            "bend": bend_payload(session, hole_number),
+            "green_read": green_read_payload(session, hole_number),
+            "player": await player_profile_payload(session, user_id),
+            # Already validated fail-closed at session reload (session.py::
+            # _row_to_session), PLUS the read-time verdict gate above — "" when
+            # absent or dropped, per format_guide_line's own no-fake-data
+            # -fallbacks convention (caller omits the line).
+            "local_knowledge": format_guide_line(guide) if guide is not None else "",
+        }
+    except Exception:
+        log.exception(
+            "build_strategy_payload: payload assembly failed for hole=%s — degrading to honest empty",
             hole_number,
         )
-        guide = None
-
-    return {
-        "hole_number": hole_number,
-        "recommendation": recommendation,
-        "conditions": conditions_payload(session, hole_number),
-        "carries": carries_payload(session, hole_number),
-        "bend": bend_payload(session, hole_number),
-        "green_read": green_read_payload(session, hole_number),
-        "player": await player_profile_payload(session, user_id),
-        # Already validated fail-closed at session reload (session.py::
-        # _row_to_session), PLUS the read-time verdict gate above — "" when
-        # absent or dropped, per format_guide_line's own no-fake-data
-        # -fallbacks convention (caller omits the line).
-        "local_knowledge": format_guide_line(guide) if guide is not None else "",
-    }
+        return {
+            "hole_number": hole_number,
+            "recommendation": {
+                "error": "Strategy engine hit an unexpected error putting this hole's numbers together.",
+            },
+            "conditions": {},
+            "carries": {},
+            "bend": {},
+            "green_read": {},
+            "player": {},
+            "local_knowledge": "",
+        }
 
 
 def format_strategy_ground_truth(payload: dict) -> str:

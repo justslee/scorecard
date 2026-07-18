@@ -37,7 +37,11 @@ from sqlalchemy import select, func as sqlfunc
 
 from app.caddie import physics
 from app.caddie.aim_point import generate_recommendation
-from app.caddie.club_selection import CLUB_DISPLAY_NAMES, physics_plays_like
+from app.caddie.club_selection import (
+    CLUB_DISPLAY_NAMES,
+    canonical_club as _canonical_club,
+    physics_plays_like,
+)
 from app.caddie.green_geometry import green_read
 from app.caddie.hazards import format_hazards_line
 from app.caddie.session import RoundSession, ShotRecord, sessions
@@ -400,7 +404,18 @@ async def record_shot_payload(
 ) -> dict:
     """Record a shot to the session history AND the durable ``shots`` table —
     lifted verbatim from the ``/session/shot`` route body (retry-window dedupe
-    + best-effort durable dual-write)."""
+    + best-effort durable dual-write).
+
+    THE canonicalization chokepoint for both callers (the text tool loop's
+    `record_shot` dispatch AND the realtime voice path's `POST
+    /session/shot` route) — owner P0 follow-up 2026-07-18: the REST route
+    posted `request.club` raw, so a voice-recorded `'7i'` and a `'7iron'`
+    shot double-counted as distinct clubs in `shot_stats.aggregate_by_club`,
+    defeating this function's own "parity by construction" claim. Resolves
+    to the canonical key when recognized; an unrecognized token is still
+    recorded AS GIVEN — never drop a shot the golfer actually took
+    ([[no-fake-data-fallbacks]])."""
+    club = _canonical_club(club) or club
     last = session.shot_history[-1] if session.shot_history else None
     if (
         last is not None
@@ -714,27 +729,11 @@ def bend_payload(session: RoundSession, hole_number: Optional[int] = None) -> di
     }
 
 
-# Spoken/model club names → canonical CLUB_REFERENCE keys. Built from the
-# display names ("7 Iron" → "7iron") plus the long wedge forms and N-letter
-# shorthands the model actually says. Lookup lowercases and strips spaces/
-# hyphens first, so "7 iron", "7-Iron", and "7iron" all resolve.
-_CLUB_ALIASES: dict[str, str] = {
-    **{display.lower().replace(" ", ""): key for key, display in CLUB_DISPLAY_NAMES.items()},
-    "pitchingwedge": "pw",
-    "gapwedge": "gw",
-    "sandwedge": "sw",
-    "lobwedge": "lw",
-    **{f"{n}i": f"{n}iron" for n in range(4, 10)},
-    "3w": "3wood",
-    "5w": "5wood",
-}
-
-
-def _canonical_club(raw: str) -> Optional[str]:
-    key = raw.strip().lower().replace(" ", "").replace("-", "")
-    if key in physics.CLUB_REFERENCE:
-        return key
-    return _CLUB_ALIASES.get(key)
+# _canonical_club moved to app.caddie.club_selection.canonical_club — ONE
+# shared alias table (owner P0 2026-07-18: a divergent second vocab here
+# would let '7i'/'3w' resolve differently in get_shot_distance vs the
+# strategy/recommendation bag path). Imported above as `_canonical_club` so
+# this module's call sites are unchanged.
 
 
 def shot_distance_payload(
@@ -991,6 +990,10 @@ async def resolve_tool(name: str, args: dict, ctx: ToolContext) -> dict:
 
     if name == "record_shot":
         hn = _as_int(args.get("hole_number")) or ctx.default_hole
+        # Club shorthand ('7i'/'3w'/...) normalization now lives INSIDE
+        # `record_shot_payload` itself (owner P0 follow-up 2026-07-18) — the
+        # one chokepoint both this dispatch branch AND the REST
+        # `/session/shot` route share, so they can't drift.
         club = str(args.get("club") or "").strip()
         distance = _as_int(args.get("distance_yards"))
         if hn is None or not club or distance is None:

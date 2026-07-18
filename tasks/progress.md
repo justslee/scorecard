@@ -3,6 +3,114 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — 2026-07-18 — P0 strategy-500 club-alias (item caddie-strategy-500-club-alias-normalization, NOTICEABLE)
+Owner P0 field bug (live round today, v1.1.14). Root cause CONFIRMED by code trace: LLM club
+shorthand ('7i'/'3w') enters un-normalized club ingress (record_shot tools.py:994; route bag-set
+routes/caddie.py:349), lands in `session.club_distances`; `normalize_club_distances` passes
+unknown keys straight to physics `_club_ref` (physics.py:363) → `ValueError: unknown club '7i'`
+raised INSIDE `build_strategy_payload` (strategy.py:112/147), before run_strategy_turn's synth
+degrade guard → unhandled → 500 → voice fails. Plus an int-typed-arg TypeError (12:54:12).
+Plan: `specs/caddie-strategy-500-club-alias-plan.md` (owner spec A/B/C/D). Process (owner-set):
+builder + reviewer + qa (NO separate Plan agent this cycle — owner supplied the full plan). Fix:
+hoist the existing `_CLUB_ALIASES`/`_canonical_club` (tools.py:717) to a shared module + reuse at
+every ingress; drop-unknown-with-warning in `normalize_club_distances`; try/except degrade around
+`build_strategy_payload`; fix int frame; tests A-D.
+
+**Base:** origin/integration/next @ 0756ae5. Work on worktree branch
+`worktree-agent-a27ae28a590fb2294`, landed onto `integration/next` via fast-forward push.
+**Builder DONE** — landed `5a5d303` on integration/next. Ruff clean; 2925 non-DB backend tests
+pass locally. Touched club_selection.py, tools.py, strategy.py, routes/caddie.py + 2 test files.
+Builder flagged: could NOT empirically reproduce the exact int-TypeError frame (all `re.*` calls
+operate on guaranteed-str values; both club-arg ingresses already str-coerced) — applied the
+defensive boundary coercion (`canonical_club()` does `str(raw)` first) regardless, which closes
+the class. Note for owner: exact prod frame unconfirmed; defensive fix in place.
+
+**Bundle PR:** #148 (integration/next → main), P0 item marked NOTICEABLE.
+**Reviewer: SHIP** on `5a5d303` — P0 500 fully closed (bag chokepoint drop/alias + Layer-2
+try/except degrade, correct 3wood numbers, all alias targets valid, degrade shape consumed
+safely, no injection/DoS, int-args coerced). **QA: PASS** — ruff clean, 2925/2925 offline tests
+(77/77 target files), sanity-drive confirms '3w'/'7i'→correct numbers, unknown/int degrade
+gracefully, no 500. Reviewer's one non-blocking note: REST `/session/shot` (caddie.py:455 →
+record_shot_payload) doesn't canonicalize the raw club → stats double-count '7i' vs '7iron'
+(no crash, never reaches physics un-normalized). Closing it (reviewer-prescribed) by centralizing
+canonicalization inside `record_shot_payload` so both callers share one chokepoint.
+
+**Parity fix landed:** `6e67891` on integration/next (record_shot_payload is now the single
+canonicalization chokepoint for BOTH the voice tool-dispatch branch and the REST POST
+/caddie/session/shot path; '7i'->7iron, unknown recorded as-given, never dropped; 3 new tests
+against the persisted ShotRecord; builder offline sweep 2928 passed, ruff clean).
+
+**Backlog:** item `caddie-strategy-500-club-alias-normalization` flipped to DONE (validated, 112
+items intact). **PR #148 checklist:** P0 item checked [x], reviewer SHIP + QA PASS noted.
+
+**Local re-verify post-land (independent):** ruff clean; 80/80 P0+record_shot tests pass.
+**PR #148:** head `6e67891`, mergeState CLEAN, OPEN.
+
+**CI first pass (head 2cd1ce3):** Frontend SUCCESS, E2E SUCCESS, Backend FAILURE — a real but
+benign break the local gates couldn't catch (DB-backed CI-only tests): two assertions in
+`tests/integration/test_caddie_profile_session.py` encoded the OLD record-verbatim club contract
+(`row.club == "7i"`; `[(1,"driver"),(2,"9i")]`). The P0 fix's record_shot_payload canonicalization
+chokepoint now (correctly) stores `"7iron"`/`"9iron"`. Updated BOTH assertions to the sanctioned
+new canonical contract (commit `029acc2`), with rationale in code comments + commit message;
+verified canonical_club('7i')=='7iron', ('9i')=='9iron', ('pw')/('driver') unchanged; confirmed no
+other shorthand STORAGE assertion in the file (ownership/retry tests use shorthand only as input).
+
+**AWAITING: PR #148 CI on head `029acc2`.** Gate = every required check SUCCESS (pending==0 AND
+fail==0 AND Frontend + Backend gates each state:SUCCESS — a CANCELLED gate is NOT a pass). When
+green, the bundle is ready — owner already said "Ship"; coordinator/release-manager takes the
+merge (NO ship/merge/ping from me; NEVER push to main; never force-push).
+
+## SHIPPED — 2026-07-18 — Bundle #147: caddie fast reliable strategy + course descriptions live + hazard-aware aim line (v1.1.14)
+Owner approved in-session: verbatim **"Ship it"** on the standing #147 ship ask. Pinned head
+`7bc79b3` (stable for hours, all three gates SUCCESS repeatedly — Backend, Frontend, E2E
+advisory); no drift, head unmoved through the whole ship.
+
+**VERSION bump + pre-merge gates:** bumped 1.1.13 -> 1.1.14 at `dce36c2` on `integration/next`,
+pushed, all three gates re-verified SUCCESS on the bump head before merge.
+
+**Merge:** PR #147 -> `main`, merge commit `d207720d32559395ec864c77f80908cc47ef6ea9`.
+
+**Post-merge main CI:** green on `d207720` (Frontend + Backend both SUCCESS).
+
+**Backend deploy + confirms** (key-free SSM probe, instance `i-0826ae70df62d9fe8`):
+- `Deploy backend (SSM)` GH Actions workflow auto-triggered on merge. First attempt's tail
+  health-check raced the app's own startup (fixed `sleep 3` beat uvicorn's actual ~3-4s bind
+  time — git pull/alembic/restart all succeeded, only the closing `curl` hit a 0ms-connect
+  refusal, single transient timing race, not a code defect). Confirmed on-box via a direct SSM
+  probe immediately after: `systemctl is-active` -> active, `/health` -> `{"status":"ok"}`
+  repeatedly since. Re-ran the same GH Actions job for a clean recorded status -> SUCCESS.
+- `/health` -> `{"status":"ok"}`.
+- `APP_ACCESS_MODE` absent from on-box `backend/.env` (confirmed dark).
+- Caller inert: zero `TWILIO_*` keys in the on-box `.env`.
+- `alembic current` = `015_course_intel (head)` — unchanged, no new migrations (expected).
+- **The ship's whole point, verified directly in the deployed file:**
+  `backend/app/caddie/strategy.py` on-box has `_STRATEGY_TIMEOUT_S = 18.0` and
+  `_strategy_reasoning_effort()` defaulting to `"none"` (via `CADDIE_STRATEGY_REASONING_EFFORT`
+  env override, unset on-box -> `"none"`).
+
+**TestFlight:** `bash ops/ios/ship.sh` from `main` (worked directly in the primary checkout,
+clean tree, no worktree needed — ARCHIVE SUCCEEDED, EXPORT SUCCEEDED — "Uploaded v1.1.14
+(build 202607180823) to TestFlight" on first try, no exit-70/SPM retry needed. Polled App
+Store Connect (`scratchpad/poll_build.py 1.1.14 202607180823`): `processingState=VALID` on
+first poll, not expired.
+
+**Fresh integration/next:** cut from new main and pushed as a fast-forward
+(`dce36c2..d207720`).
+
+**Records:** Notion board card created (`Bundle #147`, Status=Shipped, Type=Major).
+`backlog.json` top-level `note` ledger updated with the full terminal SHIPPED entry (targeted
+edit, validated JSON after — `items` count unchanged at 111, no data loss).
+
+**Headline (NOTICEABLE):** caddie fast reliable strategy answers (reasoning effort=none
+default, on-box A/B: p50 2.4s vs 5.9s at effort=low, quality-gated 6/6 validator PASS + Red-1
+anti-left 3/3; synth timeout 10->18s + client budget 8->20s aligned; clean
+engine-fields-only degraded line) + course descriptions live (validator over-strict length
+cap fixed 700->950/1600; Red + Pebble seeded enriched, already live via data) + hazard-aware
+aim line ("Aim at the flag — carry the water at 140" on Augusta-12-class holes; clean holes
+byte-identical). Silent: verdict negation fix, hole_number Optional fix, multi-turn
+conversation evals (10 scenarios), Red-9 truth pin, ingest hardening (composite refs, dup
+dedupe, Overpass honesty), eval split-line matcher.
+
 ## DONE — 2026-07-17 — aim-point hazard-aware recommendation line (PR #147)
 Worktree agent-ace76f1f2f65f2edb, base `origin/integration/next` @ 6d65a31. Implemented
 `specs/aim-point-hazard-aware-recommendation-line-plan.md` exactly as written — pure backend

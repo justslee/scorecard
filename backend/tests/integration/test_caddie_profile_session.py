@@ -64,7 +64,11 @@ class TestSessionShotDualWrite:
         assert row.user_id == TEST_OWNER_ID
         assert row.hole_number == 3
         assert row.shot_number == 1
-        assert row.club == "7i"
+        # Canonicalized on write (P0 club-alias fix, 2026-07-18): record_shot_payload
+        # is the single canonicalization chokepoint for both the voice tool and this
+        # REST path, so LLM/client shorthand "7i" is stored as canonical "7iron"
+        # (keeps stats from double-counting "7i" vs "7iron"). Sanctioned new contract.
+        assert row.club == "7iron"
         assert float(row.distance_yards) == 152.0
         assert row.result == "green"
         assert row.start_lat is None and row.end_lat is None  # voice path has no GPS
@@ -110,7 +114,9 @@ class TestSessionShotDualWrite:
             assert r.status_code == 200
 
         rows = await _durable_shots()
-        assert [(s.shot_number, s.club) for s in rows] == [(1, "driver"), (2, "9i")]
+        # "driver" is already canonical; shorthand "9i" is canonicalized to "9iron"
+        # on write (P0 club-alias fix, 2026-07-18 — record_shot_payload chokepoint).
+        assert [(s.shot_number, s.club) for s in rows] == [(1, "driver"), (2, "9iron")]
 
     async def test_shot_requires_round_ownership(self, client):
         set_auth(TEST_OWNER_ID)
