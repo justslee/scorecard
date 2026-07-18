@@ -303,30 +303,39 @@ def context_hazards_match(hazards_line: str, expected: list[dict]) -> CheckResul
     matched range — the same along-path-vs-chord slack the real Bethpage-4
     fixture carries (test_bethpage_validation.py).
 
-    Scans ALL `type SIDE lo[-hi]y` tokens for the (type, side) pair via
-    `finditer`, not just the first (the old `re.search`) — a gap-preserving
-    trees line can render multiple runs for one side
+    A gap-preserving trees group renders as ONE `type SIDE` prefix followed
+    by one or more `lo[-hi]y` runs joined with `" and "`
     (specs/caddie-tree-span-gap-plan.md, e.g. `trees L 30-65y and
-    265-480y`), and a `search`-only scan would false-fail an expected carry
-    that only the SECOND run covers. The check passes when ANY matched range
-    covers the expected carry ±15y — it does not need every range to."""
+    265-480y`) — the prefix does NOT repeat per run. The old implementation
+    matched `type SIDE lo[-hi]y` as a single unit via `finditer`, so it only
+    ever found the FIRST run (the second+ run has no `type SIDE` prefix of
+    its own) and silently ignored the rest — an expected carry covered only
+    by a later run false-failed. This locates the `type SIDE` prefix ONCE,
+    captures its entire run-list span (every `lo[-hi]y and `-joined segment
+    that follows), then scans EVERY run within that span for the expected
+    carry. The check passes when ANY matched run covers the expected carry
+    ±15y — it does not need every run to."""
     for e in expected:
         etype, eside = e["type"], e["side"]
         ecarry = e.get("carry")
-        pattern = re.compile(rf"\b{re.escape(etype)}\s+{re.escape(eside)}\s+(\d+)(?:-(\d+))?y\b")
-        matches = list(pattern.finditer(hazards_line))
-        if not matches:
+        prefix_pattern = re.compile(
+            rf"\b{re.escape(etype)}\s+{re.escape(eside)}\s+((?:\d+(?:-\d+)?y(?:\s+and\s+)?)+)"
+        )
+        prefix_match = prefix_pattern.search(hazards_line)
+        if not prefix_match:
             return CheckResult(False, f"expected {etype!r} {eside!r} not found in hazards line: {hazards_line!r}")
         if ecarry is None:
             continue
         ranges = []
-        for m in matches:
-            lo = int(m.group(1))
-            hi = int(m.group(2)) if m.group(2) else lo
+        matched = False
+        for run in re.finditer(r"(\d+)(?:-(\d+))?y", prefix_match.group(1)):
+            lo = int(run.group(1))
+            hi = int(run.group(2)) if run.group(2) else lo
             ranges.append((lo, hi))
             if lo - 15 <= ecarry <= hi + 15:
+                matched = True
                 break
-        else:
+        if not matched:
             ranges_str = ", ".join(f"{lo}-{hi}y" for lo, hi in ranges)
             return CheckResult(False, f"expected carry ~{ecarry}y, hazards line has {ranges_str}")
     return CheckResult(True, "ok")

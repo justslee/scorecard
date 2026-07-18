@@ -63,10 +63,10 @@
       "type": "minor",
       "priority": 6,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
       "noticeable": false,
       "why": "Non-blocking finding from the caddie-tree-span-gap review (2026-07-17, landed @6feb8a4). tests/eval/checks.py::context_hazards_match was changed from re.search to finditer intending to cover the new gap-split hazard lines (e.g. 'trees L 30-65y and 265-480y'), but the regex '\\btrees\\s+L\\s+(\\d+)(?:-(\\d+))?y\\b' only matches the FIRST run — the second run '265-480y' has no 'trees L' prefix, so an expected carry that only the second run covers still false-fails. TEST-HARNESS ONLY, no production impact, and no current golden scenario produces a split (per-side deltas <=60y). FIX: match 'trees SIDE' once, then scan all '\\d+(?:-\\d+)?y' segments up to the next side letter / comma, accept if any range covers the expected carry +-15y. Do when a golden scenario first needs a split line.",
-      "resolution": ""
+      "resolution": "LANDED on bundle rider, integration/next (base 8de71ed). context_hazards_match rewritten: locates the 'type SIDE' prefix ONCE via a run-list-capturing regex ('(?:\\d+(?:-\\d+)?y(?:\\s+and\\s+)?)+'), then scans EVERY '\\d+(?:-\\d+)?y' run inside that captured span (not just the first token) for the expected carry +-15y — fixes the false-fail on a carry covered only by the 2nd+ run. New test test_context_hazards_match_covers_every_run_of_a_split_trees_line (tests/eval/test_harness_has_teeth.py) uses the REAL Bethpage RED-1 pre-suppression split line ('trees R 5-85y and 385-475y, trees L 30-65y and 265-480y', geodesic-verified in specs/caddie-tree-span-gap-plan.md §1d) as input, asserts a carry in the 2nd run of each side now passes (repro'd red against the old matcher via git stash, confirmed), a carry in the 1st run still passes, and a carry in the open drive zone (150y) still correctly fails. Gates: ruff check . clean; tests/eval + test_tree_span_gap.py + test_hazards.py + test_tree_hazards.py = 304 passed. TEST-HARNESS ONLY, zero production/runtime code touched."
     },
     {
       "id": "caddie-smart-strategy-tool",

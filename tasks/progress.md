@@ -19638,3 +19638,20 @@ on-box: "3 Wood off the tee — 410 to the green, plays like 415; carries 215, t
 150 in. Favor the right. Watch trees right at 220." (degraded_line_clean=OK).
 NOT shipped/pinged — owner handles the ship ask (his round is this weekend). Bundle PR #147 now has 2
 noticeable items, gates green, ready when the owner says "ship it".
+
+## DONE — 2026-07-17 — eval-hazards-match-split-line (SILENT test-harness fix, PR #147 rider)
+backlog `eval-hazards-match-split-line`: `tests/eval/checks.py::context_hazards_match`'s finditer-based
+matcher only ever found the FIRST run of a gap-split trees hazard line (e.g. `trees L 30-65y and
+265-480y`) because the run-list's 2nd+ runs have no repeated `type SIDE` prefix for `finditer` to key
+on — an expected carry covered only by a later run false-failed. Rewrote to locate the `type SIDE`
+prefix ONCE (a regex that captures the WHOLE `" and "`-joined run-list span), then scan EVERY
+`lo[-hi]y` run inside that span for the expected carry ±15y. New test
+`test_context_hazards_match_covers_every_run_of_a_split_trees_line` (tests/eval/test_harness_has_teeth.py)
+uses the REAL Bethpage RED-1 pre-suppression split line (`trees R 5-85y and 385-475y, trees L 30-65y
+and 265-480y`, geodesic-verified in specs/caddie-tree-span-gap-plan.md §1d "After (§1 only)" row) —
+proved red against the old matcher via `git stash` before landing the fix, green after. TEST-HARNESS
+ONLY, zero production/runtime code touched (no production impact). Gates: `ruff check .` clean;
+`tests/eval` + `test_tree_span_gap.py` + `test_hazards.py` + `test_tree_hazards.py` = 304 passed.
+Landed on `integration/next` @ 8b06fc1 (base `origin/integration/next` @ 8de71ed, fast-forward push).
+backlog.json item flipped to `done-on-bundle` (targeted string edit, JSON validated with `json.load`
+— never a full load/dump per the duplicate-keys lesson). Silent rider — no ping, no ship-ask needed.
