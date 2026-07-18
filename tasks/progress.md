@@ -20265,3 +20265,65 @@ the prior pass's 2111, from the added long-bag test).
 Files touched this pass: `backend/app/caddie/aim_point.py`, `backend/app/caddie/voice_prompts.py`,
 `backend/tests/test_tee_club_expected_strokes.py`. Not shipped/pinged — reporting back to
 eng-lead per routing directive.
+
+## SHIPPED — 2026-07-18 — Bundle #149 (v1.1.16, build 202607181354)
+
+Owner in-session ship approval, verbatim **"Ship it"**, given in response to the expected-strokes
+club-selector table — the established process treats this as the merge authorization. Pinned head
+`8708223` on `origin/integration/next`; all three gates (Frontend, Backend, E2E advisory) verified
+SUCCESS on it before proceeding.
+
+**Ship sequence:**
+1. Gates re-verified SUCCESS on `8708223` via `gh pr checks 149 --json`.
+2. VERSION bumped 1.1.15 -> 1.1.16. **Caught a stale-branch bug during this step**: local
+   `integration/next` had drifted to tracking `origin/main` (an old checkout from an earlier
+   session, actually sitting at `51a19ed` — the #148 ship record commit, ~hundreds of commits
+   behind the true `origin/integration/next`). The first VERSION-bump commit was built on that
+   stale base and its push was correctly rejected (non-fast-forward). Recovered clean: verified
+   working tree was clean, `git reset --hard origin/integration/next` to the true pinned head
+   `8708223`, reapplied the VERSION edit, recommitted, pushed successfully as `a3ea3aa`. No
+   product commits were lost or overwritten — the bad local commit was simply discarded pre-push.
+   Gates re-verified SUCCESS on `a3ea3aa`.
+3. Merged PR #149 -> `main` via `gh pr merge --merge`. Merge SHA: `2b0622d9926dcc278c7bf4708e3fca5eba6898fe`.
+4. Post-merge `main`: **CI** SUCCESS and **Deploy backend (SSM)** SUCCESS, both on attempt 1.
+   **The health-check bounded-retry fix (silent rider in this same bundle) worked**: this is the
+   first deploy since it landed, and it went clean-first-try — no manual job re-run needed, unlike
+   the v1.1.14 and v1.1.15 ships that motivated the fix.
+5. Key-free on-box confirms (SSM Run-Command, instance `i-0826ae70df62d9fe8`, correct path found
+   at `/home/ubuntu/scorecard/backend` — an earlier guess at `/opt/looper/backend` was wrong):
+   - `/health` -> `{"status":"ok"}`
+   - `APP_ACCESS_MODE`: 0 occurrences in `.env` AND 0 in the live uvicorn process's
+     `/proc/<pid>/environ` — confirmed fully dark, not just unset-and-defaulting.
+   - `TWILIO_*` keys: 0 in `.env` — caller inert.
+   - `_select_club_expected_strokes`: 3 occurrences in the deployed `aim_point.py` — the fix's
+     whole point, verified directly in the deployed file.
+   - Deployed git SHA on-box (`git -c safe.directory=... rev-parse HEAD`, avoiding a persistent
+     git-config change): `2b0622d9926dcc278c7bf4708e3fca5eba6898fe` — exact match to the merge.
+6. TestFlight build run in the **foreground** (`bash ops/ios/ship.sh`, ~9 min end-to-end: web
+   build, cap sync, xcodebuild archive, export+upload) from local `main` at the merge commit.
+   Uploaded **v1.1.16, build 202607181354**. Mid-ship the owner reported "Not seeing 1.1.16 in
+   TestFlight" — App Store Connect just hadn't finished indexing the just-uploaded build yet
+   (~1 minute lag between "Upload succeeded" and the build appearing in the `GET /v1/builds`
+   list). Polled the ASC API directly (JWT via the local `.p8`, key-free output) until it
+   appeared: `processingState=VALID`, sorting at the very top of the build list by both
+   `uploadedDate` and build number — confirms it does NOT hide under a prior version.
+7. Fresh `integration/next`: GitHub had already fast-forwarded `integration/next` to the merge
+   commit on merge (merge-commit strategy, no divergent commits on the branch) — verified both
+   `main` and `integration/next` point at `2b0622d` via `git ls-remote`. No separate cut/push
+   step was needed this time.
+8. Records: Notion board card **"Bundle #149"** created (no prior card existed) ->
+   https://app.notion.com/p/3a11c52592e081caafe0e9394451b6e3 — Status Shipped, headline + silent
+   items, how-to-test, post-deploy confirms, PR link. `backlog.json` top-level `note` updated
+   (targeted Edit, not a full json.load/dump, per the duplicate-key lesson) with the full ship
+   record; individual items `caddie-tee-club-expected-strokes` (status `done`) and
+   `deploy-healthcheck-startup-race` (status `done-on-bundle`) already carried complete
+   resolutions from their own lanes — left as-is per the established convention (ship event
+   recorded in the top-level note; item status archived on the next grooming pass). JSON
+   validated post-edit (`python3 -c "import json; json.load(...)"` -> VALID).
+9. No ship worktree existed for this run (worked directly in the main checkout) — nothing to
+   remove.
+
+**Headline (NOTICEABLE):** caddie tee-club expected-strokes selector — the owner's "7-iron instead
+of driver" P0 fixed; driver back on tree-lined/open par 4/5s, water pinches still correctly lay up
+(fable review caught + fixed a 46%-water recklessness overshoot pre-ship), dogleg bend-cap intact.
+**Silent:** deploy health-check bounded retry — proven clean-first-try on this very ship.
