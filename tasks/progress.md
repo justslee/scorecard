@@ -38,9 +38,12 @@ NOTICEABLE — owner field report. Do NOT ship/ping this cycle (task directive).
 
 **Base:** origin/integration/next @ 51a19ed. Work in worktree `agent-a9939cd5dc98a975f` (branch
 `worktree-agent-a9939cd5dc98a975f`, tracks integration/next), land via fast-forward push.
-**Status: Plan(fable) dispatched.** On resume: read specs/caddie-tee-club-expected-strokes-plan.md
-if present (Plan done) → dispatch builder; else re-check Plan agent. Do NOT re-run finished
-children — reconcile from branch commits.
+**Status: Plan(fable) DONE @153815e** (spec saved: specs/caddie-tee-club-expected-strokes-plan.md).
+**Builder DISPATCHED** to implement the plan on integration/next. On resume: check builder's
+commits on origin/integration/next (git log); if builder landed → dispatch reviewer(adversarial,
+recklessness check) + qa(full gates + Red before/after table) in parallel; else re-check builder.
+Do NOT re-run finished children — reconcile from branch commits. NOTICEABLE; do NOT ship/ping this
+cycle (task directive).
 
 ---
 
