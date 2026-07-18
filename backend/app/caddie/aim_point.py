@@ -1,5 +1,6 @@
 """Aim point and miss-side analysis engine (DECADE-inspired)."""
 
+import math
 from typing import NamedTuple, Optional
 from app.caddie import physics
 from app.caddie.types import (
@@ -22,7 +23,12 @@ from app.caddie.club_selection import (
 )
 from app.caddie.dispersion import get_dispersion
 from app.caddie.hazards import corridor_sample_at
-from app.caddie.strokes_gained import expected_strokes, personal_lookup
+from app.caddie.strokes_gained import (
+    expected_strokes,
+    personal_lookup,
+    approach_expected_strokes,
+    _handicap_multiplier,
+)
 from app.caddie.slope_advice import slope_miss_advice
 from app.caddie.shot_line_advice import shot_line_advice
 from app.caddie.decade_advice import (
@@ -647,79 +653,170 @@ def _select_club_capped_at(
     return None
 
 
-# ── Corridor-width club selection (specs/corridor-width-club-selection-plan.
-# md §4.4/§6, follow-up to the bend-cap above). Owner complaint: "driver
-# doesn't seem like the play at all and brings in the danger." Recommends the
-# longest club whose dispersion-informed landing zone fits the effective
-# corridor (danger-to-danger, NOT fairway edges — see hazards.py's
-# extract_corridor_profile docstring / the plan's Honesty section for the
-# arithmetic proof that a fairway-edge rule would cap a 15-handicap to an
-# 8-iron on nearly every tee) at that club's landing distance.
+# ── Expected-strokes club selection (specs/caddie-tee-club-expected-strokes-
+# plan.md, P0 fix for the corridor-width hard fit-wall above). Owner field
+# report: "The caddie is extremely conservative. Tells me to hit 7 iron
+# instead of driver." The width-fit rule (`_club_fit_window_yds`, retired)
+# was a hard corridor constraint with no expected-strokes tradeoff — it
+# rejected driver as a WALL the instant its ±1.5σ dispersion window exceeded
+# an ordinary tree-lined corridor's danger-to-danger width, regardless of (a)
+# distance sacrificed, (b) actual trouble PROBABILITY (a wide cone over a
+# narrower corridor only clips the cone's tails), (c) hazard severity. This
+# block replaces it with an honest expected-strokes tradeoff: for each
+# candidate club, E = (expected strokes to hole out from the leave) + (per-
+# side trouble probability × per-side hazard-severity cost). Pick the
+# strict-min E; ties within 0.02 strokes go to the LONGER club (plan §3).
 #
-# Precedence: runs AFTER the v1 bend-cap block, ceiling = the (possibly
-# already-capped) club's drive_total_yards — it can only shorten further,
-# never relax the bend-cap (take-the-shorter composition).
+# Precedence unchanged: runs AFTER the v1 bend-cap block, ceiling = the
+# (possibly already-capped) club's drive_total_yards — it can only shorten
+# further, never relax the bend-cap (take-the-shorter composition).
+
+# Severity cost of finishing in trouble on one side, in SCRATCH strokes (plan
+# §3.3): trees ≈ a punch-out (~1 stroke) minus the value of the yardage
+# advanced (~0.65-0.7 net); water ≈ stroke-and-distance/lateral drop
+# (~1.2-1.4, biased honestly toward avoiding it). Unknown/other source falls
+# back to the trees-level generic (never the harsher water number on
+# unlabeled evidence).
+#
+# HANDICAP-SCALED at the point of use (reviewer B2, blocking): every
+# `approach_expected_strokes` term IS handicap-multiplied (×1.22 at hcp 15,
+# up to ×1.55 at hcp 30), so a FLAT cost here inflates the value of distance
+# relative to the cost of trouble by that same 22-55% for every handicap
+# above scratch — on the plan's own canonical water pinch this kept driver
+# at ~39-52% water-landing probability with a "nothing shorter beats that
+# trade" note, the plan's own definition of the wrong pick. Multiplying by
+# the SAME `_handicap_multiplier` the approach term already carries restores
+# the two terms to a commensurate scale for every handicap, not just
+# scratch — see `_select_club_expected_strokes` for the multiplication.
+_PENALTY_COST: dict[str, float] = {"trees": 0.7, "water": 1.4}
+_DEFAULT_PENALTY_COST: float = 0.7
+
+# Backstop floor (plan §3.5): never lay back more than this many yards off
+# the longest surviving (ceiling-permitted) club on trouble alone — the
+# extended approach-strokes math already makes a >1-club layback strokes-
+# negative for trees; this is a hard guardrail, not the thing doing the
+# normal-play work. The bend-cap's own ceiling is a different, through-the-
+# corner mechanism and is exempt (it already ran before this block).
+_LAYBACK_FLOOR_YDS: int = 100
+
+# Tie tolerance (plan §3): a strict-min E rule with no tolerance would swap
+# clubs on rounding noise; within this many strokes, the LONGER club wins.
+_E_TIE_TOLERANCE: float = 0.02
 
 
-def _club_fit_window_yds(club: str, handicap: float) -> float:
-    """±1.5σ landing-window half-... full-width, per §4.4's contract:
-    `width_yards` from `get_dispersion` is the ±2σ (95%) lateral spread
-    (σ = width/4), so ±1.5σ = 0.75 × width_yards. Demanding the full ±2σ cone
-    would bench driver on virtually every tree-lined hole (a 15-hcp cone is
-    75y — wider than most danger corridors); ±1.5σ (~87% of shots inside) is
-    the calibrated line between "driver only when it genuinely fits" and
-    over-clubbing-down everywhere."""
-    return 0.75 * get_dispersion(club, handicap)["width_yards"]
+def _phi(x: float) -> float:
+    """Standard normal CDF via stdlib `math.erf` — Φ(x) = P(Z <= x)."""
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2)))
 
 
-def _pinch_word(sample: CorridorSample) -> str:
-    """Feature word for the WHY note — justified by the SAME sample's own
-    source fields, never a new claim: both sides trees -> "tree lines", both
-    water -> "water", anything mixed -> the generic "trouble"."""
-    if sample.left_source == "trees" and sample.right_source == "trees":
-        return "tree lines"
-    if sample.left_source == "water" and sample.right_source == "water":
-        return "water"
-    return "trouble"
+def _trouble_probability(
+    sample: Optional[CorridorSample],
+    club: str,
+    handicap: float,
+) -> tuple[float, float]:
+    """Per-side tail probability `(P_left, P_right)` of finishing in trouble,
+    aiming at the CENTERLINE (the honest default when no aim instruction is
+    emitted — plan §3.2 reviewer follow-up NB1). σ = this club's dispersion
+    `width_yards` / 4 (the table's ±2σ lateral spread).
+
+    Each side's clearance is that side's OWN measured danger-edge offset
+    (`sample.left_yards` / `sample.right_yards`) — `P_side = 1 -
+    Φ(offset/σ)`. This is byte-identical to a symmetric corridor (where
+    `left_yards == right_yards == width/2`, the old midpoint-aim formula) but
+    honest on an ASYMMETRIC one: a corridor with water 10y right / trees 40y
+    left no longer understates the tight side by averaging it into a
+    width/2-from-the-midpoint aim that was never actually spoken as an
+    instruction. An unknown edge on a side contributes 0 — never penalize
+    missing data ([[no-fake-data-fallbacks]]). `sample is None` (no evidence
+    at this landing distance) -> `(0.0, 0.0)`.
+    """
+    if sample is None:
+        return 0.0, 0.0
+
+    dispersion_width = get_dispersion(club, handicap)["width_yards"]
+    if dispersion_width <= 0:
+        return 0.0, 0.0
+    sigma = dispersion_width / 4.0
+
+    p_left = 1.0 - _phi(sample.left_yards / sigma) if sample.left_yards is not None else 0.0
+    p_right = 1.0 - _phi(sample.right_yards / sigma) if sample.right_yards is not None else 0.0
+    return p_left, p_right
 
 
-class CorridorFit(NamedTuple):
+def _trouble_words(sample: Optional[CorridorSample]) -> tuple[str, str, str]:
+    """Wording for the `corridor_note`, justified by the SAME sample's own
+    source fields, never a new claim. Returns `(risk_noun, pinch_noun,
+    swap_adjective)` — e.g. `("tree risk", "tree", "in the trees")` or
+    `("water risk", "water", "wet")`. Water wins when both sources are
+    present (the more severe, more speakable warning); falls back to the
+    generic "trouble" when the sample carries no source at all."""
+    if sample is None:
+        return "trouble", "trouble", "in trouble"
+    sources = {s for s in (sample.left_source, sample.right_source) if s}
+    if "water" in sources:
+        return "water risk", "water", "wet"
+    if "trees" in sources:
+        return "tree risk", "tree", "in the trees"
+    return "trouble", "trouble", "in trouble"
+
+
+class ExpectedStrokesFit(NamedTuple):
     club: str
     dist: int
-    chosen_sample: Optional[CorridorSample]
-    rejected_club: Optional[str]
-    rejected_total: Optional[int]
-    rejected_sample: Optional[CorridorSample]
+    total: int
+    sample: Optional[CorridorSample]
+    p_left: float
+    p_right: float
+    e_total: float
+    leave: int
+    # Best-rejected-LONGER club considered (the longest ceiling/floor-
+    # surviving candidate, when it lost to a shorter club) — None when the
+    # chosen club IS that longest candidate (no swap happened).
+    alt_club: Optional[str]
+    alt_total: Optional[int]
+    alt_sample: Optional[CorridorSample]
+    alt_p_left: Optional[float]
+    alt_p_right: Optional[float]
+    alt_e_total: Optional[float]
+    alt_leave: Optional[int]
 
 
-def _select_club_fitting_corridor(
+def _select_club_expected_strokes(
     clubs: dict[str, int],
     corridor: list[CorridorSample],
+    to_green_yards: int,
     handicap: float,
     weather: Optional[WeatherConditions],
     shot_bearing: float,
     elevation_change_ft: float,
     competition_legal: bool,
     ceiling_total_yards: float,
-) -> Optional[CorridorFit]:
-    """Longest club in the bag whose ±1.5σ fit window (`_club_fit_window_yds`)
-    fits the corridor's danger-to-danger width at that candidate's OWN
-    conditions total — same bag-descending walk, same per-candidate
-    `physics.shot_distance_for_club` call shape as `_select_club_capped_at`.
+) -> Optional[ExpectedStrokesFit]:
+    """Walks the bag descending (same per-candidate `physics.
+    shot_distance_for_club` call shape as `_select_club_capped_at`), skips
+    candidates whose rounded conditions total exceeds `ceiling_total_yards`
+    (never undoes the bend-cap — take-the-shorter composition, unchanged),
+    excludes candidates more than `_LAYBACK_FLOOR_YDS` short of the longest
+    ceiling-surviving candidate (the floor; the bend-cap's own ceiling
+    already ran and is exempt from this second cut), computes each
+    survivor's expected strokes `E = approach_expected_strokes(leave,
+    handicap) + P_left*cost(left_source) + P_right*cost(right_source)`, and
+    picks the STRICT min E — ties within `_E_TIE_TOLERANCE` strokes go to the
+    LONGER club (plan §3). `None` when the bag is empty or every candidate
+    exceeds the ceiling — caller keeps today's club, same "no club helps,
+    don't fabricate a cap" contract as `_select_club_capped_at`/
+    `_select_club_fitting_corridor` before it.
 
-    `ceiling_total_yards` is the current (possibly already bend-capped)
-    club's `drive_total_yards` — candidates whose total exceeds it are
-    skipped outright (never undoes the bend-cap; the two rules compose
-    take-the-shorter). An unknown width at a candidate's landing distance
-    (`corridor_sample_at` returns `None`, or a known sample with
-    `width_yards is None`) NEVER rejects that candidate — the walk accepts
-    immediately. `None` when nothing in the bag fits anywhere (including
-    "everything exceeds the ceiling") — the caller keeps today's club, same
-    "no club helps, don't fabricate a cap" philosophy as
-    `_select_club_capped_at` returning `None`.
+    `_PENALTY_COST` is HANDICAP-SCALED here (reviewer B2, blocking) by the
+    SAME `_handicap_multiplier` `approach_expected_strokes` already applies
+    to the approach term — without it the flat cost understates trouble
+    relative to distance for every handicap above scratch.
     """
     bag = clubs or DEFAULT_CLUB_DISTANCES
-    first_rejection: Optional[tuple[str, int, CorridorSample]] = None
+    hcp_mult = _handicap_multiplier(handicap)
+    survivors: list[tuple[str, int, int, Optional[CorridorSample], float, float, float, int]] = []
+    longest_total: Optional[int] = None
+
     for candidate, dist in sorted(bag.items(), key=lambda x: x[1], reverse=True):
         if competition_legal:
             total = float(dist)
@@ -730,38 +827,51 @@ def _select_club_fitting_corridor(
                 carry_hint_yards=float(dist),
             )
             total = physics.shot_distance_for_club(candidate, float(dist), cond).total_yards
-        # Round before the ceiling comparison — `ceiling_total_yards` is
-        # itself a ROUNDED physics total (`physics_drive_total` rounds via
-        # `round()`), so comparing an unrounded per-candidate total against
-        # it can spuriously exclude the very club that produced the ceiling
-        # (e.g. 283.4 > 283) on a straight sub-yard rounding boundary.
+        # Round before the ceiling comparison — see _select_club_capped_at's
+        # sibling note: `ceiling_total_yards` is itself a rounded physics
+        # total, so comparing unrounded totals against it can spuriously
+        # exclude the very club that produced the ceiling.
         total = round(total)
         if total > ceiling_total_yards:
-            continue  # never undo the bend-cap — not a "rejection" for pinch reporting
+            continue  # never undo the bend-cap
 
+        if longest_total is None:
+            longest_total = total
+        elif total < longest_total - _LAYBACK_FLOOR_YDS:
+            continue  # floor — trees/water alone can't justify more than this
+
+        leave = max(0, to_green_yards - total)
+        e_ap = approach_expected_strokes(leave, handicap)
         sample = corridor_sample_at(corridor, total)
-        if sample is None or sample.width_yards is None:
-            # Unknown width never rejects.
-            return CorridorFit(
-                club=candidate, dist=dist, chosen_sample=sample,
-                rejected_club=first_rejection[0] if first_rejection else None,
-                rejected_total=first_rejection[1] if first_rejection else None,
-                rejected_sample=first_rejection[2] if first_rejection else None,
-            )
+        p_left, p_right = _trouble_probability(sample, candidate, handicap)
+        cost_left = (_PENALTY_COST.get(sample.left_source, _DEFAULT_PENALTY_COST) * hcp_mult) if sample is not None else 0.0
+        cost_right = (_PENALTY_COST.get(sample.right_source, _DEFAULT_PENALTY_COST) * hcp_mult) if sample is not None else 0.0
+        e_total = e_ap + p_left * cost_left + p_right * cost_right
 
-        window = _club_fit_window_yds(candidate, handicap)
-        if window <= sample.width_yards:
-            return CorridorFit(
-                club=candidate, dist=dist, chosen_sample=sample,
-                rejected_club=first_rejection[0] if first_rejection else None,
-                rejected_total=first_rejection[1] if first_rejection else None,
-                rejected_sample=first_rejection[2] if first_rejection else None,
-            )
+        survivors.append((candidate, dist, total, sample, p_left, p_right, e_total, leave))
 
-        if first_rejection is None:
-            first_rejection = (candidate, total, sample)
+    if not survivors:
+        return None
 
-    return None
+    longest = survivors[0]
+    best = longest
+    for s in survivors[1:]:
+        if s[6] < best[6] - _E_TIE_TOLERANCE:
+            best = s
+
+    alt = longest if best is not longest else None
+
+    return ExpectedStrokesFit(
+        club=best[0], dist=best[1], total=best[2], sample=best[3],
+        p_left=best[4], p_right=best[5], e_total=best[6], leave=best[7],
+        alt_club=alt[0] if alt else None,
+        alt_total=alt[2] if alt else None,
+        alt_sample=alt[3] if alt else None,
+        alt_p_left=alt[4] if alt else None,
+        alt_p_right=alt[5] if alt else None,
+        alt_e_total=alt[6] if alt else None,
+        alt_leave=alt[7] if alt else None,
+    )
 
 
 def generate_recommendation(
@@ -900,74 +1010,92 @@ def generate_recommendation(
                         f"about {tee_shot_numbers.leave_yards}."
                     )
 
-        # Corridor-width club selection (§4.4 follow-up) — runs AFTER v1
-        # bend-cap, ceiling = the (possibly already bend-capped) club's
-        # drive_total_yards, so it can only shorten further (take-the-
-        # shorter composition, plan §1). `hole.corridor` falsy (None or `[]`)
-        # -> this entire block is skipped -> byte-identical v1 payload
-        # (the only difference: the new corridor_* keys stay `None`).
+        # Expected-strokes club selection (specs/caddie-tee-club-expected-
+        # strokes-plan.md, P0 fix — replaces the hard corridor-width fit-wall
+        # that used to live here). Runs AFTER v1 bend-cap, ceiling = the
+        # (possibly already bend-capped) club's drive_total_yards, so it can
+        # only shorten further (take-the-shorter composition, plan §1).
+        # `hole.corridor` falsy (None or `[]`) -> this entire block is
+        # skipped -> byte-identical v1 payload (the only difference: the new
+        # corridor_* keys stay `None`).
         if hole.corridor:
-            fit = _select_club_fitting_corridor(
-                clubs, hole.corridor, handicap, weather, shot_bearing,
+            fit = _select_club_expected_strokes(
+                clubs, hole.corridor, distance_yards, handicap, weather, shot_bearing,
                 hole.elevation_change_ft, competition_legal,
                 ceiling_total_yards=tee_shot_numbers.drive_total_yards,
             )
             if fit is not None:
                 # A rounding-tie candidate (`fit.club != club` but
-                # `fit.rejected_club is None`) is NOT a corridor decision —
-                # the ceiling-skip above never records a rejection, so
-                # nothing was actually width-rejected. Swapping the club
-                # here with no width reason would leave a stale v1 bend-cap
-                # `corridor_note` naming the old club/leave while the club
-                # silently changed. Guard: only swap on a genuine width
-                # rejection.
-                if fit.club != club and fit.rejected_club is not None:
-                    old_club_display = CLUB_DISPLAY_NAMES.get(club, club)
+                # `fit.alt_club is None`) is NOT a genuine trade-off decision
+                # — `best` only differs from `club` because the walk's own
+                # "longest ceiling-surviving candidate" landed on a
+                # DIFFERENT club than the pre-existing (bend-cap-chosen)
+                # `club` on a sub-yard physics rounding boundary alone (the
+                # exact failure mode `_select_club_fitting_corridor`'s
+                # `test_07` pinned). Only apply the swap when a real LONGER
+                # candidate was actually out-traded on expected strokes
+                # (`fit.alt_club is not None`) — otherwise keep today's
+                # (bend-cap) club and note untouched.
+                genuine_swap = fit.club != club and fit.alt_club is not None
+                if genuine_swap:
                     club, club_dist = fit.club, fit.dist
-                    new_club_display = CLUB_DISPLAY_NAMES.get(club, club)
                     tee_shot_numbers = compute_tee_shot_numbers(
                         hole, distance_yards, adjusted_yards, club, club_dist,
                         weather, shot_bearing, competition_legal, yardage_basis,
                     )
-                    if fit.rejected_club is not None and fit.rejected_sample is not None:
-                        pinch_word = _pinch_word(fit.rejected_sample)
-                        tee_shot_numbers.corridor_pinch_width_yards = fit.rejected_sample.width_yards
-                        tee_shot_numbers.corridor_pinch_distance_yards = fit.rejected_sample.distance_yards
-                        tee_shot_numbers.corridor_capped_from_club = fit.rejected_club
-                        tee_shot_numbers.corridor_capped_from_window_yards = round(
-                            _club_fit_window_yds(fit.rejected_club, handicap)
-                        )
-                        tee_shot_numbers.corridor_club_window_yards = round(
-                            _club_fit_window_yds(club, handicap)
-                        )
-                        # Width note REPLACES the v1 note (it explains the
-                        # final club) — only reached when the width cap
-                        # actually changed the club (§7).
+
+                if fit.club == club and (fit.sample is not None or fit.alt_sample is not None):
+                    club_display = CLUB_DISPLAY_NAMES.get(club, club)
+                    trouble_pct = round((fit.p_left + fit.p_right) * 100)
+                    tee_shot_numbers.corridor_trouble_pct = trouble_pct
+                    # NB3 (reviewer): repopulate the grounding width number
+                    # (kept in the schema for cache compat) from the CHOSEN
+                    # club's own sample — never fabricated, only when the
+                    # danger-to-danger width at this landing distance is
+                    # actually known (both edges known -> width_yards set).
+                    if fit.sample is not None and fit.sample.width_yards is not None:
+                        tee_shot_numbers.corridor_width_yards = fit.sample.width_yards
+
+                    if fit.alt_club is not None:
+                        # NB2 (reviewer): the "at Z" PINCH LOCATION names what
+                        # the ALT (rejected-longer) club is being laid back
+                        # from — its own sample. But the "{pct}% {adj}"
+                        # attached to the CHOSEN club's OWN number must be
+                        # labeled from the CHOSEN club's OWN sample, never the
+                        # alt's — the two landing spots can carry different
+                        # hazards (e.g. the layup club is still in a tree
+                        # section while the alt reaches the water pinch), and
+                        # mislabeling the chosen club's tree-risk number as
+                        # "wet" misattributes it even though the digit itself
+                        # is payload-true.
+                        _, pinch_noun, _ = _trouble_words(fit.alt_sample)
+                        _, _, chosen_adj = _trouble_words(fit.sample)
+                        alt_display = CLUB_DISPLAY_NAMES.get(fit.alt_club, fit.alt_club)
+                        alt_pct = round(((fit.alt_p_left or 0.0) + (fit.alt_p_right or 0.0)) * 100)
+                        tee_shot_numbers.corridor_alt_club = fit.alt_club
+                        tee_shot_numbers.corridor_alt_trouble_pct = alt_pct
+                        tee_shot_numbers.corridor_alt_leave_yards = fit.alt_leave
+                        tee_shot_numbers.corridor_alt_total_yards = fit.alt_total
+                        # A real longer club lost the trade — this explains
+                        # the FINAL club and REPLACES any earlier (e.g.
+                        # bend-cap) note, same convention as v1's width note.
                         corridor_note = (
-                            f"{old_club_display}'s shot zone needs ~{tee_shot_numbers.corridor_capped_from_window_yards} "
-                            f"yards but the {pinch_word} pinches the corridor to "
-                            f"~{tee_shot_numbers.corridor_pinch_width_yards} at "
-                            f"{tee_shot_numbers.corridor_pinch_distance_yards} — {new_club_display}'s "
-                            f"~{tee_shot_numbers.corridor_club_window_yards}-yard zone fits at "
-                            f"{tee_shot_numbers.drive_total_yards}, leaves about {tee_shot_numbers.leave_yards}."
+                            f"{club_display} lays back short of the {pinch_noun} pinch at "
+                            f"{fit.alt_total} — about {trouble_pct}% {chosen_adj} versus "
+                            f"{alt_pct}% with {alt_display}, leaves about {tee_shot_numbers.leave_yards}."
                         )
-                if (
-                    fit.club == club
-                    and fit.chosen_sample is not None
-                    and fit.chosen_sample.width_yards is not None
-                ):
-                    # Grounding numbers for the CHOSEN club, even on the
-                    # no-change path (plan §6) — never fabricated, only
-                    # populated when the width at this landing distance is
-                    # actually known. `fit.club == club` guards against the
-                    # rounding-tie case above: when the swap was blocked
-                    # (no genuine width rejection), `fit.chosen_sample`
-                    # describes a DIFFERENT club than the one we kept — must
-                    # not attribute its width to `tee_shot_numbers`.
-                    tee_shot_numbers.corridor_width_yards = fit.chosen_sample.width_yards
-                    tee_shot_numbers.corridor_club_window_yards = round(
-                        _club_fit_window_yds(club, handicap)
-                    )
+                    elif corridor_note is None:
+                        # No swap: state the club's own risk (its OWN sample
+                        # is the operative evidence here) so the caddie can
+                        # narrate confidence WITH numbers instead of hedging
+                        # without them (plan §8's DECISION_GROUNDING
+                        # nuance). Never overwrite an existing note (e.g. the
+                        # bend-cap's own) that already explains this club.
+                        risk_noun, _, _ = _trouble_words(fit.sample)
+                        corridor_note = (
+                            f"{club_display} leaves about {tee_shot_numbers.leave_yards} with "
+                            f"roughly {trouble_pct}% {risk_noun} — nothing shorter beats that trade."
+                        )
 
         leave_yards = tee_shot_numbers.leave_yards
 

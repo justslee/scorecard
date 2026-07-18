@@ -3,7 +3,124 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — 2026-07-18 — P0 strategy-500 club-alias (item caddie-strategy-500-club-alias-normalization, NOTICEABLE)
+## DONE — 2026-07-18 — deploy health-check startup race fix (item deploy-healthcheck-startup-race, SILENT)
+Fixed the false-fail hit on both the v1.1.14 (#147) and v1.1.15 (#148) deploys: the SSM deploy
+script's fixed `sleep 3` + single `curl localhost:8000/health` raced uvicorn's real ~3-4s bind
+time, so a genuinely-successful deploy (git pull/uv sync/alembic/restart all fine) reported SSM
+"failure" on the tail health check and needed a manual job re-run. `.github/workflows/deploy.yml`
+(the GH Actions workflow itself, NOT `deploy/**` -- that dir is guard-blocked and untouched) now
+runs a bounded retry: `for i in $(seq 1 15); do curl -fsS http://localhost:8000/health && exit 0;
+sleep 2; done; echo health check timed out after 30s >&2; exit 1` -- up to 30s, exits the moment
+the app answers, only fails if it's genuinely still down after 30s. Verified: `bash -n` syntax
+check on the retry line under `set -eu` semantics (the `&&`-guarded curl failure doesn't trip
+`set -e`, confirmed); `python3 -c "import yaml; yaml.safe_load(...)"` on the whole workflow ->
+OK; rebased clean onto origin/integration/next @ec0ed33, diff scoped to exactly this one file,
+does not touch backend/app/caddie/** (the parallel tee-club-expected-strokes lane stays
+untouched). No product code changed -> no frontend/backend gates apply (workflow-syntax-only).
+Backlog item filed + flipped done-on-bundle in the same commit. Rider on the open bundle PR,
+SILENT (ops-only, not user-visible) -- no ship/ping needed for this alone.
+
+## DONE — 2026-07-18 — P0 caddie tee-club over-conservatism (item caddie-tee-club-expected-strokes, NOTICEABLE)
+COMPLETE on integration/next @b0eb319 (NOTICEABLE; on the open bundle PR, awaiting owner ship —
+coordinator takes the ship ask with the Red before/after table). Plan(fable) →
+specs/caddie-tee-club-expected-strokes-plan.md. Commits 321f333 (impl) + b0eb319 (fable-review
+B1/B2 recklessness fix). REPLACED the hard corridor fit-wall with an expected-strokes selector:
+E[club] = approach_expected_strokes(leave, hcp) + P_left*C(src) + P_right*C(src); per-side P =
+1-Phi(clearance/sigma) from each side's OWN danger-edge offset, C = HANDICAP-SCALED trees0.7/
+water1.4 (the B2 fix — flat costs let a 280y bag keep driver at 46% water; scaling makes penalty
+commensurate with the hcp-scaled approach term), strict-min E, open/unknown corridor -> DRIVER.
+v1 bend-cap kept verbatim as ceiling. BEFORE/AFTER (QA, executed): width-40 tree 467y par-4
+7-Iron/300 -> Driver/185; width-28 water pinch now LAYS UP for BOTH default AND 280y bags (long-bag
+driver E flipped 4.251-win -> 4.391-lose to 5i 4.366); all 14 Red par4/5 driver-majority; Red-1
+driver, Red-6 bend-cap unchanged, par-3s never enter selector.
+VERDICTS: Reviewer(FABLE) SHIP (round 1 caught the B1/B2 recklessness overshoot — the exact reason
+it ran on fable; round 2 re-review SHIP by independent recompute: not overcorrected, driver still
+wins tree/open at hcp 0-36, per-side-offset byte-identical on symmetric corridors, 102 tests). QA
+PASS both rounds (ruff clean, 416/416 targeted offline; DB-integration on CI). No frontend sync.
+FOLLOW-UP filed: caddie-tee-club-tree-severity-calibration (p3 — hcp-30 still gets driver on a 20y
+tree chute ~72% trees; calibration, not a bug; + thin long-bag water-pinch margin note).
+Process note: a stray `fork` agent was launched by an eng-lead dispatch typo (placeholder prompt);
+aborted cleanly with zero changes (branch head verified unmoved). Builder continued via SendMessage.
+
+--- (original AWAITING record, now resolved, below) ---
+
+## RESOLVED — 2026-07-18 — P0 caddie tee-club over-conservatism (mechanism trace)
+Owner P0 field report (live round today, v1.1.15): "The caddie is extremely conservative. Tells
+me to hit 7 iron instead of driver." MECHANISM CONFIRMED by code trace (eng-lead, this cycle):
+`_select_club_fitting_corridor` (backend/app/caddie/aim_point.py:695-764) is a HARD FIT
+CONSTRAINT — it walks the bag descending and accepts the longest club whose ±1.5σ landing window
+(`_club_fit_window_yds` = 0.75 × dispersion width_yards; 15-hcp: driver 56y / 3wood 49y / hybrid
+45y / long-iron 42y / mid-iron 36y) is <= the corridor's danger-to-danger `width_yards` at that
+club's landing distance. Since the tree-span fix enriched `extract_corridor_profile` danger edges
+(tree/woods runs populate width_yards on most tree-lined holes, ~40-55y danger-to-danger),
+driver's 56y window exceeds the corridor → rejected → cascades down to a mid-iron. NO
+expected-strokes tradeoff: window⊄corridor is a hard wall regardless of distance sacrificed
+(leave 120 vs 220 = ~0.62 strokes on _FAIRWAY_TABLE), true trouble PROBABILITY (a 56y window ~6y
+wider than a 50y corridor = only the cone tails catch trees, not certain trouble), or hazard
+SEVERITY (trees==water==generic wall). The v1 bend-cap (aim_point.py:870-901) is a separate,
+narrower mechanism (flying a mapped dogleg corner into moderate+ trees) — likely legitimate, plan
+to review it doesn't ALSO over-lay-back.
+
+FIX DIRECTION (owner spec): replace the hard fit with expected-strokes club choice. Per club:
+E[strokes] = P(safe)·E_approach(leave|fairway, _FAIRWAY_TABLE) + P(trouble)·penalty(severity);
+P(trouble) from the Gaussian cone (σ=width/4) tail outside the danger edges; severity tiers
+water/OB >> woods/trees > bunker > rough. Pick min E; open hole ⇒ driver. Simple, monotone,
+one-sentence explainable. Ingredients in place: `strokes_gained._FAIRWAY_TABLE` (approach curve),
+`dispersion.get_dispersion` (per-club width), `hazards.corridor_sample_at` (width + source at a
+landing distance). Bar: Red par4/5 driver-or-3wood on the large majority; NO par4/5 shorter than
+hybrid/long-iron unless corridor provably punitive; Red 1 driver-favor-right; par-3s unchanged;
+8-bearing invariance + all caddie suites green.
+
+PROCESS this cycle: Plan on **fable** → `specs/caddie-tee-club-expected-strokes-plan.md` (the
+model design is the crux). Then builder (implements plan on integration/next), reviewer (fresh,
+adversarial: does the recalibration overshoot into recklessness — water carries now recommended?
+severity tiers honest? dispersion labeled?), qa (full gates + Red/Black before/after table).
+NOTICEABLE — owner field report. Do NOT ship/ping this cycle (task directive).
+
+**Base:** origin/integration/next @ 51a19ed. Work in worktree `agent-a9939cd5dc98a975f` (branch
+`worktree-agent-a9939cd5dc98a975f`, tracks integration/next), land via fast-forward push.
+**Status: Plan(fable) DONE @153815e; Builder DONE @321f333** (landed on integration/next).
+Builder verified BEFORE/AFTER: 40y tree corridor 467y par-4 went 7-Iron(leave 300) → Driver(leave
+185); Red-1 driver/leave-210 unchanged (unknown-width-never-rejects already saved it, now grounded
+0%-risk note); Red-6 5-Iron via v1 bend-cap UNCHANGED. Ruff clean; 431 targeted + 2111 broader
+offline tests green. TWO documented deviations: (1) KEPT the retired pinch `TeeShotNumbers` fields
+present-but-None — plan's grep was WRONG, `voice_prompts.py::format_tee_numbers_line` really reads
+them (feeds the realtime voice "Last recommendation" line); builder added a parallel clause so
+voice grounding isn't lost. (2) Added `corridor_alt_total_yards` field (swap-note template needs a
+payload-grounded number the plan didn't list). Files: strokes_gained.py, aim_point.py, types.py,
+voice_prompts.py + 2 test files.
+**QA @321f333: PASS** — ruff clean, 415/415 backend caddie tests, real-fixture before/after table
+proves the fix (canonical 7-Iron/leave-300 → Driver/leave-185; Red-1/Red-5 driver; Red-6 bend-cap
+unchanged).
+**Reviewer(FABLE) @321f333: BLOCKING** — found a real recklessness overshoot (the exact reason it
+ran on fable). B2 (root cause, aim_point.py:686): `_PENALTY_COST` is FLAT while `E_ap` terms are
+handicap-multiplied (×1.22 hcp15 → ×1.55 hcp30), inflating distance value vs water cost → model
+keeps DRIVER at 39-52% water-landing probability on the plan's canonical pinch for a longer 280y
+bag (and default bag at width 32) — the plan's own definition of the wrong pick. B1 (test_tee_
+club_expected_strokes.py:62): the water-pinch gate was NARROWED from spec width-28 to width-20 (the
+only width its bag still lays up), masking B2. Eng-lead verified the fix arithmetically:
+handicap-scaling `_PENALTY_COST` flips the pinch to lay up (driver E 4.43 > 5-iron 4.37) AND keeps
+the tree-corridor driver pick (driver 4.28 < 6-iron 4.67) — fixes B2 without re-introducing P0.
+Also folding in cheap reviewer non-blockers: NB1 asymmetric-corridor understatement (use each
+side's OWN offset for P, not width/2 — byte-identical on symmetric, honest on asymmetric, removes
+the unspoken midpoint-aim assumption), NB2 swap-note hazard-word mislabel (chosen club's word from
+fit.sample, not alt's), NB3 repopulate corridor_width_yards, NB5 voice None-guard on the alt clause.
+
+**Builder FIX DONE @b0eb319.** B2 root-caused: `_PENALTY_COST` now handicap-scaled at use (same
+multiplier as approach strokes). Canonical width-28 water pinch lays up for BOTH default AND
+driver-280 bags (driver E=4.591 @46% water vs 5i 4.366); width-40 tree corridor still picks driver
+(ordering unchanged). B1: gate test restored to width-28 + new long-bag layup regression. NBs
+folded: per-side P uses each side's own offset (asymmetric honest: 29.7% tight-water vs 1.6%
+wide-trees, no averaging), swap-note % from chosen club's own sample, corridor width repopulated,
+voice swap clause guards all 3 alt fields. Gates: ruff clean, 295+16 targeted, 2112 broader offline.
+**Re-review(FABLE, focused) + re-QA DISPATCHED in parallel @b0eb319.** On resume: reviewer SHIP +
+qa PASS → finalize (full Red par4/5 before/after table in report, bundle PR checklist NOTICEABLE,
+backlog flip to done, progress), then STOP — coordinator takes the ship ask with the table; do NOT
+ship/ping. BLOCKING → re-dispatch builder. Do NOT re-run finished children.
+
+---
+
+## AWAITING(shipped #148) — 2026-07-18 — P0 strategy-500 club-alias (item caddie-strategy-500-club-alias-normalization, NOTICEABLE)
 Owner P0 field bug (live round today, v1.1.14). Root cause CONFIRMED by code trace: LLM club
 shorthand ('7i'/'3w') enters un-normalized club ingress (record_shot tools.py:994; route bag-set
 routes/caddie.py:349), lands in `session.club_distances`; `normalize_club_distances` passes
@@ -19958,3 +20075,193 @@ flipped open→done. PR #147 checklist + Noticeable summary updated. This is the
 remnant of the [[caddie-shot-context-reachability]] family. Per this pass's directive: NOT
 shipped/pinged — the noticeable bundle keeps accumulating; owner approval-ask is deferred to a
 later cycle's release-manager hand-off. Supersedes the two AWAITING blocks above.
+
+## SHIPPED — 2026-07-18 — Bundle #148 (v1.1.15) — P0 club-alias fix
+Owner in-session "Ship" approval (verbatim) for the P0 caddie club-alias bundle — the docs/test-
+rider fix (2 CI-only assertions updated to the canonical-club contract) carried the approval to
+the green head per the docs/test-rider rule.
+
+Sequence run by release-manager:
+1. Gates polled on pinned head `a327411` — all 3 (Frontend, Backend, E2E smoke advisory) SUCCESS.
+   Local `integration/next` was 8 commits behind; fast-forwarded to `a327411` (no local work lost).
+2. VERSION bumped 1.1.14 -> 1.1.15 (`c4b5aa7`), pushed; gates re-ran SUCCESS on the bumped head.
+3. PR #148 merged to `main` (merge commit `3a23937243cef7ffac62137e703a287a613d3ba4`).
+4. Post-merge main CI green. Backend deploy (SSM) job reported `failure` on first run — matches
+   the known health-check race (git pull/uv sync/alembic upgrade/restart all succeeded per the
+   job's own stdout; `curl localhost:8000/health` connection-refused because uvicorn hadn't bound
+   the port inside the 3s sleep window yet). Independently verified via a separate key-free SSM
+   probe: `/health` -> `{"status":"ok"}`, `scorecard-api` service `active`. Re-ran the deploy job
+   once; green (15s).
+5. Key-free confirms on-box: `/health` ok; `APP_ACCESS_MODE` not set (dark); no `CALLER_*` vars in
+   `.env` (caller inert); deployed `~/scorecard` HEAD = `3a23937...` (matches merge SHA); deployed
+   `backend/app/caddie/tools.py` contains the canonical-club normalizer (imports `canonical_club`
+   from `club_selection`, applies at the `normalize_club_distances` bag chokepoint and
+   `record_shot_payload`).
+6. Backend-only fix — deploy IS the fix reaching the owner. Built TestFlight anyway for version
+   parity: `bash ops/ios/ship.sh` run FOREGROUND in a scratch worktree (`.claude/worktrees/ship-148`,
+   `git worktree add` off `main` @ `3a23937`, `npm install` for a clean frontend/, ran full build ->
+   archive -> distribution-sign -> upload). Result: **Uploaded v1.1.15, build 202607181041**.
+   Polled App Store Connect (JWT-signed ASC API calls, key-free) until `processingState` left
+   PROCESSING; confirmed `VALID`, `expired=false`, attached to app `com.looperapp.app`
+   (id 6784470752, "MyLooper").
+7. Fresh `integration/next` cut off the merge SHA (`3a23937`, == `main`), pushed
+   (`c4b5aa7..3a23937 integration/next -> integration/next`, fast-forward).
+8. Ship worktree removed (`git worktree remove .claude/worktrees/ship-148 --force`).
+
+backlog.json: `caddie-strategy-500-club-alias-normalization` already terminal-marked `done` with a
+full `landed` note by the builder/reviewer before this ship pass — no further edit needed (verified
+by read, not touched, per the duplicate-keys lesson: no json.load/dump).
+
+Merge SHA: `3a23937243cef7ffac62137e703a287a613d3ba4`. TestFlight: v1.1.15 build 202607181041,
+processing VALID. Fresh integration/next head: `3a23937243cef7ffac62137e703a287a613d3ba4`.
+
+## DONE — 2026-07-18 — caddie-tee-club-expected-strokes (P0 fix, NOTICEABLE)
+
+Owner field report (live round, v1.1.15, verbatim): "The caddie is extremely conservative. Tells
+me to hit 7 iron instead of driver." Implemented `specs/caddie-tee-club-expected-strokes-plan.md`
+(fable plan) exactly — replaced `_select_club_fitting_corridor` (a hard ±1.5σ dispersion-window
+fit-wall with no expected-strokes tradeoff — driver rejected as a WALL on any ordinary tree-lined
+corridor, regardless of distance/probability/severity) with `_select_club_expected_strokes`: walks
+the bag, computes `E = approach_expected_strokes(leave, hcp) + P_left*cost(left_source) +
+P_right*cost(right_source)` per candidate (Gaussian lateral model, σ=dispersion_width/4, aim at
+the danger-corridor midpoint, Φ via `math.erf`), picks strict-min E with ties ≤0.02 strokes going
+to the LONGER club. Guardrails: floor (never lay back >100y off the longest ceiling-surviving
+club absent the bend-cap) and the extended `approach_expected_strokes` (linear past the
+`_FAIRWAY_TABLE`'s 260y head at the table's own 0.005-strokes/yd terminal slope — load-bearing for
+monotonicity, verified strictly increasing 30-500y + continuous at the 260y seam).
+
+Files touched:
+- `backend/app/caddie/strokes_gained.py` — `approach_expected_strokes` + `_FAIRWAY_EXT_SLOPE`.
+- `backend/app/caddie/aim_point.py` — `_phi`, `_PENALTY_COST` (trees 0.7, water 1.4),
+  `_trouble_probability`, `_trouble_words`, `ExpectedStrokesFit`,
+  `_select_club_expected_strokes` (replaces `_select_club_fitting_corridor`); rewired the
+  `if hole.corridor:` block in `generate_recommendation`; new `corridor_note` wording (no-swap:
+  "Driver leaves about X with roughly Y% tree risk — nothing shorter beats that trade."; swap:
+  "5 Iron lays back short of the water pinch at Z — about A% wet versus B% with Driver, leaves
+  about C."). `corridor=None` stays byte-identical (pinned).
+- `backend/app/caddie/types.py` — `TeeShotNumbers` additive fields: `corridor_trouble_pct`,
+  `corridor_alt_club`, `corridor_alt_trouble_pct`, `corridor_alt_leave_yards`, plus one field
+  beyond the plan's literal list — `corridor_alt_total_yards` (the alt club's own landing total;
+  needed to ground the swap note's "at Z" pinch-location number, which the plan's template used
+  but never listed a payload field for — closing that gap rather than leaving an ungrounded
+  number or silently dropping the clause). Retired pinch-shaped fields (`corridor_pinch_*`,
+  `corridor_capped_from_*`, `corridor_club_window_yards`) are KEPT present-but-None, NOT deleted —
+  deviation from the plan's "grep shows only aim_point.py writes them" claim: `voice_prompts.py`'s
+  `format_tee_numbers_line` IS a real reader (renders a "Corridor: pinches to..." clause for the
+  realtime voice caddie's "Last recommendation" prompt line, used by `strategy.py`/`routes/
+  caddie.py`/multiple pinned tests). Added a new additive clause to that same function rendering
+  the new fields (gated on `corridor_trouble_pct is not None`), so the voice caddie doesn't lose
+  its tee-shot trouble/tradeoff grounding now that the old mechanism never fires.
+- Tests: new `backend/tests/test_tee_club_expected_strokes.py` (15 tests — open/unknown/None
+  hole→driver P≈0, tight-trees-w40→driver with E-ordering pinned, water-pinch→layup with
+  payload-grounded note, guardrail across width 10-80, floor test (constructed a severe-water
+  corridor where an unbounded model would want a 9-iron 147y back; floor correctly holds driver),
+  `approach_expected_strokes` monotone+continuous, real fixtures (`bethpage_red_trees.json` H1→
+  driver/leave-210, H6→5iron/leave-100 via bend-cap unchanged), assembled Red from
+  `bethpage_overpass.json` (all 14 par-4/5 holes→driver, corridor-None byte-identity), competition-
+  legal same-club check, par-3 untouched-path check). Rewrote `backend/tests/
+  test_corridor_width_selection.py` (8 tests) per plan §6: tests 3/5/6/7 carried over
+  (unknown-never-rejects, corridor-None byte-identity incl. new fields, reachable-branch-untouched,
+  rounding-tie-doesn't-swap re-targeted at the new function/type), tests 1/2/4 RE-PINNED with
+  per-test comments explaining why (test 2's old hard-wall cut hybrid→7iron on a further pinch;
+  the E-model now grounds that same evidence on the KEPT club instead of cutting further — the
+  fix's whole point; test 4's old "nothing fits→silent fallback" becomes a genuine, grounded
+  driver-wins-anyway with an honest high-risk note). Added test 8 (payload-grounding on a genuine
+  E-model swap, since old test 2 no longer produces one). Never weakened an assertion — every
+  re-pin verified against a real run of this implementation, documented in-file.
+
+Verification: `ruff check .` clean (whole backend). Targeted gate suite (as specified) — 431
+passed, 0 failed:
+```
+tests/test_tee_club_expected_strokes.py tests/test_corridor_width_selection.py
+tests/test_corridor_bend_cap.py tests/test_aim_point.py tests/test_tee_shot_numbers.py
+tests/test_bethpage_validation.py tests/test_positioning_shot.py tests/test_red1_acceptance.py
+tests/test_hazards.py tests/test_tree_hazards.py tests/test_numbers_coherence_prompt.py
+tests/test_decision_grounding_prompt.py
+```
+Broader offline sweep (`tests/ -k "not asyncio and not db" --ignore=tests/eval`): 2111 passed.
+DB-backed integration tests not run locally (no local Postgres, per standing rule) — rely on CI.
+Frontend voice-tests smoke NOT run — this worktree has no `frontend/node_modules` installed
+(pre-existing environment gap, unrelated to this change); the change is backend-only (no
+`frontend/src` files touched), so this is a low-risk skip, noted rather than worked around.
+
+BEFORE/AFTER (verified by temporarily swapping in the pre-change `aim_point.py` via `git show
+HEAD:...`, running the identical scenario, then restoring — diff/tests confirmed clean restore):
+- Synthetic 40y-wide tree corridor, 467y par-4, `{driver:280,3wood:240,5wood:220,hybrid:200,
+  7iron:160}` bag, hcp 15 — BEFORE: **7 Iron**, leaves 300 (driver's 56.25y dispersion window >
+  40y corridor width → hard-rejected, cascades all the way to 7iron, the owner's exact bug).
+  AFTER: **Driver**, leaves 185, note: "Driver leaves about 185 with roughly 29% tree risk —
+  nothing shorter beats that trade."
+- `bethpage_red_trees.json` hole 1 (real geodesic tree data, 467y par-4, DEFAULT_CLUB_DISTANCES,
+  hcp 15) — BEFORE: **Driver**, leaves 210 (unknown-width-never-rejects already saved this one
+  pre-fix). AFTER: **Driver**, leaves 210, unchanged club/leave, now with a grounded "0% trouble"
+  note (unknown width at driver's own landing → honest P=0).
+- `bethpage_red_trees.json` hole 6 (287y par-4, bend-cap only, no corridor profile) — BEFORE/AFTER
+  both **5 Iron**, leaves 100 (v1 bend-cap composes unchanged — this fix doesn't touch it).
+
+Risk: backend-only club-selection logic change on the positioning-shot tee-club path (the exact
+mechanism behind the owner's incident); no schema/API-shape break (additive fields only,
+`corridor=None` byte-identical, existing pinch fields kept for cache compat). Noticeable — the
+owner will see driver recommended on tee shots that used to get shortchanged to a mid-iron on
+tree-lined holes; this is the direct fix for his report.
+
+Not shipped/pinged this pass (routing directive: report to eng-lead, don't self-ship). Files:
+`backend/app/caddie/strokes_gained.py`, `backend/app/caddie/aim_point.py`,
+`backend/app/caddie/types.py`, `backend/app/caddie/voice_prompts.py`,
+`backend/tests/test_tee_club_expected_strokes.py` (new),
+`backend/tests/test_corridor_width_selection.py` (rewritten).
+
+## DONE — 2026-07-18 — caddie-tee-club-expected-strokes: fable reviewer BLOCKING (B1+B2) fixed
+
+Fable adversarial review found a BLOCKING recklessness overshoot in the fix above (commit
+`321f333`): the model's own `_PENALTY_COST` (trees 0.7, water 1.4) was FLAT while every
+`approach_expected_strokes` term is handicap-multiplied (×1.22 at hcp 15, up to ×1.55 at hcp 30)
+— so the value of distance was inflated 22-55% relative to the cost of trouble, and on the plan's
+own canonical water pinch (440y par-4, 70y trees to 190, 28y water pinch from 200) driver stayed
+at ~39-52% water-landing probability with "nothing shorter beats that trade" — the plan's own
+definition of the WRONG pick, worse than the P0 conservatism being fixed. The gate test had also
+been narrowed from the plan's spec width (28) to width 20 (the only width the test's bag happened
+to lay up at), masking B2 rather than catching it.
+
+**B2 fix (root cause):** handicap-scale `_PENALTY_COST` at the point of use in
+`_select_club_expected_strokes` — multiply by `strokes_gained._handicap_multiplier(handicap)`, the
+SAME multiplier the approach term already carries. Verified empirically:
+- Canonical water pinch (width 28, hcp 15), **default (driver-250) bag**: driver E=4.591 (P=45.5%
+  wet-ish, mostly water) vs 5-iron E=4.366 → **5-iron lays up** (was driver-reckless before this
+  fix).
+- SAME pinch, **long (driver-280) bag**: also **5-iron lays up**, driver's own risk 46% — confirms
+  the fix isn't bag-specific (this is the long-bag regression B1 mandated).
+- Width-40 tree corridor (the P0 case): driver E=4.080 (up from the pre-fix flat-cost 4.036, since
+  cost is now hcp-scaled too, but ordering unchanged) — **driver still wins**, confirming the fix
+  doesn't reintroduce the original over-conservatism.
+
+**B1 fix:** `test_tee_club_expected_strokes.py`'s `_water_pinch_corridor` default restored to
+width 28 (the plan's spec, was narrowed to 20); added `test_05b_water_pinch_lays_up_for_a_long_driver_bag_too`
+(driver-280 bag, same width-28 pinch, asserts layup + driver's own risk ≥35%).
+
+**Non-blockers folded in:**
+- NB1 (asymmetric-corridor understatement): `_trouble_probability`'s both-edges-known path now
+  uses each side's OWN measured offset (`left_yards`/`right_yards`) instead of `width/2` under an
+  unspoken midpoint-aim assumption — byte-identical on symmetric corridors, honest on asymmetric
+  ones (verified: water-10y-right/trees-40y-left corridor now correctly shows 29.7% water risk on
+  the tight side vs 1.6% tree risk on the wide side, instead of averaging both to 18%). Width-40
+  canonical case confirmed unchanged (E=4.080, same as B2's own number).
+- NB2 (swap-note hazard-word mislabel): the CHOSEN club's own `{pct}% {adjective}` now labels from
+  `fit.sample` (its own evidence), not `fit.alt_sample` — the "pinch at Z" LOCATION phrase still
+  correctly names the ALT's hazard (what's being avoided), but the number attached to the chosen
+  club's own risk is no longer mislabeled with the alt's hazard word.
+- NB3: `corridor_width_yards` repopulated on the corridor-present path from the chosen club's own
+  sample width (kept in the schema for cache compat, was never written post-rewrite).
+- NB5: `voice_prompts.py`'s swap clause now guards on ALL three alt fields being present before
+  rendering; if `corridor_alt_club` is set but the payload is genuinely incomplete, the clause is
+  omitted entirely (never falls back to "nothing shorter beats that trade," which would misstate a
+  real swap as a no-swap).
+
+**Gates:** `ruff check .` clean. Targeted suite (8 files) — 295 passed, 0 failed. Full
+`test_tee_club_expected_strokes.py` (16 tests, incl. new long-bag regression) — 16 passed. Broader
+offline sweep (`tests/ -k "not asyncio and not db" --ignore=tests/eval`) — 2112 passed (1 more than
+the prior pass's 2111, from the added long-bag test).
+
+Files touched this pass: `backend/app/caddie/aim_point.py`, `backend/app/caddie/voice_prompts.py`,
+`backend/tests/test_tee_club_expected_strokes.py`. Not shipped/pinged — reporting back to
+eng-lead per routing directive.

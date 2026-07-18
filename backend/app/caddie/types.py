@@ -262,6 +262,24 @@ class TeeShotNumbers(BaseModel):
     corridor_capped_from_window_yards: Optional[int] = None  # its ±1.5σ window (rounded)
     corridor_club_window_yards: Optional[int] = None    # CHOSEN club's ±1.5σ window
     corridor_width_yards: Optional[int] = None          # danger width at the CHOSEN club's landing distance, when known
+    # Expected-strokes club selection (specs/caddie-tee-club-expected-strokes-
+    # plan.md §4) — REPLACES the hard fit-wall the fields above narrated.
+    # Additive, populated ONLY on corridor-present turns where the E-model
+    # actually ran. All None on a v1 (corridor-absent) turn, same convention
+    # as the fields above.
+    corridor_trouble_pct: Optional[int] = None      # CHOSEN club's total trouble probability (left+right), rounded %
+    corridor_alt_club: Optional[str] = None         # best-rejected LONGER club considered ("driver"); None when no swap
+    corridor_alt_trouble_pct: Optional[int] = None   # that alt club's own trouble probability, rounded %
+    corridor_alt_leave_yards: Optional[int] = None   # that alt club's leave, for the tradeoff note
+    # Deviation from the plan's literal field list (builder note): the plan's
+    # swap-note template ("...lays back short of the water pinch at Z...")
+    # names Z (the alt club's own landing distance — where the pinch actually
+    # is) but the plan text never listed a payload field for it. Every OTHER
+    # number the note speaks must be payload-grounded (plan §6's "note
+    # numbers == payload numbers" gate), so this one additive field closes
+    # that gap rather than silently dropping the "at Z" clause or citing an
+    # ungrounded number.
+    corridor_alt_total_yards: Optional[int] = None   # that alt club's own conditions total — the pinch's location
 
 
 # ── The Big Recommendation ──
