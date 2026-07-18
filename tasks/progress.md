@@ -3,6 +3,23 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — 2026-07-18 — deploy health-check startup race fix (item deploy-healthcheck-startup-race, SILENT)
+Fixed the false-fail hit on both the v1.1.14 (#147) and v1.1.15 (#148) deploys: the SSM deploy
+script's fixed `sleep 3` + single `curl localhost:8000/health` raced uvicorn's real ~3-4s bind
+time, so a genuinely-successful deploy (git pull/uv sync/alembic/restart all fine) reported SSM
+"failure" on the tail health check and needed a manual job re-run. `.github/workflows/deploy.yml`
+(the GH Actions workflow itself, NOT `deploy/**` -- that dir is guard-blocked and untouched) now
+runs a bounded retry: `for i in $(seq 1 15); do curl -fsS http://localhost:8000/health && exit 0;
+sleep 2; done; echo health check timed out after 30s >&2; exit 1` -- up to 30s, exits the moment
+the app answers, only fails if it's genuinely still down after 30s. Verified: `bash -n` syntax
+check on the retry line under `set -eu` semantics (the `&&`-guarded curl failure doesn't trip
+`set -e`, confirmed); `python3 -c "import yaml; yaml.safe_load(...)"` on the whole workflow ->
+OK; rebased clean onto origin/integration/next @ec0ed33, diff scoped to exactly this one file,
+does not touch backend/app/caddie/** (the parallel tee-club-expected-strokes lane stays
+untouched). No product code changed -> no frontend/backend gates apply (workflow-syntax-only).
+Backlog item filed + flipped done-on-bundle in the same commit. Rider on the open bundle PR,
+SILENT (ops-only, not user-visible) -- no ship/ping needed for this alone.
+
 ## AWAITING — 2026-07-18 — P0 caddie tee-club over-conservatism (item caddie-tee-club-expected-strokes, NOTICEABLE)
 Owner P0 field report (live round today, v1.1.15): "The caddie is extremely conservative. Tells
 me to hit 7 iron instead of driver." MECHANISM CONFIRMED by code trace (eng-lead, this cycle):

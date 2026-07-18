@@ -56,8 +56,7 @@ jobs:
               "su - ubuntu -c \"cd ~/scorecard/backend && grep -q user_3FkTG0ICmYQMyZQKojnXNwXHzk1 .env || echo OWNER_CLERK_USER_ID=user_3FkTG0ICmYQMyZQKojnXNwXHzk1 >> .env\"",
               "su - ubuntu -c \"cd ~/scorecard/backend && set -a && . .env && set +a && ~/.local/bin/uv run alembic upgrade head\"",
               "systemctl restart scorecard-api",
-              "sleep 3",
-              "curl -fsS http://localhost:8000/health"
+              "for i in $(seq 1 15); do curl -fsS http://localhost:8000/health && exit 0; sleep 2; done; echo health check timed out after 30s >&2; exit 1"
             ]' \
             --query 'Command.CommandId' --output text)
           echo "SSM command: $CMD_ID"
