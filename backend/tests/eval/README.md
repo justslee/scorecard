@@ -63,6 +63,11 @@ golden/consistency_probes.jsonl — which golden scenarios the consistency probe
 run_consistency.py          — on-demand LIVE consistency probe (NOT collected by pytest)
 run_latency.py               — on-demand LIVE ephemeral-mint latency probe (NOT collected by pytest)
 test_gated_tools.py          — filename-glob pins + gate-refusal tests for both LIVE runners above
+
+conversation_runner.py      — multi-turn sequence executor: stub/spy installers + pure sequence checks
+conversations.py            — ~10 python-defined conversation scenario scripts + shared session fixtures
+test_conversation_router.py — parametrized pytest module, runs every scenario through the runner
+test_conversation_teeth.py  — M1-M7 mutant tests proving each conversation-level check can go RED
 ```
 
 ## Multi-turn context-retention (dims 2/3, added by the caddie-experience harness)
@@ -78,6 +83,45 @@ conversation history lives server-side in the OpenAI Realtime session itself, no
 from a pure prompt-string check — that surface is covered by the frontend ordering/lifecycle
 suites (`realtime-ordering.test.ts`, `CaddieSheet.realtime.test.tsx`) and, for a live read, the
 gated consistency probe below.
+
+## Multi-turn conversation & router (dims 1/3/5 + routing)
+
+The single-turn checks above assemble one prompt/answer in isolation — they can't catch what
+only shows up ACROSS a sequence: duplicate replies to distinct asks (dim 1), a follow-up that
+re-derives instead of reusing the same hole/payload (dim 3), advice→fact→advice contradicting
+itself mid-round (dim 5), or a mid-conversation intent switch (advice → score → fact → advice)
+cross-contaminating tiers. `conversation_runner.py` + `conversations.py` +
+`test_conversation_router.py` answer this — always-on, in the same `uv run pytest tests/eval`
+gate, fully offline.
+
+**Fidelity bar**: every scenario drives the REAL `POST /api/caddie/session/voice` route
+(`routes/caddie.py::session_voice`) through a throwaway `FastAPI()` + `TestClient`, exactly like
+`test_strategy_tool.py::_strategy_client` — `classify_intent`, the ADVICE/SCORE/FACT-OTHER
+dispatch arms, `run_strategy_turn` (payload assembly, cache, the fail-closed validator, the
+degrade composer), and `_build_session_voice_prompt` are all REAL code. Only the network/DB
+seams the existing suite already stubs are replaced (`synthesize_strategy`, `run_caddie_turn`,
+`sessions.append_message_pair`/`set_current_hole`/`set_recommendation`, `get_owned_session`,
+personality/memory reads). `classify_intent`, `run_strategy_turn`, and
+`caddie_tools.resolve_tool` are SPIED (delegating wrappers), never replaced — every assertion
+reads an effect produced by REAL code, never a stub call-count alone.
+
+**Scenario format: python-defined, not JSONL.** Per-turn expectations here are code-shaped
+(expected `Intent` enum members, synth-call deltas, per-call stub behavior: return vs. raise) —
+none of which serialize honestly to JSONL. `ConversationTurn`/`TurnExpect` are frozen
+dataclasses, so a typo'd expectation field is an import-time error — the same closed-registry
+safety the golden JSONL gets from pydantic's `extra='forbid'`, by a different mechanism. The
+JSONL stays the home of single-turn golden scenarios; conversations are scripts, and scripts
+live in code (`conversations.py`).
+
+`run_conversation(scenario, monkeypatch)` posts every turn in order against a SHARED
+`RoundSession` (never a fresh one per turn — the fake `get_owned_session` always returns the
+same object, modeling DB persistence) and returns a `ConversationResult` carrying, per turn: the
+classified `Intent`, the reply text, the synth/fact-stub call deltas, and (for ADVICE turns) the
+hole `run_strategy_turn` actually computed against. Pure sequence-check functions
+(`check_turn_expectations`, `check_no_dupes`, `check_club_consistency`,
+`check_history_renders_in_order`) then verify the properties — pure means `test_conversation_
+teeth.py` can feed them hand-built mutant records directly, no route/monkeypatch machinery
+needed for that half of the teeth.
 
 ## Consistency probe (dim 5) — pure extractor now, gated live sampler later
 
@@ -159,6 +203,17 @@ catch a REAL regression in `routes/caddie.py`, do this once:
 3. Revert the change (`git checkout -- backend/app/routes/caddie.py`), confirm green again.
 4. Paste the red output from step 2 into the PR description — this is the harness's proof of
    life, required alongside every change that touches this directory.
+
+5. **Conversation-level step** (added by the multi-turn conversation & router eval): in
+   `session_voice`'s `if intent is Intent.ADVICE:` arm (the FIRST occurrence, ~line 1006 — the
+   non-streaming twin `test_conversation_router.py` drives), comment out the real
+   `run_strategy_turn(...)` call.
+6. `cd backend && uv run pytest "tests/eval/test_conversation_router.py::test_conversation[intent-switch-chain]" -q`
+   — watch it go RED (the ADVICE arm never calls `run_strategy_turn`, so the spy records zero
+   calls and the runner's own bookkeeping raises `IndexError: list index out of range` trying to
+   read the never-recorded call — a real regression here is caught, just via a different failure
+   shape than a clean `CheckResult`, which is still a legitimate red).
+7. Revert, confirm green again, paste the red output into the PR alongside step 4's.
 
 ## Budget & judge design (Tier 2)
 

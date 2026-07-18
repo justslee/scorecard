@@ -201,6 +201,52 @@ def test_context_hazards_match_goes_red_when_trees_stripped_from_features():
     assert not mutant_result.passed, "check must go RED when trees are stripped from the input features"
 
 
+# ── 2c. `context_hazards_match` on a real multi-run split trees line ────────
+# backlog `eval-hazards-match-split-line`: since TREE_RUN_SPLIT_GAP_YDS
+# (specs/caddie-tree-span-gap-plan.md), a gap-preserving trees group renders
+# as ONE `type SIDE` prefix followed by multiple `" and "`-joined runs
+# (`trees L 30-65y and 265-480y`) — the prefix does not repeat per run. The
+# pre-fix matcher only ever found the FIRST run and silently ignored the
+# rest, so an expected carry covered only by a LATER run false-failed.
+#
+# The line below is the real Bethpage RED-1 per-side chain, ±5y
+# geodesic-verified during planning (caddie-tree-span-gap-plan.md §1d "After
+# (§1 only)" row) — the split-but-not-yet-near-tee-suppressed rendering that
+# `_tree_runs` produces from Red 1's actual chain carries
+# (`tests/fixtures/bethpage_red_trees.json`; see also
+# `TestHole1SplitLine.test_hole_1_split_renders_both_gap_separated_runs` in
+# `tests/test_tree_span_gap.py` for the post-suppression sibling of this
+# exact data).
+
+
+def test_context_hazards_match_covers_every_run_of_a_split_trees_line():
+    real_red1_split_line = "Hole 1 hazards: trees R 5-85y and 385-475y, trees L 30-65y and 265-480y"
+
+    # An expected carry covered ONLY by the SECOND run of each side must
+    # still pass — the pre-fix matcher false-failed both of these.
+    right_second_run = checks_mod.context_hazards_match(
+        real_red1_split_line, [{"type": "trees", "side": "R", "carry": 470}]
+    )
+    assert right_second_run.passed, right_second_run.detail
+    left_second_run = checks_mod.context_hazards_match(
+        real_red1_split_line, [{"type": "trees", "side": "L", "carry": 275}]
+    )
+    assert left_second_run.passed, left_second_run.detail
+
+    # And the FIRST run of each side must still pass too (no regression).
+    right_first_run = checks_mod.context_hazards_match(
+        real_red1_split_line, [{"type": "trees", "side": "R", "carry": 40}]
+    )
+    assert right_first_run.passed, right_first_run.detail
+
+    # A carry that falls in neither run (the ~200-380y open drive zone the
+    # split rendering exists to preserve) must still fail.
+    open_zone = checks_mod.context_hazards_match(
+        real_red1_split_line, [{"type": "trees", "side": "L", "carry": 150}]
+    )
+    assert not open_zone.passed, "carry inside the open drive zone must NOT match either run"
+
+
 # ── 3. Hole-4 guide mutant: harness catches a fail-open validator (item 3) ─
 
 

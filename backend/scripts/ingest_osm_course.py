@@ -77,7 +77,11 @@ import sys
 # Make the backend package importable when run from the repo root or backend/.
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
 
-from app.services.osm import fetch_course_geometry, fetch_golf_course_boundaries  # noqa: E402
+from app.services.osm import (  # noqa: E402
+    OverpassThrottledError,
+    fetch_course_geometry,
+    fetch_golf_course_boundaries,
+)
 from app.services.osm_ingest import (  # noqa: E402
     _deterministic_uuid,
     _should_abort_empty,
@@ -156,7 +160,21 @@ async def _ingest(
     # at all, so the tag filter can never select the right holes.
     if boundary_name and target_course_name is None:
         print(f"Fetching named golf-course boundaries (radius={radius} m) …", flush=True)
-        boundaries = await fetch_golf_course_boundaries(lat, lng, radius)
+        try:
+            boundaries = await fetch_golf_course_boundaries(lat, lng, radius)
+        except OverpassThrottledError as exc:
+            # Retryable, not "no boundary matched" — a throttled Overpass fetch
+            # must NOT be read as a genuine empty result (that would silently
+            # fall through to "no boundary matched" below and mis-ingest under
+            # load). Log + exit distinctly so a multi-course ingest run knows
+            # to retry this course rather than treat it as a real miss.
+            print(
+                f"ERROR: Overpass throttled/erroring while fetching course "
+                f"boundaries — retryable, NOT a genuine 'no boundary matched' "
+                f"result: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         names = [b["name"] for b in boundaries]
         print(f"Found {len(boundaries)} named boundary polygon(s): {names}", flush=True)
 

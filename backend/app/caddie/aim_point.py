@@ -112,10 +112,64 @@ def classify_pin_position(
     return "green"
 
 
+# ── En-route carry hazards (specs/aim-point-hazard-aware-recommendation-line-
+# plan.md) — the LAST flag-only remnant of the caddie-shot-context-
+# reachability family. Owner repro: Augusta 12 (155y par-3, water carry 140,
+# reachable, pin light "green") said "Aim at the flag — green light, no
+# trouble" while the hazards line two lines below named the water. This is
+# the tee-anchored `carry_yards` frame — the SAME frame `drive_zone_hazards`
+# / `carries_payload` / `format_hazards_line` use.
+
+
+def en_route_carry_hazards(
+    hazards: list[Hazard],
+    hole_yards: Optional[int],
+    distance_yards: int,
+) -> Optional[list[Hazard]]:
+    """Hazards between the player and the green in the tee-anchored
+    `carry_yards` frame (the SAME frame drive_zone_hazards / carries_payload /
+    format_hazards_line use — hazards.py's along-played-line number).
+
+    Returns:
+      []    — no carry-frame evidence, or every carry hazard is provably NOT
+              between the player and the green (behind the player, or past the
+              green). Caller keeps today's behavior verbatim.
+      [h..] — the en-route subset (there IS trouble on the way in).
+      None  — frame unknown: carry evidence exists but hole_yards is None, so
+              the player's tee-offset is unknowable. Caller must neither claim
+              "no trouble" nor fabricate a carry (conservative/honest).
+    """
+    carry_evidence = [h for h in hazards if h.carry_yards > 0]
+    if not carry_evidence:
+        return []          # green-frame-only hazard sets (carry_yards defaulted 0)
+    if hole_yards is None:
+        return None        # cannot place the player on the tee->green line
+    tee_offset = max(0, hole_yards - distance_yards)   # GPS-behind-tee jitter clamp
+    return [h for h in carry_evidence if tee_offset < h.carry_yards < hole_yards]
+
+
+_HAZARD_NOUNS: dict[str, str] = {
+    "water": "water", "bunker": "bunker", "ob": "OB", "trees": "trees", "slope": "slope",
+}  # article-free sibling of decade_advice._friendly_hazard_name; fallback "trouble"
+
+
+def _governing_center_carry(en_route: list[Hazard]) -> Optional[Hazard]:
+    """The one carry the spoken line names: among line_side=='center' en-route
+    hazards, most severe wins; ties break to the LARGER carry_yards (the deeper
+    constraint), then hazard type for full determinism. None when no center
+    en-route hazard exists (lateral-only case)."""
+    center = [h for h in en_route if h.line_side.lower() == "center"]
+    if not center:
+        return None
+    return max(center, key=lambda h: (_SEVERITY_RANK.get(h.penalty_severity, 0),
+                                      h.carry_yards, h.type))
+
+
 def compute_aim_point(
     hole: HoleIntelligence,
     player_stats: Optional[PlayerStatistics],
     handicap: float = 15.0,
+    distance_yards: Optional[int] = None,
 ) -> AimPoint:
     """Compute where to aim based on hazards, green shape, and player tendencies.
 
@@ -124,18 +178,67 @@ def compute_aim_point(
     - Yellow light pin: aim between flag and center
     - Red light pin: aim center of green, ignore the flag
     - Always shift aim away from the "death side"
+
+    `distance_yards`, when provided, is the RAW geometric distance
+    (`rec.raw_yards`), NEVER `adjusted_yards` — it lets the green-pin arm
+    check for en-route carry hazards (tee-anchored `carry_yards` frame) so
+    the aim line can never claim "no trouble" while the hazards line two
+    lines below names one. `None` (all existing direct callers) → legacy
+    byte-identical behavior.
     """
     pin_light = classify_pin_position(hole)
     miss_dir = player_stats.tendencies.miss_direction if player_stats else "balanced"
 
-    if pin_light == "green":
-        description = "Aim at the flag — green light, no trouble"
-    elif pin_light == "yellow":
-        description = "Aim between the pin and center of green"
+    if distance_yards is not None:
+        en_route = en_route_carry_hazards(hole.hazards, hole.yards, distance_yards)
     else:
-        description = "Aim center of green — sucker pin, don't chase it"
+        en_route = []   # no positional evidence -> legacy behavior
 
-    # Shift aim away from death side
+    if pin_light == "green":
+        if en_route is None:
+            # Carry evidence exists but the frame is unknown (hole.yards None):
+            # neither claim clean nor fabricate a carry we can't anchor.
+            description = "Aim at the flag"
+        elif not en_route:
+            description = "Aim at the flag — green light, no trouble"   # verbatim today
+        else:
+            governing = _governing_center_carry(en_route)
+            if governing is not None:
+                noun = _HAZARD_NOUNS.get(governing.type.lower(), "trouble")
+                description = f"Aim at the flag — carry the {noun} at {governing.carry_yards}"
+            else:
+                # Lateral-only en-route trouble.
+                worst = max(en_route, key=lambda h: (_SEVERITY_RANK.get(h.penalty_severity, 0),
+                                                     h.carry_yards, h.type))
+                noun = _HAZARD_NOUNS.get(worst.type.lower(), "trouble")
+                miss = compute_miss_side(hole, player_stats)
+                if miss.preferred in ("left", "right"):
+                    safe_side = miss.preferred
+                else:
+                    safe_side = "right" if worst.line_side.lower() == "left" else "left"
+                if safe_side != worst.line_side.lower():
+                    description = (f"Aim at the flag — {noun} {worst.line_side.lower()} "
+                                   f"at {worst.carry_yards}, favor the {safe_side} side")
+                else:
+                    # Miss verdict says the hazard's own side is still the lesser
+                    # evil — name the fact, let miss_side carry the verdict, never
+                    # a contradicting side instruction.
+                    description = (f"Aim at the flag — {noun} {worst.line_side.lower()} "
+                                   f"at {worst.carry_yards}")
+    elif pin_light == "yellow":
+        description = "Aim between the pin and center of green"          # unchanged
+    else:
+        description = "Aim center of green — sucker pin, don't chase it" # unchanged
+
+    # Shift aim away from death side. Structurally disjoint from the en-route
+    # branch above: any `penalty_severity == "death"` hazard forces
+    # `classify_pin_position` to return at least "yellow" (lines 107-110), so
+    # whenever we're in the `pin_light == "green"` arm above, `death_sides`
+    # below is always empty and this append never fires on that arm. The
+    # append still composes after the yellow/red strings exactly as today.
+    # (If a future refactor ever let it fire after a carry string, it appends
+    # grammatically: "Aim at the flag — carry the water at 140. Favor the
+    # left side — penalty right".)
     death_sides = [h.side for h in hole.hazards if h.penalty_severity == "death"]
     if "right" in death_sides and miss_dir in ("right", "balanced"):
         description += ". Favor the left side — penalty right"
@@ -744,7 +847,7 @@ def generate_recommendation(
     landing_advice: Optional[str] = None
     pin_light: Optional[str] = None
     if reachable:
-        aim = compute_aim_point(hole, player_stats, handicap)
+        aim = compute_aim_point(hole, player_stats, handicap, distance_yards=distance_yards)
         miss = compute_miss_side(hole, player_stats)
         pin_light = classify_pin_position(hole)
     else:
@@ -921,6 +1024,13 @@ def generate_recommendation(
             _r.append((1, "Red light pin — play to the center, don't short-side yourself"))
         elif pin_light == "yellow":
             _r.append((1, "Yellow light pin — aim between pin and center"))
+        elif pin_light == "green":
+            en_route = en_route_carry_hazards(hole.hazards, hole.yards, distance_yards)
+            governing = _governing_center_carry(en_route) if en_route else None
+            if governing is not None:
+                noun = _HAZARD_NOUNS.get(governing.type.lower(), "trouble")
+                _r.append((1, f"{noun.capitalize()} at {governing.carry_yards} between you and "
+                              f"the green — take enough club to carry it"))
     else:
         # P1 — positioning-shot call-out (the fix for the incident: never a
         # pin-relative aim when the green is out of reach on this swing).

@@ -22,9 +22,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
-from app.services.osm import _parse_boundary_geometry, fetch_golf_course_boundaries
+from app.services.osm import (
+    OverpassThrottledError,
+    _parse_boundary_geometry,
+    fetch_golf_course_boundaries,
+)
 from app.services.osm_ingest import (
     _hole_inside_boundary,
     _point_in_boundary,
@@ -236,21 +241,60 @@ class TestFetchGolfCourseBoundaries:
             results = await fetch_golf_course_boundaries(36.57, -121.95)
         assert results == []
 
-    @pytest.mark.asyncio
-    async def test_overpass_failure_returns_empty_list(self):
-        mock_client = AsyncMock()
-        mock_client.post.return_value = _Resp({})  # will be treated as failure via 504 sim
-        # Simulate a hard failure via _post_with_retry returning None: easiest
-        # is to have every attempt return a transient error status.
-        class _FailResp(_Resp):
-            def __init__(self) -> None:
-                super().__init__({})
-                self.status_code = 504
-                self.is_success = False
+    # ── Throttle/server-error contract (ingest-overpass-error-honesty) ─────────
+    #
+    # A persistent transient failure (429 / 5xx / timeout, retries exhausted)
+    # is a RETRYABLE fault, not a genuine "no boundary matched" result — it
+    # must raise OverpassThrottledError, never silently degrade to []. Only a
+    # clean 200 response with nothing matching is an honest empty list.
 
-        mock_client.post.side_effect = [_FailResp(), _FailResp()]
+    class _FailResp(_Resp):
+        """A single failed Overpass HTTP response (default: transient 504)."""
+
+        def __init__(self, status_code: int = 504) -> None:
+            super().__init__({})
+            self.status_code = status_code
+            self.is_success = False
+
+    @pytest.mark.asyncio
+    async def test_504_exhausted_raises_throttled_error(self):
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [self._FailResp(504), self._FailResp(504)]
         with patch("httpx.AsyncClient") as mock_ctor, \
                 patch("asyncio.sleep", new_callable=AsyncMock):
+            mock_ctor.return_value.__aenter__.return_value = mock_client
+            with pytest.raises(OverpassThrottledError):
+                await fetch_golf_course_boundaries(36.57, -121.95)
+
+    @pytest.mark.asyncio
+    async def test_429_exhausted_raises_throttled_error(self):
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [self._FailResp(429), self._FailResp(429)]
+        with patch("httpx.AsyncClient") as mock_ctor, \
+                patch("asyncio.sleep", new_callable=AsyncMock):
+            mock_ctor.return_value.__aenter__.return_value = mock_client
+            with pytest.raises(OverpassThrottledError):
+                await fetch_golf_course_boundaries(36.57, -121.95)
+
+    @pytest.mark.asyncio
+    async def test_timeout_exhausted_raises_throttled_error(self):
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [
+            httpx.TimeoutException("timed out"),
+            httpx.TimeoutException("timed out"),
+        ]
+        with patch("httpx.AsyncClient") as mock_ctor, \
+                patch("asyncio.sleep", new_callable=AsyncMock):
+            mock_ctor.return_value.__aenter__.return_value = mock_client
+            with pytest.raises(OverpassThrottledError):
+                await fetch_golf_course_boundaries(36.57, -121.95)
+
+    @pytest.mark.asyncio
+    async def test_true_empty_result_returns_empty_list(self):
+        """A clean 200 with no matching elements is an honest empty — no raise."""
+        mock_client = AsyncMock()
+        mock_client.post.return_value = _Resp({"elements": []})
+        with patch("httpx.AsyncClient") as mock_ctor:
             mock_ctor.return_value.__aenter__.return_value = mock_client
             results = await fetch_golf_course_boundaries(36.57, -121.95)
         assert results == []

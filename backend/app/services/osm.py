@@ -13,6 +13,21 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 _USER_AGENT = "Looper/1.0 (golf course mapping)"
 _log = logging.getLogger(__name__)
 
+
+class OverpassThrottledError(Exception):
+    """Raised when Overpass is persistently throttled or erroring (HTTP 429/5xx,
+    or a timeout/transport error) after the retry budget is exhausted.
+
+    Distinct from a genuine "no data" result: an empty ``[]`` return means
+    Overpass answered successfully with nothing matching, while this exception
+    means Overpass never gave an honest answer at all. Only raised by callers
+    that opt in via ``_post_with_retry(..., raise_on_failure=True)`` — currently
+    just :func:`fetch_golf_course_boundaries`, whose ingest callers key
+    "no boundary matched" logic off an empty result and must not have
+    throttling silently masquerade as a real negative.
+    """
+
+
 # HTTP status codes that indicate a transient Overpass failure and warrant one retry.
 # 429 = rate-limited, 5xx = server-side errors (the public endpoint intermittently
 # returns 504 under load — a single retry avoids a confusing "0 holes" ingest).
@@ -37,6 +52,7 @@ async def _post_with_retry(
     *,
     max_attempts: int = 2,
     backoff_s: float = _RETRY_BACKOFF_S,
+    raise_on_failure: bool = False,
 ) -> Optional[dict]:
     """POST *query* to the Overpass interpreter with one retry on transient failures.
 
@@ -57,11 +73,20 @@ async def _post_with_retry(
             stay inside its tight latency budget.
         backoff_s: Seconds to sleep before the retry. The interactive search path
             passes a shorter value (0.5s) than the ingest-path default (2s).
+        raise_on_failure: When ``True``, a transient failure that exhausts the
+            retry budget (HTTP 429/5xx, or a timeout/transport error) raises
+            :class:`OverpassThrottledError` instead of returning ``None``. A
+            non-transient HTTP error (e.g. 400/406) still returns ``None`` —
+            that's a query-shape bug, not throttling, and out of scope for the
+            distinct-exception contract. Default ``False`` preserves the
+            original "never raises" contract for existing callers.
 
     Returns:
-        Parsed JSON ``dict`` on success, or ``None`` after a persistent failure.
-        Callers should treat ``None`` as an empty/error result and log or surface
-        accordingly — this function never raises.
+        Parsed JSON ``dict`` on success, or ``None`` after a persistent
+        non-transient failure. Callers should treat ``None`` as an empty/error
+        result and log or surface accordingly. When ``raise_on_failure=True``,
+        an exhausted transient failure raises instead of returning ``None``
+        (see above) — this function otherwise never raises.
     """
     for attempt in range(max_attempts):
         try:
@@ -78,6 +103,10 @@ async def _post_with_retry(
             if attempt < max_attempts - 1:
                 await asyncio.sleep(backoff_s)
                 continue
+            if raise_on_failure:
+                raise OverpassThrottledError(
+                    f"{log_tag}: request error after {max_attempts} attempt(s): {exc!r}"
+                ) from exc
             return None
 
         if resp.is_success:
@@ -92,6 +121,11 @@ async def _post_with_retry(
             if attempt < max_attempts - 1:
                 await asyncio.sleep(backoff_s)
                 continue
+            if raise_on_failure:
+                raise OverpassThrottledError(
+                    f"{log_tag}: transient HTTP {resp.status_code} after "
+                    f"{max_attempts} attempt(s), body={body!r}"
+                )
             return None
 
         # Non-transient HTTP error (e.g. 400 Bad Request, 406 No User-Agent).
@@ -685,7 +719,17 @@ async def fetch_golf_course_boundaries(
     Returns:
         List of ``{"osm_id": str, "name": str, "boundary": <GeoJSON dict>}``.
         Elements with no ``name`` tag or no usable ring geometry are skipped.
-        Empty list on Overpass failure.
+        Empty list ``[]`` means Overpass answered successfully with no matching
+        boundary — a genuine "no boundary here" result.
+
+    Raises:
+        OverpassThrottledError: Overpass was persistently throttled or erroring
+            (HTTP 429/5xx, or a timeout/transport error) and the retry budget
+            was exhausted. Distinct from the empty-list case above so a caller
+            keying "no boundary matched" logic off an empty result (e.g.
+            ``--boundary-name`` in ``scripts/ingest_osm_course.py``) doesn't
+            mistake throttling for a genuine no-match — callers should catch
+            this and retry/log rather than treat it as "no boundary".
     """
     query = f"""
 [out:json][timeout:30];
@@ -696,7 +740,9 @@ async def fetch_golf_course_boundaries(
 out geom;
 """
     async with httpx.AsyncClient(timeout=30) as client:
-        data = await _post_with_retry(client, query, log_tag="fetch_golf_course_boundaries")
+        data = await _post_with_retry(
+            client, query, log_tag="fetch_golf_course_boundaries", raise_on_failure=True,
+        )
     if data is None:
         return []
 

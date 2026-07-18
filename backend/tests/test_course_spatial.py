@@ -1193,6 +1193,15 @@ class TestMultiPolygonBunkerAssignment:
       • Decoy member: much smaller, centred nearer hole 8's line, but its area
         is far smaller than the main member's so the largest-member rule keeps
         the main member as the representative ring.
+
+    NOTE: these coordinates are SYNTHETIC — they exercise the MultiPolygon
+    code path (largest-member representative ring + Tier 1 overlap) with a
+    body deliberately built to straddle the "hole 9" fixture line.  They are
+    NOT the real-world position of OSM relation 19545022.  The real relation
+    is a ~20 m greenside bunker on Bethpage RED HOLE 11 (14 m from hole 11's
+    centerline, 256 m from hole 9's) — see
+    ``TestRed9WasteComplexRealGeometry`` below, which pins the true
+    assignment.  The osm_id here is reused only as a convenient label.
     """
 
     _HOLE9_RED = _make_hole("9", "Red", -72.850, 40.700, -72.850, 40.702)
@@ -1272,3 +1281,76 @@ class TestMultiPolygonBunkerAssignment:
                 f"Pre-existing assignment for {osm_id!r} changed after adding "
                 "a MultiPolygon bunker to the polygon list"
             )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Real-world geometry pin: OSM relation 19545022 belongs to Bethpage RED HOLE 11
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestRed9WasteComplexRealGeometry:
+    """Locks the *true* assignment of OSM relation 19545022 against a recurring
+    mis-belief that it is Bethpage Red hole 9's "giant left-side waste complex".
+
+    Ground truth (verified 2026-07-17 against live Overpass + prod DB):
+      • relation 19545022 is a single ~20 x 19 m greenside bunker (one outer
+        ring + a 5 m island inner ring), OSM version 1, created 2025-08-31,
+        never edited — it was never a large sprawling complex.
+      • Its centroid sits at (lon -73.45612, lat 40.75158): **14 m** from
+        Bethpage Red hole 11's centerline and **256 m** from hole 9's.
+      • Prod ``hole_features`` stores it under hole 11 (correct); hole 9
+        independently carries its own 7-bunker cluster.
+
+    No hole centerline passes THROUGH this small bunker, so Tier 1 overlap is
+    zero and the assignment is decided by Tier 2 ring-vertex voting → the
+    nearest hole (11).  This test builds representative N-S centerlines at the
+    measured offsets from the real centroid so the property is deterministic:
+    the near hole (11) wins; the far parallel hole (9) never does.  A future
+    "fix" that forces this bunker onto hole 9 would strip hole 11 of a real
+    hazard and plant a phantom one 256 m away on hole 9 — this pins against it.
+    """
+
+    _BUNKER_LON, _BUNKER_LAT = -73.45612, 40.75158
+    # metres-per-degree-lon at this latitude (~40.75°): 111320 * cos(lat)
+    _M_PER_DEG_LON = 84330.0
+
+    # Hole 11 (near): vertical centerline ~14 m EAST of the bunker centroid.
+    _H11_LON = _BUNKER_LON + 14.0 / _M_PER_DEG_LON
+    _HOLE11 = _make_hole("11", "Red", _H11_LON, 40.7508, _H11_LON, 40.7524)
+
+    # Hole 9 (far): parallel vertical centerline ~256 m WEST of the centroid.
+    _H9_LON = _BUNKER_LON - 256.0 / _M_PER_DEG_LON
+    _HOLE9 = _make_hole("9", "Red", _H9_LON, 40.7508, _H9_LON, 40.7524)
+
+    _HOLES = [_HOLE9, _HOLE11]
+
+    # ~20 x 18 m single-member bunker at the real centroid (half_deg 0.00008 →
+    # ~6.7 m lon / ~8.9 m half-widths); the near line is ~7 m outside it, so
+    # Tier-1 overlap is 0 — faithful to the real (overlap-free) geometry.
+    _BUNKER = _make_multipolygon_bunker(
+        "relation/19545022", [(_BUNKER_LON, _BUNKER_LAT, 0.00008)]
+    )
+
+    def test_assigns_to_hole_11_not_hole_9(self):
+        result = assign_features_to_holes(self._HOLES, [self._BUNKER])
+        ref, course, dist = result["relation/19545022"]
+        assert course == "Red"
+        assert ref == "11", f"expected hole 11 (14 m), got hole {ref}"
+        assert ref != "9", "must NOT be assigned to the far hole 9 (256 m away)"
+        assert dist < _CORRIDOR_CAPS_M["bunker"]
+
+    def test_no_centerline_overlap_falls_to_vote(self):
+        """Faithful to reality: neither centerline passes through the bunker, so
+        Tier 1 overlap is zero for both holes (assignment comes from the vote)."""
+        outer_ring = self._BUNKER["geometry"]["coordinates"][0][0]
+        cos_lat = math.cos(math.radians(self._BUNKER_LAT))
+        bbox = _ring_bbox(outer_ring)
+        for hole in self._HOLES:
+            hc = hole["geometry"]["coordinates"]
+            assert _linestring_intersection_m(hc, outer_ring, cos_lat, bbox) == 0.0
+
+    def test_collection_places_it_on_hole_11(self):
+        result = build_course_feature_collection(self._HOLES, [self._BUNKER], "Red")
+        assert {h["number"] for h in result} == {11}
+        hole11 = next(h for h in result if h["number"] == 11)
+        osm_ids = {f["properties"]["osm_id"] for f in hole11["features"]["features"]}
+        assert "relation/19545022" in osm_ids

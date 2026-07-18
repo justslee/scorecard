@@ -6,10 +6,11 @@ Covers: payload/ground-truth assembly + cache-key determinism, the system
 prompt's grounding-contract pins, realtime-vs-text routing pins, the OpenAI
 Responses API request shape (no sampling params), response parsing, the
 fail-closed validator (Red-1 side-flip / invented-hazard / injection
-classes), the in-process cache, and (QA-found gap) the `POST /session/
-strategy` route handler + its `_degraded_line()` fallback closure — DB-free
-via a monkeypatched `get_owned_session` + `current_user_id` dependency
-override, same pattern as `tests/test_caddie_caching.py::_make_client()`.
+classes), the in-process cache, the module-level `compose_degraded_line`
+fallback composer (specs/caddie-degraded-line-reliability-plan.md Fix A),
+and (QA-found gap) the `POST /session/strategy` route handler — DB-free via
+a monkeypatched `get_owned_session` + `current_user_id` dependency override,
+same pattern as `tests/test_caddie_caching.py::_make_client()`.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from app.caddie import strategy as strategy_mod  # noqa: E402
 from app.caddie import tools as tools_mod  # noqa: E402
 from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
 from app.caddie.session import RoundSession  # noqa: E402
-from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, TeeShotNumbers, WeatherConditions  # noqa: E402
+from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, WeatherConditions  # noqa: E402
 from app.caddie.voice_prompts import (  # noqa: E402
     DECISION_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
@@ -285,7 +286,7 @@ async def test_request_shape_has_no_sampling_params_and_correct_reasoning_field(
 
     assert len(_FakeAsyncClient.captured) == 1
     body = _FakeAsyncClient.captured[0]["json"]
-    assert body["reasoning"] == {"effort": "low"}
+    assert body["reasoning"] == {"effort": "none"}
     assert body["max_output_tokens"] == 1024
     assert "instructions" in body and body["instructions"]
     assert "input" in body and "GROUND TRUTH block" in body["input"]
@@ -293,6 +294,20 @@ async def test_request_shape_has_no_sampling_params_and_correct_reasoning_field(
     assert "temperature" not in body
     assert "top_p" not in body
     assert "tools" not in body
+
+
+def test_strategy_reasoning_effort_defaults_to_none(monkeypatch):
+    """2026-07-17 on-box A/B (12 keyed calls): effort=none beat effort=low on
+    latency (p50 2.4s vs 5.9s) with equal-or-better validator/quality results
+    — see `_strategy_reasoning_effort`'s docstring comment for the full
+    evidence. Pin the default so a future edit can't silently regress it."""
+    monkeypatch.delenv("CADDIE_STRATEGY_REASONING_EFFORT", raising=False)
+    assert strategy_mod._strategy_reasoning_effort() == "none"
+
+
+def test_strategy_reasoning_effort_env_override_still_works(monkeypatch):
+    monkeypatch.setenv("CADDIE_STRATEGY_REASONING_EFFORT", "low")
+    assert strategy_mod._strategy_reasoning_effort() == "low"
 
 
 async def test_synthesize_strategy_raises_without_openai_api_key(monkeypatch):
@@ -596,11 +611,203 @@ async def test_repeated_ground_truth_hits_cache_once_synth_call(monkeypatch):
     assert third == first  # same canned narrative, different cache entry
 
 
+# ── Fix A: compose_degraded_line — the honest, prompt-scaffold-free fallback
+# (specs/caddie-degraded-line-reliability-plan.md) ─────────────────────────
+#
+# Direct unit tests against the module-level pure function (extracted out of
+# the old private `_degraded_line()` closure in `strategy_turn.run_strategy_
+# turn`) — real Red-6/Augusta-12 payload SHAPES from the live-prod smoke that
+# surfaced the three bugs this fixes: prompt-scaffold leakage (`format_tee_
+# numbers_line`'s "AUTHORITATIVE — they close" / "Speak ONLY these numbers"
+# TTS'd verbatim), the literal "the none" bug on a flat green
+# (`uphill_leave_side` is the STRING "none", not falsy), and `aim_point.
+# description`'s "no trouble" default overriding real drive-zone hazard
+# evidence and aiming an unreachable flag on a positioning shot.
+
+from app.caddie.strategy_turn import compose_degraded_line  # noqa: E402
+
+_FORBIDDEN_SUBSTRINGS = (
+    "AUTHORITATIVE", "Speak ONLY", "they close", "the none",
+    "no trouble", "at the flag", "at the pin",
+)
+
+
+def _assert_no_forbidden_substrings(line: str) -> None:
+    lowered = line.lower()
+    for forbidden in _FORBIDDEN_SUBSTRINGS:
+        assert forbidden.lower() not in lowered, f"forbidden substring {forbidden!r} in: {line!r}"
+
+
+_RED_6_REC = {
+    "club": "3wood",
+    "raw_yards": 410,
+    "target_yards": 415,
+    "shot_kind": "positioning",
+    "leave_yards": 150,
+    "miss_side": {"preferred": "right"},
+    "tee_shot_numbers": {
+        "hole_number": 6,
+        "to_green_yards": 410,
+        "yardage_basis": "gps",
+        "plays_like_yards": 415,
+        "club": "3wood",
+        "club_stored_yards": 230,
+        "drive_carry_yards": 215,
+        "drive_total_yards": 260,
+        "leave_exact_yards": 150,
+        "leave_yards": 150,
+    },
+}
+_RED_6_GREEN_READ = {"available": False}
+_RED_6_CARRIES = {"carries": [{"type": "trees", "side": "right", "carry_yards": 220}]}
+
+_RED_6_EXPECTED_LINE = (
+    "3 Wood off the tee — 410 to the green, plays like 415; carries 215, "
+    "totals 260, leaves about 150 in. Favor the right. Watch trees right at 220."
+)
+
+
+def test_compose_degraded_line_red_6_positioning_three_wood_trees_right_miss_right():
+    """Red-6 shape (live-prod smoke fixture): positioning 3-wood, trees-right
+    drive-zone carry, engine favors right. Names the club + numbers as
+    numbers (never the prompt-scaffold prose), favors right, mentions the
+    trees-right carry, never aims at an unreachable flag, never says "no
+    trouble" despite the real trees-right hazard."""
+    line = compose_degraded_line(_RED_6_REC, _RED_6_GREEN_READ, _RED_6_CARRIES)
+
+    assert line == _RED_6_EXPECTED_LINE
+    _assert_no_forbidden_substrings(line)
+    assert "3 Wood" in line
+    assert "410" in line and "150" in line
+    assert "Favor the right." in line
+    assert "trees right at 220" in line
+
+
+_AUGUSTA_12_REC = {
+    "club": "9iron",
+    "raw_yards": 155,
+    "target_yards": 160,
+    "shot_kind": "approach",
+    "miss_side": {"preferred": "short"},
+}
+_AUGUSTA_12_GREEN_READ = {"available": True, "uphill_leave_side": "left"}
+_AUGUSTA_12_CARRIES = {
+    "carries": [
+        {"type": "bunker", "side": "left", "carry_yards": 140},
+        {"type": "bunker", "side": "right", "carry_yards": 165},
+    ]
+}
+
+
+def test_compose_degraded_line_augusta_12_center_bunkers_140_and_165():
+    """Augusta-12 shape: center-straddling bunkers carrying 140 and 165.
+    Hazard clause names both bunkers with side + carry; no "no trouble"
+    despite the reachable, otherwise-clean approach."""
+    line = compose_degraded_line(_AUGUSTA_12_REC, _AUGUSTA_12_GREEN_READ, _AUGUSTA_12_CARRIES)
+
+    _assert_no_forbidden_substrings(line)
+    assert "bunker left at 140" in line
+    assert "bunker right at 165" in line
+    assert "Favor short." in line
+    assert "Green: a miss left leaves the uphill putt." in line
+
+
+_FLAT_GREEN_REC = {
+    "club": "7iron", "raw_yards": 150, "target_yards": 150,
+    "shot_kind": "approach", "miss_side": {"preferred": "center"},
+}
+_FLAT_GREEN_CARRIES = {"carries": []}
+_FLAT_GREEN_GREEN_READ = {"available": True, "uphill_leave_side": "none", "uphill_leave_depth": None}
+
+
+def test_compose_degraded_line_flat_green_omits_green_clause_and_never_says_the_none():
+    """`uphill_leave_side == "none"` with no depth (flat green) -> the green
+    clause is omitted outright, never the literal bug string 'the none'."""
+    line = compose_degraded_line(_FLAT_GREEN_REC, _FLAT_GREEN_GREEN_READ, _FLAT_GREEN_CARRIES)
+
+    _assert_no_forbidden_substrings(line)
+    assert "Green:" not in line
+    assert line == "7 Iron, 150 to the green."
+
+
+_FALLS_TOWARD_REC = {
+    "club": "8iron", "raw_yards": 140, "target_yards": 140,
+    "shot_kind": "approach", "miss_side": {"preferred": "long"},
+}
+_FALLS_TOWARD_CARRIES = {"carries": []}
+_FALLS_TOWARD_GREEN_READ = {"available": True, "uphill_leave_side": "none", "uphill_leave_depth": "short"}
+
+
+def test_compose_degraded_line_falls_toward_uses_depth_phrasing_never_the_none():
+    """`uphill_leave_side == "none"` WITH a depth (falls-toward green) -> the
+    depth-phrased green clause, still never 'the none'."""
+    line = compose_degraded_line(_FALLS_TOWARD_REC, _FALLS_TOWARD_GREEN_READ, _FALLS_TOWARD_CARRIES)
+
+    _assert_no_forbidden_substrings(line)
+    assert "Green: leave it short for the uphill putt." in line
+    assert line == "8 Iron, 140 to the green. Favor long. Green: leave it short for the uphill putt."
+
+
+_CLEAN_APPROACH_REC = {
+    "club": "6iron", "raw_yards": 170, "target_yards": 175,
+    "shot_kind": "approach", "miss_side": {"preferred": "right"},
+}
+_CLEAN_APPROACH_CARRIES = {"carries": [{"type": "water", "side": "right", "carry_yards": 165}]}
+_CLEAN_APPROACH_GREEN_READ = {"available": False}
+
+
+def test_compose_degraded_line_clean_reachable_approach_sane_numbers_and_favor_side():
+    """A clean reachable-approach turn: sane "{club}, {raw} to the green..."
+    lead with a favor-side clause, no green clause when unavailable."""
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, _CLEAN_APPROACH_CARRIES)
+
+    _assert_no_forbidden_substrings(line)
+    assert line == "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
+
+
+_COMP_LEGAL_REC = {
+    "club": "driver",
+    "raw_yards": 430,
+    "target_yards": 430,
+    "shot_kind": "positioning",
+    "leave_yards": 145,
+    "miss_side": {"preferred": "right"},
+    "tee_shot_numbers": {
+        "hole_number": 3,
+        "to_green_yards": 430,
+        "yardage_basis": "tee-card",
+        "plays_like_yards": 430,        # competition-legal: no physics -> == to_green
+        "club": "driver",
+        "club_stored_yards": 285,
+        "drive_carry_yards": None,      # competition-legal: no carry frame
+        "drive_total_yards": 285,       # == stored in competition-legal
+        "leave_exact_yards": 145,
+        "leave_yards": 145,
+    },
+}
+_COMP_LEGAL_GREEN_READ = {"available": False}
+_COMP_LEGAL_CARRIES = {"carries": []}
+
+
+def test_compose_degraded_line_competition_legal_none_carry_uses_stored_phrasing():
+    """Competition-legal tee shot (`drive_carry_yards=None`, no environmental
+    physics): the numbers phrase falls to "{stored} stored" — never a `None`
+    leak, never a fabricated carry — and omits the plays-like clause when
+    plays_like == to_green. Locks the branch the reviewer flagged as untested."""
+    line = compose_degraded_line(_COMP_LEGAL_REC, _COMP_LEGAL_GREEN_READ, _COMP_LEGAL_CARRIES)
+
+    _assert_no_forbidden_substrings(line)
+    assert "None" not in line
+    assert "plays like" not in line
+    assert line == "Driver off the tee — 430 to the green; 285 stored, leaves about 145 in. Favor the right."
+
+
 # ── Route-level tests: POST /session/strategy (Task A, QA-found gap) ───────
 #
-# `session_strategy` (app/routes/caddie.py ~lines 633-776) and its private
-# `_degraded_line()` fallback closure had zero test coverage. DB-free: `get_
-# owned_session` is monkeypatched on the route module (same idiom as tests/
+# `session_strategy` (app/routes/caddie.py ~lines 633-776) and its degraded
+# fallback (originally a private `_degraded_line()` closure, since extracted
+# to the module-level `compose_degraded_line` above) had zero test coverage.
+# DB-free: `get_owned_session` is monkeypatched on the route module (same idiom as tests/
 # test_caddie_caching.py's `_patch_session_builder_deps`/`_make_client`), the
 # `current_user_id` dependency is overridden on a throwaway `FastAPI()` app
 # (mirroring `_make_client()`), and `synthesize_strategy` is monkeypatched
@@ -673,31 +880,18 @@ class _FakeSynth:
 
 
 async def _expected_degraded_line(session: RoundSession, hole: int) -> str:
-    """Independently reconstructs the route's private `_degraded_line()`
-    closure output from the same payload the route builds (deterministic,
-    pure w.r.t. session state — `sessions.set_recommendation` is no-op'd by
-    `_no_db_persist`), so the route tests can assert exact equality rather
-    than a loose substring check."""
+    """Delegates to the real `compose_degraded_line` built from the same
+    payload the route builds (deterministic, pure w.r.t. session state —
+    `sessions.set_recommendation` is no-op'd by `_no_db_persist`) — one
+    source of truth, no hand-reconstructed duplicate to drift out of sync
+    (specs/caddie-degraded-line-reliability-plan.md Fix A), so the route
+    tests can assert exact equality against the real composer."""
     payload = await strategy_mod.build_strategy_payload(
         session, "round-1", "user-1", hole, hole_yards=466, yardage_basis="tee-card",
     )
-    rec = payload["recommendation"]
-    green_read = payload["green_read"]
-    tee_numbers = rec.get("tee_shot_numbers")
-    aim = (rec.get("aim_point") or {}).get("description") or "the center of the green"
-    miss = (rec.get("miss_side") or {}).get("preferred") or "unknown"
-    club = rec.get("club") or "unknown"
-    if tee_numbers:
-        line = (
-            f"{club}. {format_tee_numbers_line(TeeShotNumbers.model_validate(tee_numbers))} "
-            f"Aim: {aim}. Miss: {miss}."
-        )
-    else:
-        line = f"{club}. Aim: {aim}. Miss: {miss}."
-    gr_side = green_read.get("uphill_leave_side")
-    if green_read.get("available") and gr_side:
-        line += f" Green: the uphill putt leaves from the {gr_side}."
-    return line
+    return compose_degraded_line(
+        payload["recommendation"], payload["green_read"], payload["carries"],
+    )
 
 
 _CLEAN_NARRATIVE = (
@@ -732,8 +926,8 @@ async def test_session_strategy_route_happy_path_returns_validated_narrative(mon
 
 async def test_session_strategy_route_validator_reject_degrades(monkeypatch):
     """2. Side-flipped/ungrounded narrative -> validator rejects ->
-    degraded:true, strategy == the deterministic `_degraded_line()` (engine
-    numbers), never the raw model text."""
+    degraded:true, strategy == the deterministic `compose_degraded_line`
+    output (engine numbers), never the raw model text."""
     session = _strategy_route_session()
     client = _strategy_client(monkeypatch, session)
     fake = _FakeSynth(text=_SIDE_FLIPPED_NARRATIVE)

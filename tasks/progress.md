@@ -3,6 +3,238 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — 2026-07-17 — aim-point hazard-aware recommendation line (PR #147)
+Worktree agent-ace76f1f2f65f2edb, base `origin/integration/next` @ 6d65a31. Implemented
+`specs/aim-point-hazard-aware-recommendation-line-plan.md` exactly as written — pure backend
+logic, `backend/app/caddie/aim_point.py` + `backend/tests/test_aim_point.py` only.
+
+Fixes the Augusta-12 wart (owner repro, backlog id `aim-point-hazard-aware-recommendation-line`):
+on reachable (approach/tee) shots the RECOMMENDATION line said "Aim at the flag — green light, no
+trouble" even when the same hole's `hazards` list had a carry-relevant water/bunker between the
+player and the green (the hazards line two lines below named it — direct contradiction).
+`classify_pin_position` only escalates off `distance_from_green<=10`, which doesn't see
+tee-anchored `carry_yards` hazards, so `compute_aim_point` fell through to the hardcoded string.
+
+- Added `en_route_carry_hazards(hazards, hole_yards, distance_yards)` — the SAME tee-anchored
+  `carry_yards` frame `drive_zone_hazards`/`carries_payload`/`format_hazards_line` use; returns `[]`
+  (no en-route evidence, legacy behavior), `[h..]` (real en-route trouble), or `None` (hole.yards
+  unknown — honest "can't place the player on the line", never fabricates a carry).
+- Added `_governing_center_carry` (most-severe-then-deepest-carry, deterministic) + `_HAZARD_NOUNS`.
+- `compute_aim_point` gained an optional `distance_yards` kwarg (all existing direct callers pass
+  nothing → byte-identical legacy output); rewrote ONLY the `pin_light == "green"` arm to speak the
+  governing carry ("Aim at the flag — carry the water at 140") or, for lateral-only en-route
+  trouble, the hazard side + `compute_miss_side`-agreeing safe-side clause. Yellow/red strings
+  untouched. Death-side favor-clause disjointness proven in a code comment (any death hazard forces
+  `classify_pin_position` to at least "yellow", so the append never fires on the green arm this
+  plan touches).
+- `generate_recommendation`'s reachable call site now passes `distance_yards=distance_yards`; added
+  a green-pin P1 reasoning arm using the SAME two pure helpers so the aim line and the P1 line can
+  never name different hazards/numbers ("Water at 140 between you and the green — take enough club
+  to carry it").
+- Tests: `TestEnRouteCarryHazards` (5 predicate-unit cases: tee frame, approach frame, zero-carry,
+  unknown-hole-yards ×2, behind-tee clamp) + `TestHazardAwareReachableAim` (8 cases incl. the
+  Augusta-12 headline exact-string test — direct + end-to-end, asserting "water"/"140" present and
+  "no trouble"/"green light" absent, plus the P1 line; the clean-hole byte-identical green-light
+  guard; green-frame-only and past-green/passed-hazard don't-hedge guards; lateral-only +
+  live-checked miss-side agreement; unknown-frame honest; default back-compat). No existing test
+  touched or weakened.
+
+Verified strings (ran directly, pasted verbatim):
+- Augusta-12 direct + end-to-end: `"Aim at the flag — carry the water at 140"`
+- Augusta-12 P1 reasoning line: `"Water at 140 between you and the green — take enough club to carry it"`
+- Clean hole (no hazards), direct + end-to-end: `"Aim at the flag — green light, no trouble"`
+  (byte-identical to pre-change legacy output).
+
+Gates: `ruff check .` clean. Targeted suite from the plan (`test_aim_point.py`,
+`test_positioning_shot.py`, `test_decade_advice.py`, `test_miss_side_grounding.py`,
+`test_tee_shot_numbers.py`, `test_corridor_bend_cap.py`, `test_corridor_width_selection.py`,
+`test_caddie_tools.py`, `tests/eval/test_strategy_tool.py`) — 422 passed, 0 failed. No DB-backed
+tests run locally (no local Postgres per policy; CI covers those). `backlog.json` status flipped
+`open`→`done` for `aim-point-hazard-aware-recommendation-line` via targeted string edit (1-line
+diff, verified with `git diff --stat`). No frontend files touched, no Pydantic model shape change.
+
+No deviation from the plan. SILENT (pure backend logic fix, no new user-visible surface — the
+existing caddie strategy/voice/UI already speak `aim_point.description` verbatim, so the fixed
+string just starts flowing through the same pipes). Rides along on PR #147.
+
+## DONE — 2026-07-17 — strategy reasoning-effort flip + verdict negation fix + aim_point wart filed (PR #147)
+Worktree agent-a08c83f621081c418, base `origin/integration/next` @ 20ea1a8. Three items from
+tonight's on-box latency experiment (12 keyed calls, quality-gated), landed as 3 commits, pushed
+fast-forward @ 33fb82f.
+
+1. `backend/app/caddie/strategy.py::_strategy_reasoning_effort()` default `low` -> `none`. Evidence:
+   p50 2.4s vs 5.9s at effort=low; validator 6/6 PASS; Red-1 anti-left 3/3; the ONLY variant that
+   consistently named Augusta-12's center-bunker/water carries; zero reasoning tokens observed = zero
+   non-payload numbers to hallucinate; effort=none also unblocks streaming later (~0.5-1s first-delta).
+   `CADDIE_STRATEGY_REASONING_EFFORT` env override still works. Updated
+   `test_request_shape_has_no_sampling_params_and_correct_reasoning_field`'s pinned reasoning field
+   low->none; added `test_strategy_reasoning_effort_defaults_to_none` +
+   `test_strategy_reasoning_effort_env_override_still_works`. `run_strategy_latency.py`'s `--effort`
+   CLI default flipped to match (was a stale "low, the owner default" comment). Part of PR #147's
+   "caddie: reliable strategy answers" NOTICEABLE item (commit 739d013).
+2. `backend/app/caddie/verdict.py::extract_favor_side` negation blindness — "never miss left" /
+   "don't miss left" previously matched `_MISS_PATTERNS`' bare `miss (left|right)` substring and read
+   as a LEFT-miss claim, so a correctly-worded anti-left prior note got DROPPED as conflicting at the
+   read-time verdict gate. Added `_NEGATED_MISS_PATTERNS` (negation cue + miss|bail X), scanned before
+   the un-negated direct patterns and flipped to the OPPOSITE lateral (mirrors the module's existing
+   `_OPPOSITION_PATTERNS` convention); tracks matched spans so a negated phrase isn't double-counted as
+   its own conflicting direct claim. "miss left is fine" (no negation cue) still claims left. Full
+   existing corpus (`test_extract_favor_side_left_right_none_conflict` + guide-agreement tests) stays
+   green; 4 new parametrize rows added. SILENT (commit 5c59e0f).
+3. Filed `aim-point-hazard-aware-recommendation-line` to backlog.json (targeted string edit, validated
+   with `json.load` before commit, item count 110->111): `aim_point.compute_aim_point`'s RECOMMENDATION
+   line says "Aim at the flag — green light, no trouble" on hazard-rich reachable holes (Augusta 12:
+   water C ~140, bunkers C/L ~148-165) — `classify_pin_position` only escalates off
+   `penalty_severity`+`distance_from_green<=10`, which tee-shot-carry-yards hazards don't populate the
+   same way. Same flag-only class as `[[caddie-shot-context-reachability]]`'s incident, but the
+   REACHABLE branch, not the positioning branch that fix already covers. Filed, not fixed — out of
+   scope for this pass. SILENT (commit 33fb82f).
+
+Gates: `ruff check .` clean; full offline `backend/tests/` suite 2859 passed, 133 skipped (DB-gated,
+expected — no local Postgres per policy); targeted strategy/verdict/eval suites re-run individually
+(373 passed) before the full sweep. No frontend files touched. Rebased on `origin/integration/next`
+@ 20ea1a8 (no drift — pushed as a clean fast-forward). Not shipped/pinged — rides along on PR #147
+(owner already knows the bundle is ready; two items above ride the existing "reliable strategy
+answers" NOTICEABLE line, the negation fix and backlog filing are silent).
+
+## DONE — 2026-07-17 — eval-multiturn-conversation-router (SILENT test rider, PR #147)
+Worktree agent-afcbd1f423e532a67, base `origin/integration/next` @ 2ccad08 (plan commit). Implemented
+`specs/eval-multiturn-conversation-router-plan.md` exactly as written — offline conversation-runner for
+the two-tier intent router, `backend/tests/eval/` only, zero product/runtime code changed.
+New files: `conversation_runner.py` (sequence executor: `ConversationTurn`/`TurnExpect`/
+`ConversationScenario`/`TurnRecord`/`ConversationResult` dataclasses, stub/spy installers —
+`_ScriptedSynth`, `_FakeCaddieTurn`, `_Ledger`/`_LedgerNoHistoryFeed`, `_HoleTracker`,
+`_ResolveToolSpy`, `_ClassifyIntentSpy`, `_RunStrategyTurnSpy` — `run_conversation()`, and 4 pure
+sequence-check functions: `check_turn_expectations`/`check_no_dupes`/`check_club_consistency`/
+`check_history_renders_in_order`), `conversations.py` (10 python-defined scenarios + hole 5/7/9/12
+session fixtures — hole 9 added beyond the plan's named trio for `fact-then-advice-hole-pin`'s own
+target hole; hole 12 tuned to 300y so the engine calls 3-wood there vs driver on hole 5, making the
+hole-swap club-distinctness check non-vacuous), `test_conversation_router.py` (21 tests: the
+parametrized P1+P2 sweep over all 10 scenarios + 10 scenario-specific P3/P4/P5/P6 assertions),
+`test_conversation_teeth.py` (M1-M7, all 7 mutants proven red), README.md section + mutation-drill
+step 5-7 (manually ran + reverted — real IndexError red captured, see PR).
+Real bug found (plan §9, NOTED not fixed): `SessionVoiceRequest.hole_number: int = 1` is a TRUTHY
+default, so the ADVICE answer-time `request.hole_number or session.current_hole` fallback is DEAD from
+any real default-sending client (only reachable if a caller explicitly sends `0`). `fact-then-advice-
+hole-pin` scenario exercises the fallback correctly (it deliberately sends `hole_number=0`) — no test
+was weakened. Filed for backlog, not fixed in this PR (bigger than a regex-row fix per §9's own bar).
+One judgment call vs. the plan's literal wording: `check_no_dupes`'s "adjacent distinct-transcript
+turns must have different replies" rule needed 2 explicit, narrow sanctions beyond the plan's named S4
+case — a real P3 cache-hit on a genuinely different question (`followup-club-advice-same-hole`) and two
+SCORE turns sharing the constant handoff line (`score-multi-player-then-fact`) — both gated on an
+explicit per-turn expectation field, never an unexplained pass; noted here for the reviewer.
+Gates: `ruff check .` clean repo-wide; `tests/eval` = 205 passed (176 pre-existing + 29 new: 21 router +
+8 teeth); full offline sweep = 2853 passed, 133 skipped (pre-existing Postgres-gated integration tests,
+skipped not failed — no local Postgres per policy, CI backend gate covers them).
+NOT shipped/pinged — silent rider, rides PR #147 with no owner action needed.
+
+## 2026-07-17 red9-waste-complex-hole-assignment — RESOLVED as NOT-A-BUG (premise falsified); worktree agent-a6eab552a7402ecdc, base @608ceb0
+Diagnosed OSM relation 19545022 (claimed "Red-9 waste complex mis-assigned to hole 11"). GEOMETRIC
+TRUTH (3 independent evidence lines): the relation is a ~20x19 m greenside bunker (1 outer ring + 5 m
+island), OSM **version 1, created 2025-08-31, never edited** — never a large complex. Centroid
+(-73.45612, 40.75158) is **14 m from hole 11's centerline, 256 m from hole 9's**. No centerline passes
+through it (Tier-1 overlap = 0) → Tier-2 vote → nearest hole 11. Evidence: (1) authoritative Overpass
+fetch; (2) offline reproduction — backend/scripts/diag_red9_waste.py + diag_red_bunkers.py (live
+Overpass, no DB): hole 9 ALREADY carries its own 7-bunker cluster (ways 1240889735/736/737/738/749/
+750/751), surfaced by the v1.1.9 BUNKER_CAP 4→6 raise, NOT this relation; (3) read-only prod SSM probe
+(i-0826ae70df62d9fe8; DATABASE_URL read from the running process environ, never echoed; /tmp probe
+removed): prod stores relation/19545022 under Bethpage Red **hole 11** (correct); hole 9 has its 7
+bunkers. Origin of the misbelief: red9-relation-bunker-assembly's why-note ASSUMED it "lands on hole 9";
+bundle #143's ship note already (correctly) called it "the hole-11 waste-complex relation". BEFORE ==
+AFTER: no code change to the heuristic (correct), no prod write (forcing it onto hole 9 would strip
+hole 11 of a real hazard + plant a phantom 256 m away on hole 9). LANDED on integration/next (bundle
+#147, SILENT): real-geometry regression pin TestRed9WasteComplexRealGeometry (3 tests) locking the true
+hole-11 assignment + a clarifying note on the pre-existing synthetic TestMultiPolygonBunkerAssignment +
+the 2 diag scripts. Gates: test_course_spatial 116/116, ruff clean.
+
+### reviewer verdict: AGREE — no bug (RESOLVED)
+Fresh-eyes reviewer independently reproduced every number against live Overpass (centroid 14.0 m to
+hole 11 vs 256.5 m to hole 9; Tier-1 overlap 0.0 for all 18 holes -> Tier-2 vote -> hole 11 @6.73 m;
+hole 9 has its own 7 bunkers; collection lands it on hole 11). All adversarial falsification attempts
+failed (no large hole-9 sand feature being dropped; forcing it onto hole 9 would be wrong). Test sound,
+116/116. Fixed the one non-blocking nit the reviewer flagged (diag_red9_waste.py final loop iterated
+hd["features"] instead of hd["features"]["features"]). Backlog reviewer field = AGREE. PR #147 checklist
+updated with the SILENT investigation line. Landed on integration/next; NO code change to the heuristic,
+NO prod write. Cycle complete.
+
+## 2026-07-17 DONE (landed integration/next @f050960, NOTICEABLE rider — owner-directed urgent cluster) — caddie-degraded-line-reliability, worktree agent-aaedc898cc8dd4962, base @b755be2
+Implemented specs/caddie-degraded-line-reliability-plan.md faithfully (no re-plan). Three fixes:
+**Fix A** (backend/app/caddie/strategy_turn.py) — extracted `compose_degraded_line(rec, green_read,
+carries)` as a module-level pure function, replacing the closure `_degraded_line()`. Composed PURELY
+from engine fields (zero reuse of `format_tee_numbers_line`'s prompt-scaffold string —
+"AUTHORITATIVE — they close" / "Speak ONLY these numbers" — and zero reuse of `*.description` prose,
+whose "no trouble" default both lied about real hazards and aimed an unreachable flag on a positioning
+shot); fixed the "the none" bug (`uphill_leave_side == "none"` STRING was truthy under the old guard).
+Every clause omitted (never a placeholder) when its source is empty/None/"none". **Fix B**
+(backend/app/caddie/strategy.py) — `_STRATEGY_TIMEOUT_S` 10.0 -> 18.0 (the reliability lever; a slow
+real answer beats a broken fallback under the voice's thinking-bridge); `_STRATEGY_MAX_OUTPUT_TOKENS`
+left at 1024 per the plan's reasoning (a cap, not a latency knob, on a reasoning model — lowering it
+would only risk more `incomplete` degrades). No retry added (Fix C: 18s x2 would blow the ~20s
+worst-case-with-bridge budget). **Client-budget alignment** (frontend/src/lib/caddie/api.ts) —
+`SESSION_VOICE_TIMEOUT_MS` 8_000 -> 20_000 so `/session/voice`'s ADVICE branch (runs
+`run_strategy_turn` inline) doesn't abort to the stateless fallback before the 18s backend synth
+returns. Tests: 5 new direct `compose_degraded_line` fixtures in
+backend/tests/eval/test_strategy_tool.py (Red-6 positioning-3-wood/trees-right/miss-right w/
+exact-equality pin, Augusta-12 center-bunkers 140/165, flat-green, falls-toward, clean
+reachable-approach) asserting the 7 forbidden substrings never appear; `_expected_degraded_line`
+rewired to delegate to the real composer (one source of truth). Gates: `ruff check .` clean;
+`test_strategy_tool.py` 52/52 (was 47, +5); `test_text_advice_interception.py` +
+`test_caddie_caching.py` 17/17; frontend `npm run lint` clean (1 pre-existing unrelated warning),
+`tsc --noEmit` clean, voice-tests smoke 278/278. Pushed to integration/next @f050960. NOTICEABLE
+(caddie advice reliability + fallback quality on TestFlight) — owner said he'd handle the ship ask
+per the plan header; not pinged this cycle.
+
+## 2026-07-17 DONE (landed integration/next, SILENT rider on bundle PR) — ingest-overpass-error-honesty, worktree agent-ab5e93ee9bc510a64, base @72086e7
+Eng-lead's bounded contract decision, implemented as specced: `fetch_golf_course_boundaries`
+(backend/app/services/osm.py) previously swallowed Overpass 429/504/timeout into `[]`, same as
+a genuine "no boundary matched" — misleading the ingest under throttling. Fix: added
+`OverpassThrottledError`; `_post_with_retry` gained an opt-in `raise_on_failure=True` param
+(default False — all 4 other callers unchanged) that raises instead of returning `None` when a
+transient failure (429/5xx/timeout) exhausts the retry budget. Only `fetch_golf_course_boundaries`
+opts in; a non-transient 4xx (e.g. 400/406) still returns `None` -> `[]` (a query-shape bug, not
+throttling — out of scope). Call site: `scripts/ingest_osm_course.py`'s `--boundary-name` path (the
+only real caller — no in-process multi-course driver exists, each course ingests via its own
+process invocation) now try/excepts `OverpassThrottledError` and exits 1 with an explicit
+"retryable, not a genuine no-boundary-matched" message instead of an unhandled traceback.
+Renamed `test_overpass_failure_returns_empty_list` -> 4 tests (504 / 429 / timeout all raise;
+true empty 200 still returns `[]`) — sanctioned contract change, not a weakened assertion. Gates:
+`ruff check .` clean; 45/45 targeted (test_osm_boundary_selection.py) + 73/73
+(test_osm_fetch_hardening.py + test_osm_distance_sort.py + test_ingest_osm_course.py) + full
+offline `tests/` suite 2814/2814 passed. SILENT (backend-only, no user-facing surface). Backlog
+item flipped to `done` (targeted edit, JSON validated). Landed @<see git log>, pushed to
+integration/next, checked on bundle PR #147.
+
+## 2026-07-17 DONE (landed integration/next @f6f559b, re-seeded prod, PR opened) — course-intel seed rejection fix (Bethpage Red + Pebble Beach) — worktree agent-a86892fa81d2f87ee, base @36afad2
+VERDICTS: reviewer SHIP (all four anti-fabrication gates confirmed byte-identical & fail-closed; leak
+scan still covers full landscape; regression tests non-vacuous). qa PASS (ruff clean; 31/31 course-intel
+matrix; 147/147 offline sweep). RE-SEED on prod through the FIXED validator (key-free SSM, cost-logged,
+owner pre-approved 3-course-seed remainder ~$0.07): Bethpage Red (269e1f2e) landscape 800 -> PASS
+enriched [architect], stored text_len 919; Pebble Beach Golf Links (f8d6b570) landscape 804 -> PASS
+enriched [architect,year_built,style_notes,notable_history], stored text_len 1247; both readbacks
+provenance=enriched, model=claude-sonnet-5. All 3 seed courses now render live prose on the owner's home
+courses. NOTICEABLE (both descriptions go live). Bundle PR opened integration/next -> main. NOT
+shipped/pinged this cycle (per brief). Diagnosis detail below.
+
+DIAGNOSIS (on-box SSM diagnostic, key-free, ~$0.09 of writer calls on the pre-approved seed budget).
+Regenerated the writer+validator run for the EXACT rejected rows:
+- Bethpage Red id=269e1f2e-65cc-5cf6-a9b0-f5908e298155 (18 holes, par 70)
+- Pebble Beach Golf Links id=f8d6b570-f54e-56d8-890c-000e85a42c95 (18 holes, par 72)
+ROOT CAUSE = (b) over-strict validator length gate, for BOTH. `_MAX_LANDSCAPE_CHARS=700` in
+course_intel_writer.py reject-ALL'd the writer's own instructed "3-5 sentence Augusta-register"
+landscape whenever it runs >700 chars: Pebble landscape=727 -> REJECT rule2; Red ship-time run=794
+-> REJECT (a fresh run measured 585 and PASSED — Red lives on the knife-edge). Bethpage Black passed
+only by luck of fitting under 700. NOT (a) fabrication, NOT (c) data gap: the rejected prose is clean,
+geometry-grounded, on-register; the anti-fabrication gates all worked (par restatements matched 70/72;
+Pebble's U.S.-Open facts stayed OUT of landscape, correctly routed to history_sentence at high conf).
+FIX (precision only, no fabrication loosening): raised `_MAX_LANDSCAPE_CHARS` 700->950 and
+`_MAX_COMPOSED_CHARS` 1200->1600 in course_intel_writer.py; added pass-on-good regression tests
+pinning the two exact rejected drafts (Pebble 727-char landscape + 4 high-conf facts -> PASS enriched;
+Red 794-char landscape -> PASS landscape) and updated the old 701/1201-boundary reject tests to the
+new thresholds. Injection/fact-leak/confidence/par-claim gates UNTOUCHED. Gates local: ruff clean;
+test_course_intel_writer 21/21, test_course_intel_service 10/10, guide_writer siblings green (147 total
+offline). DB-route integration test runs in CI.
+
+
 ## 2026-07-17 BUILDER FIXUP DONE — caddie two-tier advice routing, reviewer fixup batch on worktree agent-a84640c5c3166ffd8, 4 commits, all gates green
 Review verdict on @7d2f94d: 2 BLOCKING (false-positive validator regexes) + 3 fold-ins. Fixed all,
 same worktree/lane (HEAD was rebased to 3da4441 by eng-lead first):
@@ -19446,3 +19678,175 @@ parallel lane; expect CI to run on the actual merged head). backlog.json: flippe
 `landed` fields carrying the fix + test evidence (targeted string edits, `python3 -c "import json; json.load(...)"`
 validated before AND after). Both SILENT riders (backend-only bug fixes in an ingest pipeline no live user hits;
 nothing user-visible on TestFlight) — no ship ping, no release; ride bundle #146 for the owner's next approval.
+## SHIPPED 2026-07-17: Bundle #146 (v1.1.13, build 202607171810) — caddie omnipotent intent router + course discovery intel + draggable yardage-book aim target
+Owner approved in-session, verbatim "Ship it", bound to pinned head f7640c7 (unmoved through every gate
+and through merge — verified via `gh pr view 146 --json headRefOid` immediately before merge). Sequence:
+1. Gates on f7640c7: Backend/Frontend/E2E all SUCCESS (E2E was IN_PROGRESS at approval time, polled to
+   SUCCESS). 2. VERSION bumped 1.1.12->1.1.13 in worktree `.claude/worktrees/ship-146`, pushed as 6261afc;
+   gates re-verified green (Frontend/Backend/E2E all SUCCESS) on the bump head. 3. Merged PR #146 -> main
+   at 97a0e0312e0806f6ec92efaba08a4fefc92e10d5 (`gh pr merge --merge`). 4. Post-merge main CI green;
+   backend deploy (SSM, auto-triggered) SUCCESS. Confirms (all key-free, via SSM Run-Command on-box):
+   `/health` {"status":"ok"}; `alembic current` = 015_course_intel (head); `courses.course_intel` jsonb
+   column present (information_schema check); APP_ACCESS_MODE unset (dark); zero TWILIO_* keys (caller
+   inert); CADDIE_STRATEGY_MODEL unset -> resolves to default gpt-5.6-sol.
+5. OWNER-APPROVED course-intel seed backfill ("Approve migration + seed") run on-box: looked up the 3
+   real mapped-course UUIDs (Bethpage Black 2b8caab5, Bethpage Red 269e1f2e, Pebble Beach Golf Links
+   f8d6b570 — disambiguated from 6 name-matching rows by holes-count=18, since several are unmapped
+   POI stubs) via read-only SQL, then ran `run_course_intel_backfill()` with
+   COURSE_INTEL_BACKFILL_COURSES/MAX_COURSES=3. Result: Bethpage Black SUCCESS (provenance "enriched",
+   model claude-sonnet-5, real grounded landscape+facts prose); Bethpage Red + Pebble Beach Golf Links
+   honest-empty (fail-closed validator REJECTED both, attempted_at marker set/negative-cached) — by
+   design, not forced, not retried further this cycle (same discipline as the guide-writer negative-cache
+   pattern; [[no-fake-data-fallbacks]]).
+6. TestFlight: built from a fresh worktree at the merge SHA (`.claude/worktrees/ship-146-main`, `npm ci`
+   first, never touched primary checkout) via `ops/ios/ship.sh` — uploaded v1.1.13 build 202607171810 on
+   first try (no exit-70/SPM cache retry needed). Confirmed build number sorts above the prior latest
+   upload (202607171440, the v1.1.12/#144 era) before building. Polled the App Store Connect API (JWT
+   ES256, key QG927KHTXR, app_id 6784470752) for processing state — see follow-up line below for result.
+7. Notion board card 'Bundle #146' created (no prior card existed) -> Shipped, content posted with
+   headline items + post-deploy confirms + backfill results + how-to-test + TestFlight build number.
+8. Records: backlog.json top-level note prepended (targeted string edit, JSON validated after); this
+   progress.md entry. Individual item statuses left as `done-on-bundle` per the established pattern (the
+   note is the terminal event; items archive on the next grooming pass).
+Headline (NOTICEABLE): caddie omnipotent intent router (structural advice/fact/score routing, kills the
+10th-recurrence wrong-side-advice bug) + course discovery (Augusta-styled descriptions + real stars/stats
++ map slide-up detail card) + draggable aim target on the yardage-book hole illustration (book surface
+completes the map surface from #143). Data (already live): 9 championship courses incl. Augusta w/ 16
+guides. Silent: ingest-code fixes (composite hole-ref parsing, duplicate-hole-ref dedupe) + records.
+Worktrees used: `.claude/worktrees/ship-146` (VERSION bump branch, merged) and
+`.claude/worktrees/ship-146-main` (TestFlight build source) — both cleaned up after this ship.
+Fresh integration/next cut from the merge SHA, pushed, next.
+
+## AWAITING — 2026-07-17 — caddie degraded-line reliability (pre-round fix cluster, NOTICEABLE)
+Owner-directed urgent cluster from tonight's live prod smoke of v1.1.13 (Bethpage Red this weekend).
+Plan: specs/caddie-degraded-line-reliability-plan.md (my investigation is the builder's contract).
+Base: origin/integration/next @ 04f1c6e. Target: land on integration/next, PR #147 checklist item
+"caddie: reliable strategy answers + clean fallback". DO NOT ship/ping (owner handles the ship ask).
+
+Scope (3 files):
+  A. backend/app/caddie/strategy_turn.py — extract `compose_degraded_line(rec, green_read, carries)`
+     module-level, composed PURELY from engine FIELDS (no format_tee_numbers_line, no *.description
+     prose). Kills: prompt-scaffold leak (AUTHORITATIVE/Speak ONLY), "the none" (uphill_leave_side
+     string "none"), and "at the flag/no trouble" unreachable-aim on positioning shots. + test battery
+     in backend/tests/eval/test_strategy_tool.py w/ Red-6 + Augusta-12 fixtures; rewire _expected_
+     degraded_line to delegate to the composer.
+  B. backend/app/caddie/strategy.py — _STRATEGY_TIMEOUT_S 10.0 -> 18.0. Keep max_output_tokens=1024
+     (cap != latency lever; lowering risks incomplete-degrades). Keep effort "low", validator as-is.
+  C. retry: SKIP (18s + retry = 36s worst case > 20s budget).
+  Client-budget alignment (VERIFIED): text-mouth /session/voice ADVICE runs run_strategy_turn inline
+  (caddie.py:1009) but frontend guards it at SESSION_VOICE_TIMEOUT_MS=8000 (caddie/api.ts:651) < 18s ->
+  raise to 20000. Realtime orb path (getStrategy->fetchAPI native fetch, no app timeout) already aligned.
+
+AWAITING: builder on the plan. Outcomes:
+  - builder pushes clean -> dispatch reviewer (degraded-line composition + timeout + client-budget) + qa gates.
+  - On resume, reconcile from origin/integration/next log; do NOT re-dispatch a finished builder.
+Then: bounded LIVE on-box re-smoke via materialize/shim (~4 keyed calls: Red 1 fresh, Red 6, Augusta 12,
+one repeat) reporting completion rate + wall times + verbatim degraded line. Update PR #147 checklist.
+
+## DONE — 2026-07-17 — caddie degraded-line reliability cluster GREEN (resolves the AWAITING above)
+Landed on integration/next: f050960 (builder) + 8ea2058 (reviewer fold-in test). PR #147 checklist
+updated (NOTICEABLE: "caddie: reliable strategy answers + clean fallback").
+- Fix A: compose_degraded_line(rec, green_read, carries) — module-level, pure, engine-fields-only.
+  Kills the 3 spoken bugs (prompt-scaffold leak, "the none", "at the flag/no trouble" on positioning).
+- Fix B: _STRATEGY_TIMEOUT_S 10.0->18.0; max_output_tokens kept 1024 (cap, not latency lever); effort
+  left "low". Client alignment: SESSION_VOICE_TIMEOUT_MS 8000->20000 (text-mouth ADVICE runs synth
+  inline, caddie.py:1009); realtime orb path native-fetch unbounded, already >=18s.
+- Fix C: retry SKIPPED (18s + retry > 20s bridge budget).
+Reviewer: SHIP (evidence-pure composer; 18s safe end-to-end — nginx proxy_read_timeout 60s, no ALB
+idle timeout, no wait_for wrapper; both client paths >=18s). Nit folded: competition-legal None-carry
+"stored" phrasing test.
+Gates: ruff clean, strategy suite 53/53, lint+tsc clean, voice-tests 278/278 (builder), DB tests in CI.
+LIVE on-box re-smoke of the FIXED code (SSM i-0826ae70df62d9fe8, DB-free overlay shim, real gpt-5.6-sol,
+temp dir cleaned): 4/4 COMPLETE — Red-1 10.4s, Red-6 8.6s, Augusta-12 9.9s, Red-1 repeat 12.6s (all
+< 18s; the two >10s would have degraded under the old 10s cap). Verbatim degraded line rendered clean
+on-box: "3 Wood off the tee — 410 to the green, plays like 415; carries 215, totals 260, leaves about
+150 in. Favor the right. Watch trees right at 220." (degraded_line_clean=OK).
+NOT shipped/pinged — owner handles the ship ask (his round is this weekend). Bundle PR #147 now has 2
+noticeable items, gates green, ready when the owner says "ship it".
+
+## DONE — 2026-07-17 — eval-hazards-match-split-line (SILENT test-harness fix, PR #147 rider)
+backlog `eval-hazards-match-split-line`: `tests/eval/checks.py::context_hazards_match`'s finditer-based
+matcher only ever found the FIRST run of a gap-split trees hazard line (e.g. `trees L 30-65y and
+265-480y`) because the run-list's 2nd+ runs have no repeated `type SIDE` prefix for `finditer` to key
+on — an expected carry covered only by a later run false-failed. Rewrote to locate the `type SIDE`
+prefix ONCE (a regex that captures the WHOLE `" and "`-joined run-list span), then scan EVERY
+`lo[-hi]y` run inside that span for the expected carry ±15y. New test
+`test_context_hazards_match_covers_every_run_of_a_split_trees_line` (tests/eval/test_harness_has_teeth.py)
+uses the REAL Bethpage RED-1 pre-suppression split line (`trees R 5-85y and 385-475y, trees L 30-65y
+and 265-480y`, geodesic-verified in specs/caddie-tree-span-gap-plan.md §1d "After (§1 only)" row) —
+proved red against the old matcher via `git stash` before landing the fix, green after. TEST-HARNESS
+ONLY, zero production/runtime code touched (no production impact). Gates: `ruff check .` clean;
+`tests/eval` + `test_tree_span_gap.py` + `test_hazards.py` + `test_tree_hazards.py` = 304 passed.
+Landed on `integration/next` @ 7c9e870 (base `origin/integration/next` @ 8de71ed, fast-forward push).
+backlog.json item flipped to `done-on-bundle` (targeted string edit, JSON validated with `json.load`
+— never a full load/dump per the duplicate-keys lesson). Silent rider — no ping, no ship-ask needed.
+
+## DONE — 2026-07-17 — caddie-hole-number-truthy-default-fallback-dead (SILENT fix, PR #147 rider)
+Worktree agent-a5e8c97fb212ecad2, base `origin/integration/next` @e5aa0ca. Fixed the wart the
+eval-multiturn-conversation-router lane filed: `SessionVoiceRequest.hole_number: int = 1`
+(backend/app/routes/caddie.py) was a TRUTHY default, so the answer-time `request.hole_number or
+session.current_hole` fallback could never fire for a client that omitted the field. FIX:
+`Optional[int] = None`. AUDIT of every request.hole_number read in the touched routes found a
+worse latent bug than the dead fallback itself: `_build_session_voice_prompt` wrote raw
+request.hole_number straight into `session.current_hole` and the DB via `set_current_hole` — an
+omitted field would have NULLED OUT the round's live current_hole. Fixed by resolving `hole` ONCE
+right after `get_owned_session` and using it everywhere in that function (set_current_hole,
+session.current_hole, hole_intel lookup, yardage-line labeling). Also fixed: session_voice's SCORE
+branch never resolved a hole at all (now mirrors ADVICE); several message-ledger persistence call
+sites used raw possibly-None request.hole_number instead of the turn's resolved hole. ToolContext.
+default_hole (already Optional[int]=None) and tools.py's `... or ctx.default_hole` chain were
+already None-safe, left unchanged. CLIENT CONTRACT VERIFIED: frontend/src/lib/caddie/api.ts
+sessionVoice/sessionVoiceStream both type hole_number as required `number` — no client omits it
+today, so zero current user-visible behavior change (latent-bug fix, not a live regression fix).
+EVAL STRENGTHENED per the backlog item's "do not weaken that scenario" instruction — ADDED a turn,
+left the existing hole_number=0 turn untouched: `ConversationTurn.hole_number` is now
+`Optional[int]` and the runner genuinely omits the JSON key when None (previously always sent an
+int, so the true client-omission path was never actually exercised even by the "falsy 0" turn);
+`fact-then-advice-hole-pin` scenario gained a 3rd turn with `hole_number=None` asserting it
+resolves to the same pinned hole (9) with a byte-identical cache-hit reply. Rewrote the stale
+docstring NOTE in test_conversation_router.py that said the fallback was dead in production.
+Gates: ruff clean; tests/eval/test_conversation_router.py 21/21 (was 20); test_conversation_teeth.py
+8/8; targeted session-voice/caddie-prompt test files 109/109; full offline sweep 2853 passed / 133
+pre-existing DB-gated skips / 0 failed (unchanged baseline). No DB-backed tests run locally (policy)
+— CI backend gate covers those. Landed on `integration/next` @21a1364 (fix) + f654421 (backlog
+flip), base `origin/integration/next` @e5aa0ca, fast-forward push, PR #147. Silent rider — no ping,
+no ship-ask needed.
+
+## AWAITING (2026-07-17 cycle — aim-point-hazard-aware-recommendation-line, #147)
+Item: aim-point-hazard-aware-recommendation-line (backlog `open`, p2). NOTICEABLE lean (owner
+heard the "no trouble" wart on Augusta 12 during the strategy-latency A/B). Base
+origin/integration/next @d0edeb8. Bug: `compute_aim_point`/`classify_pin_position`
+(backend/app/caddie/aim_point.py) on the REACHABLE branch escalate the pin light ONLY off
+`penalty_severity in (severe,death)` AND `distance_from_green<=10`, so tee/approach carry hazards
+(the `carry_yards`-from-tee frame the hazards_line/carries actually use) never escalate → the line
+free-lances "Aim at the flag — green light, no trouble" contradicting the hole's own hazard list.
+Fix (root, general, reuse existing hazard structures, NO new geometry): make the reachable aim line
+hazard-EVIDENCE-aware for carry-relevant hazards between player and target; never claim "no
+trouble"/"green light" when they exist; state the governing carry or safe miss-side per per-side
+evidence; stay consistent with miss_side; keep genuine green-light for truly clean holes.
+Status: dispatched Plan (fable) → specs/<id>-plan.md. On resume, reconcile from branch:
+`git log origin/integration/next`; if plan committed, dispatch builder on the plan; then
+reviewer + qa. NEVER ship/ping this pass (task directive). Never touch main; never force-push.
+
+## AWAITING (2026-07-17 — aim-point hazard-aware, review stage, #147)
+Builder landed @5089acc on integration/next (aim_point.py green-arm hazard-aware + tests; backlog
+flipped to done; Augusta-12 line "Aim at the flag — carry the water at 140"; clean-hole byte-
+identical; builder-local gates ruff clean + 422 pytest pass). Reviewer + QA dispatched (both read-
+only). On resume, reconcile from branch, do NOT re-run finished children. Outcomes:
+- reviewer SHIP + qa PASS → update PR #147 checklist (add this NOTICEABLE item) + progress; STOP
+  (task directive: do NOT ship/ping this pass — the bundle already has noticeable items; owner ask
+  is deferred).
+- reviewer BLOCKING or qa FAIL (real, not DB/container-env) → re-dispatch builder with the specific
+  issue, then re-review. Never touch main; never force-push.
+
+## DONE this cycle (2026-07-17) — aim-point-hazard-aware-recommendation-line (#147, NOTICEABLE)
+Landed @5089acc on integration/next. Plan (fable) → builder → reviewer SHIP (all 7 falsification
+targets hold: number-binding to payload carry_yards only, clean-hole don't-hedge byte-identical,
+miss-side agreement by construction, en-route boundaries hand-verified incl. carry==tee_offset /
+carry==hole.yards, death-clause disjointness, back-compat, teeth) + qa PASS (ruff clean, 422
+targeted, full offline sweep 2874 passed / 133 DB-skipped / 0 fail; Augusta-12 line "Aim at the
+flag — carry the water at 140" + clean-hole "green light, no trouble" reproduced live). Backlog
+flipped open→done. PR #147 checklist + Noticeable summary updated. This is the LAST flag-only
+remnant of the [[caddie-shot-context-reachability]] family. Per this pass's directive: NOT
+shipped/pinged — the noticeable bundle keeps accumulating; owner approval-ask is deferred to a
+later cycle's release-manager hand-off. Supersedes the two AWAITING blocks above.

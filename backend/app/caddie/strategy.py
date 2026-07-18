@@ -79,8 +79,14 @@ def _strategy_model() -> str:
 
 
 def _strategy_reasoning_effort() -> str:
-    # 'low' for the ~2s speakable budget; 'none' is a faster A/B (plan §5).
-    return os.getenv("CADDIE_STRATEGY_REASONING_EFFORT", "low")
+    # Default 'none' (2026-07-17 on-box A/B, 12 keyed calls, quality-gated):
+    # p50 2.4s vs 5.9s at effort=low; validator 6/6 PASS; Red-1 anti-left 3/3;
+    # the ONLY variant that consistently named Augusta-12's center-bunker/
+    # water carries; zero reasoning tokens observed = zero non-payload
+    # numbers to hallucinate. Also unblocks streaming later — effort=none's
+    # first-delta lands ~0.5-1s, which 'low' or higher can't match (plan §5).
+    # CADDIE_STRATEGY_REASONING_EFFORT still overrides for a future A/B.
+    return os.getenv("CADDIE_STRATEGY_REASONING_EFFORT", "none")
 
 
 # 1024 comfortably covers low-effort reasoning + a ~110-token (~80-word)
@@ -88,8 +94,15 @@ def _strategy_reasoning_effort() -> str:
 # output tokens TOGETHER on a reasoning model.
 _STRATEGY_MAX_OUTPUT_TOKENS = 1024
 # This call sits inside a live voice turn — one attempt, then degrade. No
-# retry loop (would blow the orb's speakable-latency budget).
-_STRATEGY_TIMEOUT_S = 10.0
+# retry loop (an 18s timeout + one retry = up to 36s worst case, which blows
+# the ~20s worst-case-with-bridge budget the owner set — specs/caddie-
+# degraded-line-reliability-plan.md Fix C). Raised 10.0 -> 18.0 (Fix B,
+# 2026-07-17 pre-round reliability cluster): the primary lever for reducing
+# degrades — the voice has the thinking-bridge, so a slow real answer beats a
+# broken fallback. Both client callers' budgets were raised to stay >= this
+# (caddie/api.ts SESSION_VOICE_TIMEOUT_MS; the realtime orb's native fetch is
+# already unbounded).
+_STRATEGY_TIMEOUT_S = 18.0
 
 
 # ── Payload assembly (single source of truth — the SAME *_payload helpers

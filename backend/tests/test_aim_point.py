@@ -4,6 +4,7 @@ from app.caddie.aim_point import (
     classify_pin_position,
     compute_aim_point,
     compute_miss_side,
+    en_route_carry_hazards,
     generate_recommendation,
 )
 from app.caddie.types import (
@@ -39,6 +40,20 @@ def _water(side: str, severity: str = "severe", distance: float = 5.0) -> Hazard
 
 def _bunker(side: str, severity: str = "moderate", distance: float = 5.0) -> Hazard:
     return Hazard(type="bunker", side=side, penalty_severity=severity, distance_from_green=distance)
+
+
+def _carry_hazard(type_: str, line_side: str, carry: int, severity: str = "moderate", distance: float = 15.0) -> Hazard:
+    return Hazard(type=type_, side="front" if line_side == "center" else line_side,
+                  line_side=line_side, carry_yards=carry,
+                  penalty_severity=severity, distance_from_green=distance)
+
+
+def _augusta12_hole() -> HoleIntelligence:
+    return _make_hole(par=3, yards=155, hazards=[
+        _carry_hazard("water",  "center", 140, severity="severe",   distance=15.0),
+        _carry_hazard("bunker", "center", 148, severity="moderate", distance=7.0),
+        _carry_hazard("bunker", "left",   165, severity="moderate", distance=10.0),
+    ])
 
 
 def _player_stats(miss_dir: str = "balanced", rounds: int = 0) -> PlayerStatistics:
@@ -301,3 +316,136 @@ class TestGenerateRecommendation:
         # Player history with ≥3 rounds should appear in reasoning
         history_lines = [r for r in rec.reasoning if "history" in r.lower() or "rounds" in r.lower()]
         assert len(history_lines) >= 1
+
+
+# ── en_route_carry_hazards ──────────────────────────────────────────────────
+
+class TestEnRouteCarryHazards:
+    """Predicate units — tee-anchored `carry_yards` frame, hazards.py-aligned."""
+
+    def test_tee_frame(self):
+        # Tee shot on a 155y hole, dist 155: water 140 + bunker 148 in, bunker 165 out.
+        hazards = [
+            _carry_hazard("water", "center", 140, severity="severe"),
+            _carry_hazard("bunker", "center", 148, severity="moderate"),
+            _carry_hazard("bunker", "left", 165, severity="moderate"),
+        ]
+        result = en_route_carry_hazards(hazards, hole_yards=155, distance_yards=155)
+        carries = sorted(h.carry_yards for h in result)
+        assert carries == [140, 148]
+
+    def test_approach_frame(self):
+        # hole 400, dist 150 -> tee_offset 250. carry 200 already passed (excluded),
+        # carry 300 included, carry 400 excluded (at/past the green).
+        hazards = [
+            _carry_hazard("bunker", "center", 200, severity="moderate"),
+            _carry_hazard("water", "center", 300, severity="severe"),
+            _carry_hazard("bunker", "center", 400, severity="moderate"),
+        ]
+        result = en_route_carry_hazards(hazards, hole_yards=400, distance_yards=150)
+        carries = [h.carry_yards for h in result]
+        assert carries == [300]
+
+    def test_zero_carry_evidence_only_returns_empty(self):
+        hazards = [_water("right", severity="severe", distance=5.0)]  # carry_yards defaults 0
+        assert en_route_carry_hazards(hazards, hole_yards=400, distance_yards=150) == []
+
+    def test_hole_yards_none_with_carry_evidence_returns_none(self):
+        hazards = [_carry_hazard("water", "center", 140, severity="severe")]
+        assert en_route_carry_hazards(hazards, hole_yards=None, distance_yards=155) is None
+
+    def test_hole_yards_none_without_carry_evidence_returns_empty(self):
+        hazards = [_water("right", severity="severe", distance=5.0)]
+        assert en_route_carry_hazards(hazards, hole_yards=None, distance_yards=155) == []
+
+    def test_behind_tee_clamp(self):
+        # dist 160 on a 155y hole (GPS reading behind the tee) -> tee_offset clamps to 0,
+        # same result as the tee frame.
+        hazards = [
+            _carry_hazard("water", "center", 140, severity="severe"),
+            _carry_hazard("bunker", "center", 148, severity="moderate"),
+            _carry_hazard("bunker", "left", 165, severity="moderate"),
+        ]
+        result = en_route_carry_hazards(hazards, hole_yards=155, distance_yards=160)
+        carries = sorted(h.carry_yards for h in result)
+        assert carries == [140, 148]
+
+
+# ── Hazard-aware reachable aim (specs/aim-point-hazard-aware-recommendation- ─
+# line-plan.md) ──────────────────────────────────────────────────────────────
+
+class TestHazardAwareReachableAim:
+    """Reachable-branch aim description names en-route carry hazards instead
+    of a contradicting "no trouble" claim (Augusta-12 repro)."""
+
+    def test_augusta12_repro_direct(self):
+        aim = compute_aim_point(_augusta12_hole(), None, distance_yards=155)
+        assert aim.description == "Aim at the flag — carry the water at 140"
+
+    def test_augusta12_repro_end_to_end(self):
+        rec = generate_recommendation(
+            _augusta12_hole(), 155, {"7iron": 160, "9iron": 140, "pw": 130}, handicap=15,
+        )
+        assert rec.shot_kind == "approach"
+        desc_lower = rec.aim_point.description.lower()
+        assert "water" in desc_lower
+        assert "140" in rec.aim_point.description
+        assert "no trouble" not in desc_lower
+        assert "green light" not in desc_lower
+        reasoning_text = " ".join(rec.reasoning)
+        assert "Water at 140 between you and the green" in reasoning_text
+
+    def test_clean_hole_still_green_light(self):
+        hole = _make_hole(par=3, yards=155)  # no hazards
+        direct = compute_aim_point(hole, None, distance_yards=155)
+        assert direct.description == "Aim at the flag — green light, no trouble"
+        rec = generate_recommendation(
+            hole, 155, {"7iron": 160, "9iron": 140, "pw": 130}, handicap=15,
+        )
+        assert rec.aim_point.description == "Aim at the flag — green light, no trouble"
+
+    def test_green_frame_only_hazard_keeps_green_light(self):
+        # Existing _bunker helper: carry_yards defaults to 0 -> no carry-frame evidence.
+        hole = _make_hole(par=3, yards=155, hazards=[_bunker("right", severity="mild", distance=20.0)])
+        aim = compute_aim_point(hole, None, distance_yards=155)
+        assert aim.description == "Aim at the flag — green light, no trouble"
+
+    def test_past_green_hazard_not_carry_relevant(self):
+        # Only the bunker-L-165 hazard on the 155y hole -> at/past the green, not en-route.
+        hole = _make_hole(par=3, yards=155, hazards=[
+            _carry_hazard("bunker", "left", 165, severity="moderate", distance=10.0),
+        ])
+        aim = compute_aim_point(hole, None, distance_yards=155)
+        assert aim.description == "Aim at the flag — green light, no trouble"
+
+    def test_passed_hazard_on_approach_not_carry_relevant(self):
+        # hole 400y, dist 150 (reachable with the bag), lone hazard carry 200 severe
+        # center, distance_from_green=200 -> player is past it, not en-route.
+        hole = _make_hole(par=4, yards=400, hazards=[
+            _carry_hazard("water", "center", 200, severity="severe", distance=200.0),
+        ])
+        aim = compute_aim_point(hole, None, distance_yards=150)
+        assert aim.description == "Aim at the flag — green light, no trouble"
+
+    def test_lateral_only_en_route_agrees_with_miss_side(self):
+        hole = _make_hole(par=3, yards=180, hazards=[
+            Hazard(type="water", side="right", line_side="right", carry_yards=160,
+                   penalty_severity="severe", distance_from_green=20.0),
+        ])
+        aim = compute_aim_point(hole, None, distance_yards=180)
+        assert aim.description == "Aim at the flag — water right at 160, favor the left side"
+        rec = generate_recommendation(
+            hole, 180, {"7iron": 160, "9iron": 140, "pw": 130}, handicap=15,
+        )
+        assert rec.miss_side.preferred == "left"
+
+    def test_unknown_frame_honest(self):
+        hole = HoleIntelligence(hole_number=1, par=3, yards=None, hazards=[
+            _carry_hazard("water", "center", 140, severity="severe"),
+        ])
+        aim = compute_aim_point(hole, None, distance_yards=155)
+        assert aim.description == "Aim at the flag"
+
+    def test_default_back_compat_no_distance_yards(self):
+        aim = compute_aim_point(_augusta12_hole(), None)
+        assert aim.description == "Aim at the flag — green light, no trouble"
