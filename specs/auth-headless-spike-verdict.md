@@ -358,3 +358,30 @@ dev Clerk key) to convert this to a clean GO, or (b) accept CONSTRAINED-GO
 as sufficient to start Slice 2 (`login-screen-visual`), since Slice 2 will
 itself require driving these same flows through real UI and will surface any
 issue immediately.
+
+## 9. eng-lead addendum (post-review, 2026-07-18)
+
+Reviewer verdict: **SHIP** (all 5 gates verified real/with-teeth, clerk-js calls compile
+against pinned types, no credential-logging or per-site keychain-clear leaks). QA: **PASS**
+(11 gates incl. `npm ci` + both builds + full vitest 2753/2753 + unchanged `test_clerk_auth.py`
+21/21). CI on PR #150: all three gates SUCCESS on head `429dd9c`. Accepting CONSTRAINED-GO as
+sufficient to start Slice 2 (option b).
+
+- **Correction to §7.6 (lockfile).** The claim "no platform-binding entries were dropped …
+  normal npm resolution behavior" was WRONG for Linux. The builder's macOS `npm install` pruned
+  the nested `utf-8-validate@5.0.10` optional entries; macOS `npm ci` tolerated it, but the Linux
+  CI Frontend gate failed hard: `npm error Missing: utf-8-validate@5.0.10 from lock file`. Fixed
+  in `429dd9c` by restoring the base (CI-green) lockfile and surgically adding ONLY the `@capgo`
+  root-dep + resolved entry — never delete-and-regen (per the lockfile lesson). Lesson reconfirmed:
+  a macOS-local `npm ci` is necessary-not-sufficient; Linux CI is the authoritative lockfile check.
+- **Decision on §7.2 (prebuild guard for `NEXT_PUBLIC_AUTH_SPIKE`): NOT added — deliberate.**
+  Unlike `NEXT_PUBLIC_AUTH_BYPASS` (disables the sign-in wall, must never be in ANY build → hard
+  prebuild guard is correct), the spike flag MUST remain buildable: `NEXT_PUBLIC_AUTH_SPIKE=1
+  npm run build` is a required flip-time / on-device verification gate (QA ran it green). A hard
+  guard would break legitimate dev testing. Parity with the pre-existing unguarded
+  `NEXT_PUBLIC_AUTH_DIAG` is the correct posture; the residual risk (a signed-in user reaching
+  their OWN-account debug panel iff the flag is accidentally baked into prod) is own-account-only,
+  not a privilege-escalation/cross-account vector, and prod ship env never sets the flag.
+- **Reviewer nitpicks deferred to Slice 2** (non-blocking; both bite where the real credential UI
+  lands): tighten the `@capgo` pin (`^8.3.35` → exact/`~`); broaden the credential no-log scanner
+  (add `append`, etc.). Recorded in `tasks/progress.md`.

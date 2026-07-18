@@ -3,23 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1)
-Builder DONE @ **b7401b7**, PUSHED to origin/integration/next (bundle PR #150 head updated → CI running).
-Plan(fable) → specs/auth-headless-spike-plan.md. Builder implemented the full dev-flag-gated
-(`NEXT_PUBLIC_AUTH_SPIKE=1`) Clerk-headless spike; all offline gates green locally; verdict
-CONSTRAINED-GO (specs/auth-headless-spike-verdict.md). `clerk_auth.py` byte-unchanged (confirmed via diff).
-Lockfile: npm-10 in-place add of `@capgo/capacitor-social-login@8.3.35`; only benign `utf-8-validate`
-optional-peer dedup removed (NOT platform bindings) — QA must `npm ci` to confirm.
-**Now AWAITING reviewer + qa (dispatched in isolated worktrees off b7401b7):**
-- reviewer (security lens: 5 gates genuinely gated, no token leakage, sign-out invariant provable) +
-  runs /security-review + /code-review (auth = major). SHIP → proceed; BLOCKING → re-dispatch builder.
-- qa: `npm ci` + tsc + lint + both builds (flag off/on) + vitest + voice-tests smoke + no-credential-log +
-  test:native-crash + ruff + test_clerk_jwt_parity; existing auth suites untouched-green.
-- CI on PR #150: Frontend + Backend gates must be SUCCESS on head b7401b7 (authoritative lockfile check).
-Then: fold in blockers → bundle PR checklist (silent rider) + backlog flip (targeted) + progress DONE.
-Do NOT ship/ping (spike is silent). NEVER touch main; never force-push.
-- On resume: reconcile from `git log origin/integration/next` (head should be b7401b7+) + child commits;
-  do NOT re-run a finished child. If reviewer/qa already reported, act on their verdict.
+## DONE — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1) — verdict CONSTRAINED-GO
+Landed on `integration/next` (bundle PR #150), all three CI gates SUCCESS on head **429dd9c**
+(Frontend + Backend + E2E advisory). Silent rider — dev-flag-gated (`NEXT_PUBLIC_AUTH_SPIKE=1`),
+zero user-visible change; NOT shipped/pinged (spike is silent proof code + a go/no-go).
+Plan(fable) → specs/auth-headless-spike-plan.md. Verdict → specs/auth-headless-spike-verdict.md.
+Commits: cb19a2d plan · b7401b7 spike impl · 429dd9c lockfile fix (+ progress checkpoints).
+
+**What it proved (offline, all gates green — reviewer SHIP, qa PASS):** headless Clerk custom flows
+work in our stack behind a dev flag. Email+password/code sign-in+up + headless signOut built &
+typechecked against the pinned installed clerk-js/react types (the Future signal API — a confirmed
+discovery, see below); Google web (`signIn.sso` + `/sso-callback`), Google native
+(`authenticateWithGoogleOneTap`) and Apple native (`oauth_token_apple`) built + unit-tested against
+mocked plugin contracts. Backend `clerk_auth.py` BYTE-UNCHANGED (only added a test). All 5 reviewer
+security gates asserted as real offline tests (reviewer confirmed they have teeth): JWT parity (real
+RS256, backend accepts baseline-shape + rejects wrong azp/sig/sub), central-observer sign-out clear
+(no per-site clears added), credential no-log grep gate (0 violations), fallback-safety (no
+custom-scheme OAuth path — Universal-Link precondition documented), auth-bypass integrity intact.
+
+**Verdict CONSTRAINED-GO** — the ONE gap keeping it from clean GO: no live web-dev click-through was
+run (offline session, no browser/dev Clerk key) and the live Google/Apple SSO round-trips are blocked
+on owner ops item `auth-clerk-enable-social-connections`. Flip-time checklist in the verdict §6.
+
+**Two discovered constraints for Slice 2 (login-screen-visual):**
+1. `@clerk/react@6.11.1` uses the Future signal API (`useSignIn()`→`signIn.password/emailCode/sso`,
+   `signIn.finalize()`), NOT the classic `{isLoaded,signIn,setActive}` the epic plan §2.2 assumed.
+   `useAuthFlow.ts` must be built on Future-API-primary + classic `clerk.client.*` only for Apple's
+   ID-token `create`. No `@clerk/clerk-js` bump needed (strategies already in 6.22.0; no Clerk patches).
+2. Reviewer nitpicks DEFERRED to Slice 2 (non-blocking; both bite where the real credential UI lands):
+   (a) tighten `@capgo/capacitor-social-login` pin from `^8.3.35` to exact/`~`; (b) broaden the
+   credential no-log scanner beyond `console.*`/`setAuthDiag` (e.g. `append`).
+
+**eng-lead decisions recorded:** (i) NO prebuild guard for `NEXT_PUBLIC_AUTH_SPIKE` — unlike
+`AUTH_BYPASS` (must never be in any build), the spike flag MUST stay buildable (`NEXT_PUBLIC_AUTH_SPIKE=1
+npm run build` is a required flip-time gate), so a hard guard would break legitimate on-device dev
+testing; parity with the existing unguarded `AUTH_DIAG` is correct. (ii) LOCKFILE lesson recurred: the
+builder's macOS `npm install` pruned `utf-8-validate` optional entries; macOS `npm ci` tolerated it but
+Linux CI's strict `npm ci` failed ("Missing: utf-8-validate from lock file") — the verdict §7.6 claim
+that "no platform bindings dropped" was wrong for Linux. Fixed by restoring the base lock + adding ONLY
+the `@capgo` entry (429dd9c), never delete-and-regen. Reconfirms: macOS-local `npm ci` is
+necessary-not-sufficient; Linux CI is authoritative.
 
 ## DONE — 2026-07-18 — P0 caddie-yardage-selector: club-alias fix + all-courses tee-selector audit + fix + log observability (item caddie-yardage-selector-p0, NOTICEABLE)
 Plan(fable) → specs/caddie-yardage-selector-p0-plan.md. Implemented all 3 leads on
