@@ -26,12 +26,21 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import SignInClient from "@/app/sign-in/[[...sign-in]]/SignInClient";
+import { SPIKE_AUTH_PREFIXES } from "@/lib/auth-spike/spike-flag";
 
 /** URL prefixes that must remain reachable without a session. */
 const AUTH_PREFIXES = ["/sign-in", "/sign-up"];
 
-function isAuthRoute(pathname: string): boolean {
-  return AUTH_PREFIXES.some(
+/**
+ * `extraPrefixes` lets the auth-headless-spike (NEXT_PUBLIC_AUTH_SPIKE=1)
+ * add its own dev routes to the allowlist without touching this function's
+ * default behavior. On a default build SPIKE_AUTH_PREFIXES is `[]`, so
+ * calling with no argument (or with `[]`) is byte-identical to today —
+ * proven by auth-gate-routes.test.ts.
+ */
+export function isAuthRoute(pathname: string, extraPrefixes: string[] = []): boolean {
+  const prefixes = [...AUTH_PREFIXES, ...extraPrefixes];
+  return prefixes.some(
     (p) =>
       pathname === p ||
       pathname.startsWith(p + "/") ||
@@ -102,9 +111,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return <PaperLoading />;
   }
 
-  // Auth routes (/sign-in, /sign-up) render regardless of session state so
-  // the Clerk widget can complete sign-in / sign-up without a redirect loop.
-  if (isAuthRoute(pathname)) {
+  // Auth routes (/sign-in, /sign-up, plus the spike's /dev/auth-spike and
+  // /sso-callback when NEXT_PUBLIC_AUTH_SPIKE=1) render regardless of session
+  // state so the Clerk widget / headless flow can complete without a
+  // redirect loop. SPIKE_AUTH_PREFIXES is [] on a default build.
+  if (isAuthRoute(pathname, SPIKE_AUTH_PREFIXES)) {
     return <>{children}</>;
   }
 

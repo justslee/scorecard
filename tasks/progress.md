@@ -282,3 +282,56 @@ native OAuth browser-redirect fallback MUST use a Universal Link, not a custom U
 hard spike gates (JWT parity, native bridge parity, sign-out Keychain clear, credential no-log grep
 incl. plugin token + nonce binding, fallback safety). azp allowlist enumeration is a multi-user-epic
 config item (unset today in owner-mode), not this epic. Planning pass COMPLETE — no ship, no ping.
+
+---
+
+## 2026-07-18 — `auth-headless-spike` BUILT (Slice 1, silent dev-flag) — CONSTRAINED-GO
+
+Implemented `specs/auth-headless-spike-plan.md` end to end, behind `NEXT_PUBLIC_AUTH_SPIKE=1`
+(zero user-visible change on the default build — proven by `auth-gate-routes.test.ts` +
+byte-diff of the default `next build` output, which renders only a static "disabled" stub at
+`/dev/auth-spike` and `/sso-callback`). Ugly throwaway panel
+(`frontend/src/components/auth-spike/AuthSpikePanel.tsx`) exercises every flow named in the
+plan against the pinned installed clerk-js/react Future-API types: email+password/code
+sign-in+up, Google web (`signIn.sso`), Google native ID-token
+(`clerk.authenticateWithGoogleOneTap`), Apple native ID-token (classic
+`clerk.client.signIn.create({strategy:'oauth_token_apple'})` — no Future-API equivalent exists,
+confirmed absent from the `.d.ts`), headless `signOut()`, JWT-parity capture/compare, and a
+backend ping. Installed `@capgo/capacitor-social-login@8.3.35` (exact-pinned), ran `npx cap
+sync ios` clean (`Package.swift` diff only).
+
+**All 5 reviewer security gates implemented as concrete tests, all green:** Gate 1 —
+`backend/tests/test_clerk_jwt_parity.py` (12 tests) mints REAL RS256-signed tokens with an
+in-test RSA keypair and proves the UNCHANGED `clerk_auth._verified_user_id` accepts
+baseline-shaped tokens from all four flow fixtures + `jwt-parity.test.ts` (7 tests) proves the
+comparator. Gate 2 argued by construction (FAPI hooks are provider-level). Gate 3 —
+`ClerkTokenBridge.test.tsx` (4 tests) proves the existing centralized sign-out observer still
+fires correctly and no per-site `clearNativeToken()` calls were added. Gate 4 — new
+`assert-no-credential-log.mjs` grep gate (mirrors `assert-no-auth-bypass.mjs`), 0 violations,
+plus nonce-binding proof in `native-social.test.ts`. Gate 5 — confirmed `frontend/ios` has no
+`.entitlements`/Associated Domains, so the browser-redirect fallback is correctly NOT built (ID-
+token path only).
+
+**All gate commands green:** `tsc`, `lint` (0 errors, 1 pre-existing unrelated warning), default
+`next build` AND `NEXT_PUBLIC_AUTH_SPIKE=1 next build`, `vitest run` (147 files / 2753 tests),
+voice-tests smoke (278/278), `assert-no-credential-log.mjs`, `test:native-crash` (no webview
+crash with the new plugin installed), backend `ruff check` + the new pytest file (12 tests) +
+existing `test_clerk_auth.py` (21 tests, unaffected — `clerk_auth.py` has zero diff).
+
+**Discovered constraint (confirmed, not hypothetical):** `@clerk/react@6.11.1`'s
+`useSignIn`/`useSignUp` are the signal-based Future API, NOT the classic API the epic plan
+(§2.2) assumed — Slice 2's `useAuthFlow.ts` must be built on the Future API as primary with the
+classic `clerk.client.*` surface only for the Apple ID-token step (no Future-API equivalent
+exists). Manual `/security-review` pass (no interactive skill available in this session; did the
+equivalent review by hand) found no blocking issues — one accepted residual risk flagged for the
+eng-lead (same class as the pre-existing `NEXT_PUBLIC_AUTH_DIAG`, no prebuild guard added,
+happy to add one if wanted).
+
+**Verdict: CONSTRAINED-GO** (`specs/auth-headless-spike-verdict.md`) — not a clean GO because
+this non-interactive builder session had no browser tool / dev Clerk credentials to actually
+click through the live web-dev email flows the plan's step 8 asked for; everything offline-
+provable is green and the code compiles against the pinned real types. Full FLIP-TIME
+VERIFICATION CHECKLIST in the verdict file (live web-dev pass, Google/Apple live round-trips
+pending `auth-clerk-enable-social-connections`, on-device Gate 2/3 matrix, native Swift source
+read). SILENT work (dev-flag only) — no owner ping, no ship. Committed to `integration/next`,
+not pushed (eng-lead pushes after review).
