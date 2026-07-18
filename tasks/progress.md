@@ -19958,3 +19958,42 @@ flipped open→done. PR #147 checklist + Noticeable summary updated. This is the
 remnant of the [[caddie-shot-context-reachability]] family. Per this pass's directive: NOT
 shipped/pinged — the noticeable bundle keeps accumulating; owner approval-ask is deferred to a
 later cycle's release-manager hand-off. Supersedes the two AWAITING blocks above.
+
+## SHIPPED — 2026-07-18 — Bundle #148 (v1.1.15) — P0 club-alias fix
+Owner in-session "Ship" approval (verbatim) for the P0 caddie club-alias bundle — the docs/test-
+rider fix (2 CI-only assertions updated to the canonical-club contract) carried the approval to
+the green head per the docs/test-rider rule.
+
+Sequence run by release-manager:
+1. Gates polled on pinned head `a327411` — all 3 (Frontend, Backend, E2E smoke advisory) SUCCESS.
+   Local `integration/next` was 8 commits behind; fast-forwarded to `a327411` (no local work lost).
+2. VERSION bumped 1.1.14 -> 1.1.15 (`c4b5aa7`), pushed; gates re-ran SUCCESS on the bumped head.
+3. PR #148 merged to `main` (merge commit `3a23937243cef7ffac62137e703a287a613d3ba4`).
+4. Post-merge main CI green. Backend deploy (SSM) job reported `failure` on first run — matches
+   the known health-check race (git pull/uv sync/alembic upgrade/restart all succeeded per the
+   job's own stdout; `curl localhost:8000/health` connection-refused because uvicorn hadn't bound
+   the port inside the 3s sleep window yet). Independently verified via a separate key-free SSM
+   probe: `/health` -> `{"status":"ok"}`, `scorecard-api` service `active`. Re-ran the deploy job
+   once; green (15s).
+5. Key-free confirms on-box: `/health` ok; `APP_ACCESS_MODE` not set (dark); no `CALLER_*` vars in
+   `.env` (caller inert); deployed `~/scorecard` HEAD = `3a23937...` (matches merge SHA); deployed
+   `backend/app/caddie/tools.py` contains the canonical-club normalizer (imports `canonical_club`
+   from `club_selection`, applies at the `normalize_club_distances` bag chokepoint and
+   `record_shot_payload`).
+6. Backend-only fix — deploy IS the fix reaching the owner. Built TestFlight anyway for version
+   parity: `bash ops/ios/ship.sh` run FOREGROUND in a scratch worktree (`.claude/worktrees/ship-148`,
+   `git worktree add` off `main` @ `3a23937`, `npm install` for a clean frontend/, ran full build ->
+   archive -> distribution-sign -> upload). Result: **Uploaded v1.1.15, build 202607181041**.
+   Polled App Store Connect (JWT-signed ASC API calls, key-free) until `processingState` left
+   PROCESSING; confirmed `VALID`, `expired=false`, attached to app `com.looperapp.app`
+   (id 6784470752, "MyLooper").
+7. Fresh `integration/next` cut off the merge SHA (`3a23937`, == `main`), pushed
+   (`c4b5aa7..3a23937 integration/next -> integration/next`, fast-forward).
+8. Ship worktree removed (`git worktree remove .claude/worktrees/ship-148 --force`).
+
+backlog.json: `caddie-strategy-500-club-alias-normalization` already terminal-marked `done` with a
+full `landed` note by the builder/reviewer before this ship pass — no further edit needed (verified
+by read, not touched, per the duplicate-keys lesson: no json.load/dump).
+
+Merge SHA: `3a23937243cef7ffac62137e703a287a613d3ba4`. TestFlight: v1.1.15 build 202607181041,
+processing VALID. Fresh integration/next head: `3a23937243cef7ffac62137e703a287a613d3ba4`.
