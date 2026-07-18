@@ -19838,3 +19838,15 @@ only). On resume, reconcile from branch, do NOT re-run finished children. Outcom
   is deferred).
 - reviewer BLOCKING or qa FAIL (real, not DB/container-env) → re-dispatch builder with the specific
   issue, then re-review. Never touch main; never force-push.
+
+## DONE this cycle (2026-07-17) — aim-point-hazard-aware-recommendation-line (#147, NOTICEABLE)
+Landed @5089acc on integration/next. Plan (fable) → builder → reviewer SHIP (all 7 falsification
+targets hold: number-binding to payload carry_yards only, clean-hole don't-hedge byte-identical,
+miss-side agreement by construction, en-route boundaries hand-verified incl. carry==tee_offset /
+carry==hole.yards, death-clause disjointness, back-compat, teeth) + qa PASS (ruff clean, 422
+targeted, full offline sweep 2874 passed / 133 DB-skipped / 0 fail; Augusta-12 line "Aim at the
+flag — carry the water at 140" + clean-hole "green light, no trouble" reproduced live). Backlog
+flipped open→done. PR #147 checklist + Noticeable summary updated. This is the LAST flag-only
+remnant of the [[caddie-shot-context-reachability]] family. Per this pass's directive: NOT
+shipped/pinged — the noticeable bundle keeps accumulating; owner approval-ask is deferred to a
+later cycle's release-manager hand-off. Supersedes the two AWAITING blocks above.
