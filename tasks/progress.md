@@ -222,3 +222,39 @@ App Store REQUIRES Sign in with Apple when offering Google login (owner didn't m
 On resume: collect the 3 agent outputs -> synthesize specs/login-onboarding-redesign-plan.md
 -> reviewer sanity pass on the auth recommendation -> append 5-8 backlog items (targeted edits,
 validate JSON) -> commit SILENT on integration/next -> progress note. NEVER touch main. No ship.
+
+---
+
+## 2026-07-18 — LOGIN/ONBOARDING REDESIGN PLAN landed on integration/next (SILENT planning docs)
+
+Owner epic (hates the login screen; wants Augusta-vibe full-screen animation + first-time
+onboarding + modern login w/ Google etc.). PLAN-FIRST pass — no product code. Synthesized
+`specs/login-onboarding-redesign-plan.md` from 3 parallel planning agents (PM experience spec,
+designer visual concept, Fable architecture), landed SILENT on the bundle.
+
+**AUTH DECISION: keep Clerk, go HEADLESS (custom flow). Do NOT build homegrown.** The thing the
+owner hates is ONE component — Clerk's prebuilt `<SignIn>` widget. Headless custom-flow gives
+byte-for-byte total UI freedom while keeping every shipped security slice (clerk_auth JWKS,
+webhooks Svix revocation, require_member/APP_ACCESS_MODE, native-token/Keychain bridge). Fable
+verified per-method coverage (email+pw/code, Google web + native ID-token, Apple native ID-token)
+and **zero backend security delta**. Homegrown = enormous owned surface for ZERO design gain.
+FLAGGED: App Store 4.8 REQUIRES Sign in with Apple once Google is offered (owner didn't mention it).
+
+**LOOK:** designer reconciled "Augusta vibe" (= the feeling: pristine/verdant/reverent/serif —
+NOT Masters/Augusta National imagery, zero licensing) with the Northstar via concept (B): a
+signature hole that DRAWS ITSELF in ink (framer-motion pathLength over the existing
+HoleIllustration.tsx + HOLES[] — no new deps, no asset pipeline), reduced-motion still-frame.
+
+**ONBOARDING (PM):** additive `golfer_profiles.onboarding_step` column (last-completed-step enum,
+backfill 'done' for existing rows), resumable server-driven flow name->handicap->bag->voice->home;
+bag step wires straight into caddie grounding (the caddie is the product); the owner's named
+two-user flip-time acceptance test. AuthGate gains a 4th (onboarding) state.
+
+**Backlog:** 8 items appended (targeted text insert, JSON validated 116->124, 104 additions/0
+deletions, no ids lost): `auth-clerk-enable-social-connections` (blocked-owner ops),
+`auth-headless-spike` (READY, first-to-pick), `login-screen-visual`, `login-animation-moment`,
+`onboarding-shell-and-gate`, `onboarding-bag-caddie-grounding`, `onboarding-voice-first-intro`,
+`login-onboarding-epic-polish-review`. Dependency-ordered; spike gates everything.
+
+AWAITING: reviewer security-lens sanity pass on the auth recommendation (agent a742098f) — fold
+verdict into plan §7 + here. No ship, no owner ping (planning docs are SILENT).

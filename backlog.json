@@ -1345,6 +1345,110 @@
       "noticeable": true,
       "depends_on": ["caddie-tee-club-expected-strokes"],
       "why": "Non-blocking observation from the fable adversarial re-review of caddie-tee-club-expected-strokes (2026-07-18, verdict SHIP): with the trees=0.7 base penalty (now handicap-scaled), a 30-handicap player is still recommended driver on a 20y-wide tree corridor where the Gaussian model puts ~72% of drives in the trees. The handicap-scaling made this STRICTLY more cautious than before the P0 fix (so it is not a regression and was correctly left out of that delta's scope), but a ~72%-trees driver for a wild hitter on a genuinely narrow tree chute is arguably still too aggressive. This is a calibration question (the trees severity constant / whether tree cost should grow super-linearly with dispersion width, or whether an absolute P(trouble) ceiling should cap the aggressive pick), NOT a structural bug — the expected-strokes machinery is sound. Revisit only if the owner reports over-aggression on tight tree holes for higher handicaps; pin any change with a hcp-30 / width-20 tree fixture test. Also noted: the long-bag water-pinch layup margin is thin (E-gap 0.025 vs the 0.02 tie tolerance) — pinned by test_05b, correct today, but a small recalibration could flip it in direction only that test guards; keep the regression."
+    },
+    {
+        "id": "auth-clerk-enable-social-connections",
+        "title": "OPS/owner: enable Google + Apple SSO connections + Native Applications on the prod Clerk instance",
+        "type": "minor",
+        "status": "blocked",
+        "priority": "p1",
+        "risk": "low",
+        "noticeable": false,
+        "depends_on": [],
+        "why": "Prereq (owner/ops action, not app code) for the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §2.5). The headless custom login screen renders Google/Apple/email buttons, but Google + Apple must be enabled as SSO connections on the PRODUCTION Clerk instance (Dashboard -> Configure -> SSO connections), and Native Applications must be on (already referenced by the AuthProvider native-token bridge). App Store Guideline 4.8 makes Apple sign-in mandatory once Google is offered. Blocked on the owner doing the Dashboard config; the auth-headless-spike can dev against a dev instance meanwhile but ships only once prod connections are live."
+    },
+    {
+        "id": "auth-headless-spike",
+        "title": "Prove Clerk headless custom flows (email+password/code, Google web+native, Apple native) end-to-end on a branch",
+        "type": "major",
+        "status": "ready",
+        "priority": "p1",
+        "risk": "medium",
+        "noticeable": false,
+        "depends_on": [],
+        "why": "Slice 1 (READY, first-to-pick) of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §8). De-risks the epic's ONLY real unknown before any pixel is polished: native OAuth token exchange in a Capacitor WKWebView. On a throwaway branch, prove ALL of: custom email+password / email-code sign-in AND sign-up via useSignIn/useSignUp -> setActive; Google web via signIn.authenticateWithRedirect + an /sso-callback route calling handleRedirectCallback; Google NATIVE via a Capacitor social-login plugin -> Google ID token -> clerk.authenticateWithGoogleOneTap (fallback: system-browser redirect + deep-link + transfer, documented if the primary audience-config path fights us); Apple NATIVE via the oauth_token_apple ID-token strategy (bump @clerk/clerk-js if needed -- check frontend/patches/ for existing Clerk patch-package patches first); the backend JWT verification (clerk_auth.py: JWKS, issuer, azp) is UNCHANGED and still accepts the session token; the native-token/Keychain bridge fires (NativeAuthDiag shows native-sent:true, token persisted, cold-start restore). UI is deliberately ugly. Output = a written GO/NO-GO on headless with the exact clerk-js API calls used per platform, and the exact azp/authorized-party value(s) the native strategies produce (so clerk_auth.py's azp allowlist is verified/updated). Gates: tsc, lint, build, native-crash test, on-device matrix (sim + TestFlight), /security-review (new flows + new native plugin)."
+    },
+    {
+        "id": "login-screen-visual",
+        "title": "New custom sign-in/sign-up screens (final static design, headless Clerk flow, delete the prebuilt <SignIn> widget)",
+        "type": "major",
+        "status": "blocked",
+        "priority": "p1",
+        "risk": "medium",
+        "noticeable": true,
+        "depends_on": [
+            "auth-headless-spike"
+        ],
+        "why": "Slice 2 of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §3.2, §5). The full new sign-in/sign-up screens -- final layout, Instrument Serif type, method buttons (Apple primary ink pill / Google / email), email-flow states, uniform error copy -- as STATIC design (no hero animation yet, that's slice 3). Delete the prebuilt @clerk/react <SignIn>/<SignUp> usage in SignInClient.tsx; keep NativeAuthDiag; new frontend/src/components/auth/ family (SignInScreen, useAuthFlow headless state machine, OAuthButtons platform-branched). Static-export safe (dynamic ssr:false, the proven pattern; headless removes the mountSignIn white-screen hazard). Update frontend/e2e/auth.spec.ts for the custom flow (@clerk/testing tokens work headless). Design must match NORTHSTAR (yardage-book, calm) -- designer review required. Enumeration hygiene: map Clerk error codes to uniform copy. Gates: lint, tsc, build, Playwright e2e, designer review, /security-review (credential-handling UI). Blocked on the spike proving the flows."
+    },
+    {
+        "id": "login-animation-moment",
+        "title": "The Augusta-vibe hero: a signature hole that draws itself in ink (framer-motion pathLength over HoleIllustration)",
+        "type": "major",
+        "status": "blocked",
+        "priority": "p2",
+        "risk": "low",
+        "noticeable": true,
+        "depends_on": [
+            "login-screen-visual"
+        ],
+        "why": "Slice 3 of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §3.1, §3.4). The full-screen 'Augusta vibe' moment the owner asked for, reconciled with the Northstar: a signature hole (the dramatic 548yd hcp-1 par-5 dogleg from HOLES[]) that DRAWS ITSELF in ink -- tee dot pops, fairway centerline draws via framer-motion pathLength/stroke-dashoffset (a near-zero-new-code extension of HoleIllustration.tsx's existing strokeDasharray render), ribbon fills, hazards pop, flag plants (~3.5-4.5s, plays once per install via a localStorage flag). Zero new dependency (framer-motion@12 already installed), zero new asset pipeline, zero licensing risk (our own geometry, NO Masters/Augusta National imagery -- 'Augusta vibe' = the feeling only). prefers-reduced-motion path: the complete hole renders static on first paint (HoleIllustration's normal steady state). Guardrails: transform/opacity only, 60fps on iPhone-12-class, motion never blocks sign-in buttons interactive <1s, unmount on advance. Gates: lint, tsc, build, on-device fps check, designer review. Blocked on the static login screen."
+    },
+    {
+        "id": "onboarding-shell-and-gate",
+        "title": "First-run onboarding wizard (name/handicap/bag) + onboarding_step column + AuthGate resume/returning-user gate",
+        "type": "major",
+        "status": "blocked",
+        "priority": "p1",
+        "risk": "medium",
+        "noticeable": true,
+        "depends_on": [
+            "auth-headless-spike"
+        ],
+        "why": "Slice 4 of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §4). Adds ONE additive nullable column golfer_profiles.onboarding_step TEXT (NULL|name|handicap|bag|done = last completed step) via a NEW Alembic revision 016 (down_revision 015_course_intel; existing migration files + backend/supabase/migrations/** are guarded, a new revision file is fine), backfilling 'done' for pre-feature rows so no current user (incl. the owner) is re-onboarded. Mirror the field in backend/app/db/models.py (ORM), backend/app/models.py (GolferProfile/Create/Update), frontend/src/lib/types.ts (GolferProfile.onboardingStep) IN LOCKSTEP, + the _orm_to_pydantic mapping in profile.py (the partial-update PUT already writes present-only fields). Onboarding route frontend/src/app/onboarding/page.tsx: single route, internal step state initialized from the server's onboardingStep so resume + returning-user is ONE profile fetch. Steps: name (required), handicap (optional, explicit 'not sure' path writes null), bag (optional, 14-club CLUB_CONFIG reused from profile/page.tsx pre-filled from DEFAULT_CLUB_DISTANCES, skip leaves {} = safe caddie-default state). Each step writes the server before advancing (force-quit resumes correctly). AuthGate gains a 4th state (signed-in && onboardingStep!=='done' && !onboarding-route -> onboarding), tri-state hydrated via useMe/IdentityBridge (unknown -> PaperLoading, never flash onboarding at a done user). Gates: lint, tsc, build, ruff, backend tests, Playwright new-user path, /security-review. Blocked on the spike."
+    },
+    {
+        "id": "onboarding-bag-caddie-grounding",
+        "title": "Wire onboarding bag setup -> caddie club-selection grounding + two-user flip-time acceptance test",
+        "type": "major",
+        "status": "blocked",
+        "priority": "p1",
+        "risk": "medium",
+        "noticeable": true,
+        "depends_on": [
+            "onboarding-shell-and-gate"
+        ],
+        "why": "Slice 5 of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §4.5). THE CADDIE IS THE PRODUCT -- the bag step is the highest-value payload the onboarding captures. Verify/wire the onboarding bag -> golfer_profiles.bag_clubs -> buildClubMap() (frontend/src/lib/caddie/clubs.ts) -> the caddie club-selection payload, so a player's own carry yardages actually ground the caddie's tee/approach club picks. Acceptance = the owner's named FLIP-TIME TEST: two accounts complete bag setup with different 7-iron carries (150 vs 170), both ask the caddie for a ~160y club, and the two accounts' caddie club-selection PAYLOADS differ and each is consistent with that account's own stored clubDistances (assert the tool-call payload, not just the spoken answer). Extends the namespaced-storage flip guarantees from the multi-user epic. Skipped-bag path still succeeds via DEFAULT_CLUB_DISTANCES (no crash). Gates: lint, tsc, voice-tests smoke, caddie-experience tests, flip e2e. Blocked on the onboarding shell."
+    },
+    {
+        "id": "onboarding-voice-first-intro",
+        "title": "The voice-first 'ask your caddie' onboarding moment (via the existing orb, tap fallback)",
+        "type": "major",
+        "status": "blocked",
+        "priority": "p2",
+        "risk": "low",
+        "noticeable": true,
+        "depends_on": [
+            "onboarding-shell-and-gate"
+        ],
+        "why": "Slice 6 of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §3.2, §4.2d). NORTHSTAR's 'design the voice path first' applied to onboarding: the hinge step where onboarding stops being a form and proves the product before Home. The orb grows to center, a serif prompt 'Try asking me something' + mono VoiceSheet-style suggestions, the user HOLDS the real orb (production gesture) and gets a real Waveform + ConversationTurn/Medallion reply -- pixel-identical to production, NOT a mocked preview. MUST summon the existing orb via openLooper({context:'general',listening:true,presentation:'full'}) from looper-bus.ts -- NO bespoke mic button (the one standardized invocation, per the omnipresent-orb product rule). 'Continue'/'Skip -- I'll talk to my caddie later' always enabled (never a dead end if voice fails). Writes onboardingStep:'done', then the Home handoff (orb animates to its permanent bottom-right, reuse CaddieOrb's INTRO_SEEN_KEY 'Your caddie moved here' chip). Gates: voice-tests, lint, tsc, designer review. Blocked on the onboarding shell."
+    },
+    {
+        "id": "login-onboarding-epic-polish-review",
+        "title": "Login/onboarding epic: polish, dead-widget cleanup, edge sweep, epic-wide /security-review + E2E, TestFlight bundle",
+        "type": "major",
+        "status": "blocked",
+        "priority": "p2",
+        "risk": "medium",
+        "noticeable": true,
+        "depends_on": [
+            "login-screen-visual",
+            "login-animation-moment",
+            "onboarding-shell-and-gate",
+            "onboarding-bag-caddie-grounding",
+            "onboarding-voice-first-intro"
+        ],
+        "why": "Slice 7 (last) of the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §8). Transition polish (hero->signin->onboarding->home continuity), remove dead prebuilt-widget code + Clerk appearance config, edge-case sweep (offline sign-in, expired email code, OAuth cancel, account-already-onboarded-on-another-device, pre-feature user), full Playwright auth+onboarding E2E, epic-wide /security-review + /code-review, and assemble the TestFlight validation bundle for the owner's approval (this epic is NOTICEABLE -> owner-approval bundle). Gates: ALL (lint, tsc, build, voice-tests, ruff, Playwright, native-crash, /security-review). Blocked on all prior slices."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
