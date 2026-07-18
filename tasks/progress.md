@@ -16,15 +16,22 @@ hoist the existing `_CLUB_ALIASES`/`_canonical_club` (tools.py:717) to a shared 
 every ingress; drop-unknown-with-warning in `normalize_club_distances`; try/except degrade around
 `build_strategy_payload`; fix int frame; tests A-D.
 
-**Base:** origin/integration/next @ 0756ae5. Work happens on worktree branch
+**Base:** origin/integration/next @ 0756ae5. Work on worktree branch
 `worktree-agent-a27ae28a590fb2294`, landed onto `integration/next` via fast-forward push.
-**Waiting on:** builder implementing the plan on this worktree branch.
-- builder DONE → run reviewer (adversarial: alias table matches voice-pipeline semantics; graceful
-  fallback logs so it can't mask real bugs; NO 500 path reachable from tool args) + qa (offline
-  gates: ruff, tsc, build, voice-tests smoke) in parallel; then land + open/update bundle PR.
-- reviewer/qa BLOCKING → re-dispatch builder with the findings, re-review.
-- On resume: reconcile from branch (`git log`), do NOT re-run a finished child. Do NOT ship/ping
-  (owner brings the ship ask). Never touch main; never force-push.
+**Builder DONE** — landed `5a5d303` on integration/next. Ruff clean; 2925 non-DB backend tests
+pass locally. Touched club_selection.py, tools.py, strategy.py, routes/caddie.py + 2 test files.
+Builder flagged: could NOT empirically reproduce the exact int-TypeError frame (all `re.*` calls
+operate on guaranteed-str values; both club-arg ingresses already str-coerced) — applied the
+defensive boundary coercion (`canonical_club()` does `str(raw)` first) regardless, which closes
+the class. Note for owner: exact prod frame unconfirmed; defensive fix in place.
+
+**Bundle PR:** #148 (integration/next → main), P0 item marked NOTICEABLE.
+**Waiting on:** reviewer + qa (parallel) on `5a5d303`.
+- both green → update PR checklist (mark item done), update progress; do NOT ship/ping (owner
+  brings the ship ask).
+- reviewer/qa BLOCKING → re-dispatch builder with findings, re-review.
+- On resume: reconcile from branch (`git log origin/integration/next`), do NOT re-run a finished
+  child. Never touch main; never force-push.
 
 ## SHIPPED — 2026-07-18 — Bundle #147: caddie fast reliable strategy + course descriptions live + hazard-aware aim line (v1.1.14)
 Owner approved in-session: verbatim **"Ship it"** on the standing #147 ship ask. Pinned head
