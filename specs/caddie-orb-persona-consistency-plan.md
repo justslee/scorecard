@@ -1,182 +1,234 @@
-# Caddie Orb Persona Consistency — Implementation Plan
+# Implementation plan — `caddie-orb-persona-consistency` (caddie register unification)
 
-**Branch:** `integration/next` (head `4cd41ca`). Two bundled P1s:
-- **Part 1 (noticeable):** the omnipresent caddie orb discards the user's chosen persona on every non-round surface — hardcoded `"classic"` in the converse API calls and in the sheet TTS voice.
-- **Part 2 (reliability, no prod mutation):** prod `caddie_personas` rows carry `voice_id='fable'` (professor, course-historian) — invalid for the OpenAI Realtime API, erroring the session mint. Fix = a voice-validity clamp at the mint choke point. A prod DB write is OUT OF SCOPE.
+Design contract: `/Users/justinlee/projects/scorecard/specs/caddie-orb-persona-consistency-persona.md` (authoritative on the voice, the banned/required strings, and the per-surface disposition). Scope is REGISTER ONLY: every grounding rule constant, validator, tool payload, number, and `compose_degraded_line` stays byte-identical.
 
-NORTHSTAR contract: quiet, voice-first, yardage-book feel; ONE coherent caddie presence (voice + name + greeting) across every surface. This plan touches only the off-round TEXT/TTS converse path (Part 1) and the backend mint payload (Part 2). It does NOT touch the live realtime session code paths on the frontend.
+## 0. Approach
 
----
+One new module-level constant, `CADDIE_HOUSE_REGISTER`, in `backend/app/caddie/voice_prompts.py`, mirroring the existing shared-rule pattern (`OBSERVED_REALITY_RULE` et al.: single-paragraph string, "Shared by ALL mouths so wording never drifts", always imported, never copied). Each ADOPT surface swaps its restated register sentences for the constant at a fixed position inside its existing block, so the change is a wording consolidation, not a prefix reshuffle. Verification rides on the existing offline harness: the imported-constant Tier-1 pattern (`prompt_contains_rule`) plus one new thin standalone pytest that does the banned-literal static scan and pins the persona-doc linkage. No live model calls in CI.
 
-## Part 1 — Thread the selected persona through the orb
+## 1. The shared constant (exact text)
 
-### 1.1 Ground truth (verified against head)
+Add to `backend/app/caddie/voice_prompts.py`, ABOVE `_BASE_BEHAVIOR` (load-bearing: `_BASE_BEHAVIOR` becomes an f-string interpolating it at module import):
 
-- `frontend/src/components/CaddieOrbSheet.tsx` — mounted ONCE in `frontend/src/app/layout.tsx` (line ~68, inside `AuthProvider`). `runConverse` hardcodes `personality_id: "classic"` twice:
-  - line 202 — the streaming call `talkToCaddieStream({ ... personality_id: "classic" ... })`
-  - line 215 — the JSON fallback `talkToCaddie({ ... personality_id: "classic" ... })`
-- `frontend/src/components/LooperSheet.tsx` — `LooperSheetShell` (line 47) hardcodes the spoken voice at line 109: `tts.speak(last.text, "classic")` inside the speak-newest-turn effect (lines 94–112).
-- Source of truth: `frontend/src/lib/caddie/persona.ts` → `useCaddiePersona()` (line 115). Resolution: server `preferred_personality_id` → localStorage `looper.caddiePersonaId` → `'classic'`. Initial state reads localStorage synchronously (line 116–118); one effect fetches `fetchPersonalities()` + `getCaddieProfile()` via `Promise.allSettled` (failure-tolerant, lines 121–145). `selectPersona` (line 147) writes state + localStorage + fire-and-forget `PUT /caddie/profile`.
-- **Persona picker locations (grep `selectPersona`):** invoked ONLY from the round page — `src/app/round/[id]/RoundPageClient.tsx:275` (hook) → `:2316` `onSelectPersona={selectPersona}` → `CaddieSheet.tsx:1497` (persona picker in the round caddie sheet; `CustomPersonaModal` creates customs there too). There is NO off-round persona picker today.
-- **`LooperSheetShell` consumers (grep):** exactly ONE — `CaddieOrbSheet.tsx:372`. The "tee-time shell instance" referenced in old comments was subsumed by the orb host; the optional-prop default is still required (back-compat for direct-render tests and any future consumer), but no other production call site needs edits.
-- Backend `/api/caddie/voice` and `/api/caddie/personalities` fully honor `personality_id`; `speakCaddieReply(text, personalityId)` (`src/lib/caddie/api.ts:1093`) already threads it. This is a pure frontend omission.
-
-### 1.2 Decision: where the orb resolves the persona
-
-**Chosen: mount `useCaddiePersona()` inside `CaddieOrbSheet` (the layout-mounted host), and add a tiny module-level pub-sub inside `persona.ts` so ALL hook instances converge on `selectPersona`.**
-
-Why this and not the alternatives:
-
-- **`storage`-event listener — REJECTED.** The DOM `storage` event fires only in OTHER tabs/windows, never in the tab that performed the write. The one real mid-session change path (user changes persona in the round page's `CaddieSheet`, then leaves the round and talks to the orb) is same-tab, so a storage listener solves nothing for the actual scenario.
-- **Read localStorage at send-time in `runConverse`/`handleMicTap` — REJECTED as the sole mechanism.** It fixes the API `personality_id` cheaply, but (a) a fresh device with empty localStorage would ignore the server `preferred_personality_id` (the profile fetch is what resolves it), (b) the TTS voice lives in a child component effect keyed off a prop, which wants reactive state, and (c) the name/greeting coherence item (1.5) needs the `personas` list + `caddy` display shape — only the hook provides those.
-- **Accept a stale layout instance — REJECTED.** It contradicts the owner's crux ("ONE coherent presence"): change persona on the round page, walk to Home, orb still speaks classic. The pub-sub costs ~15 lines in the module that already owns persistence.
-- **Chosen mechanism fits existing patterns:** the codebase already uses module-level subscribe buses for exactly this cross-component wiring — `src/lib/looper-bus.ts` (`onLooperOpen`) and `src/lib/caddie-context.ts` (`onCaddieContextChange`). The pub-sub lives inside `persona.ts` (single file owns state, persistence, and now propagation).
-
-**Boot-cost assessment (acceptable):** mounting the hook in the layout host adds two small parallel GETs (`/api/caddie/personalities`, `/api/caddie/profile`) at app boot, via `Promise.allSettled` — failures (including 401 when logged out) are swallowed and fall back to `BUILTIN_PERSONAS` + localStorage, so nothing blocks or crashes. When a round page also mounts its own instance the fetches duplicate (2 extra GETs per round open) — accepted; a module-level fetch cache is explicitly out of scope (do not sprawl). Note this in a code comment.
-
-### 1.3 Exact edits
-
-**A. `frontend/src/lib/caddie/persona.ts` — cross-instance sync (new, ~15 lines):**
-- Module level: `const personaListeners = new Set<(id: string) => void>();` and `function notifyPersonaChange(id: string) { for (const l of personaListeners) l(id); }` (not exported, or exported only for tests).
-- In `selectPersona` (line 147–153): after `setPersonaId(id); writeLocalPersonaId(id);` add `notifyPersonaChange(id);`.
-- Also emit from the profile-resolution branch of the effect (after line 139 `writeLocalPersonaId(resolved)`) — idempotent (`setPersonaId` with an equal value is a React no-op) and keeps an already-mounted instance aligned if a later-mounting instance resolves the server preference first.
-- In `useCaddiePersona`, add a subscribe effect: on mount `personaListeners.add(setPersonaId)` (or a wrapper), cleanup removes it. Guard: the emitter also having written localStorage means no listener needs to persist — listeners ONLY `setPersonaId`.
-- No signature change to `CaddiePersonaState` — round page (`RoundPageClient.tsx:275`) is untouched and gains the same convergence for free.
-
-**B. `frontend/src/components/CaddieOrbSheet.tsx` — consume + thread:**
-- Import `useCaddiePersona` from `@/lib/caddie/persona`; at top of the component: `const { personaId, caddy } = useCaddiePersona();`.
-- Line 202: `personality_id: "classic"` → `personality_id: personaId`.
-- Line 215 (JSON fallback): same replacement.
-- `runConverse` `useCallback` deps (line 241): add `personaId`. (`handleMicTap` already lists `runConverse` in its deps at line 341, and `micTapRef.current` is reassigned every render at line 343, so the auto-send path can never capture a stale persona.)
-- Shell render (line 372): pass `personaId={personaId}`.
-- NOTHING ELSE in this file changes — summon routing (lines 122–154), boundId binding, staleness `sessionRef` gen, context-unmount hygiene (lines 162–169), task gates, and the stream→JSON ladder structure stay byte-identical apart from the two literals + prop + greeting (1.5).
-
-**C. `frontend/src/components/LooperSheet.tsx` — TTS voice + optional prop:**
-- Add to `LooperSheetShell` props (line 47–76): `personaId?: string;` with JSDoc stating it selects the SPOKEN voice + is display-inert; destructure with default: `personaId = "classic"`.
-- Line 109: `tts.speak(last.text, "classic")` → `tts.speak(last.text, personaId)`.
-- The speak-newest-turn effect's dep array (line 112) intentionally stays `[open, turns]` with the existing eslint-disable — `personaId` is read at fire time; a persona change alone must NOT trigger the effect (it would incorrectly re-evaluate the watermark). Reading the fresh prop inside the effect closure is correct because the component re-renders on prop change before any new turn lands.
-- Because the prop is optional with default `'classic'`, any consumer that omits it is byte-identical in behavior.
-
-### 1.4 SSR / first-render safety (requirement 4)
-
-- `useCaddiePersona`'s initial state calls `readLocalPersonaId()` which returns `null` server-side → `'classic'` on the server pass, possibly a different id on the client initializer. This CANNOT cause a hydration mismatch: the sheet renders `null` until `open === true` (AnimatePresence, `open` starts `false`), and `open` only flips on a user summon — no persona-dependent markup exists at first paint.
-- Before the profile fetch resolves, `personaId` is the localStorage value (last known choice on this device) or `'classic'` — never undefined, never a crash; `caddy` falls back through `BUILTIN_PERSONAS` (persona.ts lines 155–158). A custom persona id that no longer resolves client-side still sends fine: backend `load_personality` falls back to classic server-side.
-
-### 1.5 Name/greeting coherence — general lane only (requirement 3)
-
-Current general-lane copy (CaddieOrbSheet.tsx lines 375–380): title `"What can I do for you?"`, emptyHint `"Tee times, courses, your game — ask me anything."`.
-
-**Do (minimal, calm):** persona-aware emptyHint for the GENERAL lane only, and only when a non-classic persona is selected — keep classic byte-identical:
-
-- title: unchanged (`"What can I do for you?"` is already quiet and persona-neutral).
-- emptyHint fallback becomes (only in the final `??` position, so task and converse lane copy win exactly as today):
-  `personaId === "classic" ? "Tee times, courses, your game — ask me anything." : `${caddy.name} here — tee times, courses, your game. Ask me anything.``
-  (`caddy.name` is e.g. "The Hype Man" — one serif-italic line, no extra chrome, no emoji, no new components.)
-
-**Explicitly defer (do NOT do):** renaming the shell's hardcoded "Looper" kicker (LooperSheet.tsx line ~175), the per-turn "Looper" author labels (~292, ~320), and "Looper is thinking…" (~362). Those are shared chrome across ALL lanes (task lane included); renaming them per persona is the audit's broader "assistant-name label consistency" item and would churn copy + existing test assertions across lanes — out of scope for this item. Note the deferral in the PR description.
-
-### 1.6 Invariants — explicit guards (requirement 5)
-
-The builder must NOT touch, and the reviewer must verify unchanged:
-- **ONE-mic / single-orb invariant:** no new mic buttons, no second dictation instance; `useLooperDictation` stays the single instance in `CaddieOrbSheet` (line 80).
-- **Realtime files untouched:** `src/lib/voice/realtime.ts`, `src/lib/voice/realtime-ordering.ts`, `src/hooks/useCaddieLiveSession.ts` — zero diffs. This item is the TEXT/TTS off-round converse path only.
-- **Lane routing untouched:** summon routing (surface/legacy-courses/task/converse lanes), `boundId` binding, `sessionRef` staleness gen, context-unmount close, task gates (a)/(b)/(c), expectReply timer — only diffs in `CaddieOrbSheet.tsx` are: the hook call, two `personality_id` literals, the `personaId` prop, the emptyHint expression, dep array.
-- **Task/converse lane copy:** tee-time task titles/hints and my-card converse titles/hints render exactly as before (they sit EARLIER in the `??` chains).
-- **TTS opt-in default:** `getSheetTtsEnabled()` default-off behavior unchanged; we change only the persona argument, never when speech happens.
-
-### 1.7 Tests — RED first (requirement 6)
-
-**Existing harness facts:** `CaddieOrbSheet.test.tsx` is in the `test:caddie-experience` manifest (`src/lib/voice/caddie-experience-suite.ts` line 55) — new assertions there ride the named gate automatically. Its `vi.mock("@/lib/caddie/api")` factory (line ~62) currently exports ONLY `talkToCaddie`, `talkToCaddieStream`, `BeforeFirstByteError`.
-
-**Test-infra prerequisite (will otherwise break at import time):** once `CaddieOrbSheet` imports `useCaddiePersona`, `persona.ts` pulls `fetchPersonalities`, `getCaddieProfile`, `updateCaddieProfile` from the mocked `@/lib/caddie/api` module. Extend the factory:
-`fetchPersonalities: vi.fn(async () => [])`, `getCaddieProfile: vi.fn(async () => ({ preferred_personality_id: null }))`, `updateCaddieProfile: vi.fn(async () => ({}))` (hoisted so tests can override per-case). Also hoist the `useSheetTTS` mock's `speak` into a shared `vi.fn()` (currently an inline throwaway at line 85) so it can be asserted. Clear localStorage in `beforeEach`.
-
-**New tests in `frontend/src/components/CaddieOrbSheet.test.tsx`** (describe block: "persona threading"):
-1. *Selected persona reaches the streaming converse call:* seed `window.localStorage.setItem("looper.caddiePersonaId", "hype")`; summon via `openLooper` (general lane); drive the fake dictation to resolve "what's a good warmup?"; assert `talkToCaddieStream` called with `expect.objectContaining({ personality_id: "hype" })`. **RED today:** actual is `"classic"`.
-2. *Selected persona reaches the JSON fallback:* same seed; make `talkToCaddieStream` reject with `MockBeforeFirstByteError`; assert `talkToCaddie` called with `personality_id: "hype"`. **RED today.**
-3. *TTS speaks in the selected persona's voice:* same seed; let the stream resolve a reply text; after the looper turn commits, assert the hoisted `speak` mock was called with `(replyText, "hype")`. **RED today:** second arg is `"classic"`.
-4. *Fallback floor:* no localStorage, `getCaddieProfile` resolves `{ preferred_personality_id: null }` → assert `talkToCaddieStream` called with `personality_id: "classic"` (GREEN before and after — regression pin).
-5. *Server preference wins over localStorage:* localStorage `"hype"`, `getCaddieProfile` resolves `"professor"` → after the profile microtask settles, converse call carries `"professor"` (pins the hook's documented resolution order end-to-end through the orb).
-
-**New file `frontend/src/components/LooperSheet.test.tsx`** (jsdom; mock `useSheetTTS` + framer-motion with the same cached-Proxy pattern as the orb test):
-6. *Default-prop back-compat:* render `LooperSheetShell` open WITHOUT `personaId`, rerender appending a looper turn → `speak(text, "classic")`. Proves omitted-prop consumers are behavior-identical.
-7. *Prop honored:* same with `personaId="hype"` → `speak(text, "hype")`. **RED today** (prop doesn't exist yet — write the test against the new prop; TypeScript will also be red until the prop lands, which is fine for a compile-level RED).
-   (Leave the caddie-experience manifest untouched — the orb test already carries the gate coverage; do not add this file to the suite.)
-
-**Proving RED:** implement tests 1–3, 5, 7 BEFORE the source edits; run `cd frontend && npx vitest run src/components/CaddieOrbSheet.test.tsx src/components/LooperSheet.test.tsx` and capture the failures showing actual `"classic"`. Then apply 1.3 and re-run to GREEN. Then run the full named gate `npm run test:caddie-experience` plus the realtime suites (`realtime-ordering.test.ts`, `CaddieSheet.realtime-glitch.test.tsx` et al. run inside both `npm run test` and the gate) — all must stay green with zero modifications to those files.
-
----
-
-## Part 2 — Realtime voice-validity clamp (backend, no prod mutation)
-
-### 2.1 Ground truth (verified)
-
-- Root cause (already audited — do not re-audit): guarded seed `backend/supabase/migrations/003_caddie_personas.sql` carries `voice_id='fable'` on `professor` (line ~70) and `course-historian` (line ~97). `'fable'` is TTS-only — the Realtime API rejects it at mint (hard error, no fallback). `app/caddie/personalities.py::load_personality` (line ~181) is DB-FIRST, so the prod row overrides the cycle-127 code fix (`professor`→`cedar` in `PERSONALITIES`).
-- Single choke point confirmed: `backend/app/services/realtime_relay.py::build_session_payload` (line 52) builds `"output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE, "speed": 1.15}` at line 144. Its ONLY production caller is `mint_ephemeral_session` (line 167), which is called from exactly two routes: `app/routes/realtime.py:86` (`/setup-session`) and `:142` (`/session`). Clamping inside `build_session_payload` therefore covers ALL mints with one clamp, and is pure/unit-testable with no HTTP mock at all.
-- Valid Realtime voice set documented at `app/caddie/types.py:319` (comment on `CaddiePersonality.voice_id`): `alloy | ash | ballad | coral | echo | sage | shimmer | verse | marin | cedar`. `OPENAI_REALTIME_DEFAULT_VOICE` defaults to `"sage"` (relay line 21) — a member of the set.
-- `tests/eval/test_realtime_session_config.py` already holds a LITERAL `VALID_REALTIME_VOICES` set (lines 42–45) as independent teeth over `PERSONALITIES` (code-side personas). It does NOT cover DB-sourced voice_ids — that is the gap this clamp closes.
-
-### 2.2 Design
-
-**Constant — single production source of truth:** define in `backend/app/caddie/types.py`, immediately above `CaddiePersonality` (adjacent to the line-319 doc comment, which should now reference it):
-`VALID_REALTIME_VOICES: frozenset[str] = frozenset({"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"})`
-`types.py` is the natural home (it already documents the enum; no import cycle: `realtime_relay` → `app.caddie.types` is a new clean edge, `types.py` imports nothing from services).
-
-**Clamp helper — in `realtime_relay.py`, exported:**
+```python
+# The house register (specs/caddie-orb-persona-consistency-persona.md §1,
+# rules 1-5). Shared by ALL mouths so wording never drifts: the Realtime
+# behavior block (_BASE_BEHAVIOR below), both text-mouth stable_text builders
+# (routes/caddie.py), the strategy brain (strategy.py::_strategy_system), and
+# the guide writer (guide_writer.WRITER_SYSTEM). Grounding ("never invent a
+# number; say plainly what's unavailable") is rule 6 — it lives in the
+# grounding constants below, NOT here. Personas layer flavor ON TOP of this;
+# they never restate it. course_intel_writer.COURSE_WRITER_SYSTEM is the one
+# intentionally distinct written-medium register (see its own comment).
+# SINGLE PARAGRAPH, no newlines — the prompt-assembly line-set guard
+# (tests/test_caddie_caching.py) and both mouths interpolate it as one line.
+CADDIE_HOUSE_REGISTER = (
+    "Your words are heard, never read: plain speech only — never use markdown, "
+    "asterisks, bullet lists, headings, numbered steps, or emoji. Brief by "
+    "default: 1 to 3 short sentences unless the player asks for more — one "
+    "clear call beats a pep talk. No preamble and no meta-commentary: never "
+    "announce what you are about to do or frame the answer — start with the "
+    "answer itself. Calm and specific, like a good caddie talking, not a "
+    "report: state numbers and calls plainly — never hedged, dressed up, or "
+    "corporate. Never robotic and never break character: no AI self-reference, "
+    "no disclaimers, no apologizing for being a model — stay the caddie."
+)
 ```
-def clamp_realtime_voice(voice_id: Optional[str]) -> str:
-    if voice_id in VALID_REALTIME_VOICES: return voice_id
-    if voice_id: logger.warning("invalid Realtime voice %r — clamped to %r", voice_id, OPENAI_REALTIME_DEFAULT_VOICE)
-    return OPENAI_REALTIME_DEFAULT_VOICE
+
+Deliberate wording choices (do not change):
+- Keeps the literal `never use markdown` — golden scenario `text-mouth-states-no-markdown-contract` and the teeth test at `tests/eval/test_harness_has_teeth.py:141` pin that literal and stay green untouched.
+- Uses `1 to 3 short sentences` (persona doc rule 2) — unifies realtime's old "1 to 3 sentences" and text's old "2-3 short sentences" (that literal's two pins get updated; see §5).
+- Contains NO banned literal (notably it does NOT quote "Here's the plan"), so the static scan in §5 can be strict with no quoted-negative carve-out.
+- No newline in the value — interpolates as exactly one line everywhere.
+
+## 2. Adoption, surface by surface (exact insertion points + cache notes)
+
+### 2.1 (1a) Realtime `_BASE_BEHAVIOR` — `voice_prompts.py:22-35`
+
+Rewrite as an f-string. New value (exact):
+
+```python
+_BASE_BEHAVIOR = f"""You are caddying live for this golfer. You can hear them and they can hear you.
+{CADDIE_HOUSE_REGISTER}
+When the hole data shows an uphill/downhill change, factor it into the club call and say it
+briefly ("plays more like 195 with the climb"). Any "Local knowledge" line is written for
+golfers in general — filter it through THIS player's real club distances before repeating it:
+never mention a hazard they can't reach on the shot at hand; focus on what's in play at THEIR
+landing zone.
+You may interrupt yourself to acknowledge the player if they cut in.
+You have tools available — use them to fetch real numbers (recommendations, distances) before
+giving strategic advice. Never state a yardage, club distance, or carry you did not get from a
+tool. If a tool reports data as unavailable, say so plainly — never invent a number to fill in.
+Reference prior shots and prior rounds when it sharpens the advice.
+"""
 ```
-- `None` → default (preserves the existing `voice_id or DEFAULT` behavior exactly, silently).
-- Invalid non-empty value → default + ONE `logger.warning` — deliberate observability: prod logs will show the `'fable'` rows surviving in the DB until the owner-gated repair, without erroring the golfer's session.
-- Apply at line 144: `"output": {"voice": clamp_realtime_voice(voice_id), "speed": 1.15}`. **`"speed": 1.15` is NOT touched.**
 
-**Echo-back clamp — YES, do it.** `app/routes/realtime.py` lines 98 and 162 currently echo `voice_id=personality.voice_id or mint.get("voice", "")` into `StartRealtimeSessionResponse.voice_id`. Change both to `voice_id=clamp_realtime_voice(personality.voice_id)`. Justification: after the clamp, a `'fable'` row would otherwise make the server REPORT `voice_id="fable"` while actually minting `sage` — the response should describe the session that was actually minted (client telemetry/display honesty), and the helper makes it one shared expression, not a second copy of the logic. Response SHAPE is unchanged (same field, same type) → `frontend/src/lib/types.ts` ↔ `backend/app/models.py` need NO changes (confirmed: `StartRealtimeSessionResponse` is defined inline in `routes/realtime.py`; no shared-shape edit anywhere in this bundle).
+Removed (now owned by the constant): "Default to brief, spoken-style answers — 1 to 3 sentences. Your words are heard, not read: never use markdown, asterisks, lists, headings, or emoji. One clear call beats a pep talk." and "Stay in character at all times." Kept verbatim: elevation clause, local-knowledge filter, interrupt clause, tool clause, memory clause.
 
-**Eval-test teeth vs. duplication:** the literal set in `tests/eval/test_realtime_session_config.py` STAYS as-is (a test's independent copy is the point of the teeth — importing the production constant there would let a bad edit to the constant self-certify). Add one drift alarm to that file: `test_valid_voice_constant_matches_closed_set` asserting `app.caddie.types.VALID_REALTIME_VOICES == VALID_REALTIME_VOICES` (the local literal). Production code holds exactly ONE copy.
+`build_realtime_instructions` (line ~233) is NOT edited. Part ordering stays `[# Personality, persona block] → memory → situation → history → # Behavior(...)`; the Behavior block still opens with `_BASE_BEHAVIOR.strip()` followed by the unchanged rule stack, so `tests/eval/test_strategy_tool.py::test_strategy_tool_rule_present_in_realtime_instructions` (`# Behavior` < DECISION < STRATEGY_TOOL ordering) stays green untouched.
 
-**Explicit non-goals:** no change to `sage`/default, no change to `speed: 1.15`, no edits under `backend/supabase/migrations/` (guarded dir), NO prod DB write of any kind (blocked/owner-gated; the clamp makes the repair non-urgent).
+Cache note (realtime): instructions are minted per session; the only stable cross-session prefix is the persona block, which is byte-identical for DB-served personas and changes only for the pruned builtin fallbacks (expected). Assembly order unchanged → no prefix reshuffle.
 
-### 2.3 Backend tests — RED first (pure unit, CI-safe, no DB / no network)
+### 2.2 (2) Strategy brain `_strategy_system()` — `strategy.py:384-406`
 
-Add to `backend/tests/test_realtime_payload.py` (already imports `build_session_payload` with the env shims at lines 10–14):
-1. `test_invalid_tts_only_voice_clamped_to_default` — `build_session_payload("sys", "fable")` → `payload["session"]["audio"]["output"]["voice"] == OPENAI_REALTIME_DEFAULT_VOICE`. **RED today:** actual is `"fable"`. This is the exact prod-row scenario (a DB persona carrying `'fable'` reaches the mint via `personality.voice_id`). Parametrize over `["fable", "onyx", "nova", "not-a-voice"]`.
-2. `test_valid_voice_passes_through_unchanged` — `build_session_payload("sys", "marin")` → `"marin"` (and keep the existing `"alloy"` passthrough test at line 98 green).
-3. `test_default_voice_is_a_valid_realtime_voice` — `OPENAI_REALTIME_DEFAULT_VOICE in VALID_REALTIME_VOICES` (guards the env-default config shipped in code; an operator overriding the env var to an invalid voice remains an ops error — flagged, not engineered around).
-4. `test_clamp_none_falls_back_to_default` — `clamp_realtime_voice(None) == OPENAI_REALTIME_DEFAULT_VOICE` (pins that the pre-existing None behavior is preserved).
-5. *Echo-back honesty (route-level, still pure):* new test (same file or `tests/test_realtime_voice_clamp.py`) calling `await start_setup_session(SetupSessionRequest(personality_id="professor"), user_id="u1")` directly with `monkeypatch` on `app.routes.realtime.load_personality` (returns a `CaddiePersonality` with `voice_id="fable"`) and `app.routes.realtime.mint_ephemeral_session` (returns `{"value": "ek_x", "expires_at": 1, "id": "rs_1", "model": "gpt-realtime"}`) → assert `response.voice_id == OPENAI_REALTIME_DEFAULT_VOICE`. **RED today:** `"fable"`. No DB, no HTTP — safe for local `uv run pytest` (DB-integration tests stay CI-deferred).
-6. Drift alarm in `tests/eval/test_realtime_session_config.py` per 2.2 (GREEN on landing; exists to catch future divergence).
+Two edits inside the f-string; everything else byte-identical:
 
-Prove RED: write tests 1 and 5 first, run `cd backend && uv run pytest tests/test_realtime_payload.py tests/eval/test_realtime_session_config.py -x`, capture the `"fable"` failures, then land 2.2 and re-run to GREEN.
+1. Insert `{CADDIE_HOUSE_REGISTER}` on its own line directly ABOVE `{HAZARD_GROUNDING_RULE}` (register precedes the grounding stack — same relative position as the text mouths). Add the import to strategy.py's existing `voice_prompts` import.
+2. Replace the Output-contract paragraph (lines 402-406) with:
 
----
+```
+Output contract: ONE paragraph, at most 80 words. Tee to green: the club call (the engine's
+recommendation IS the call — explain it, never re-decide it), the aim/landing zone, the miss
+side the data supports, what the shot leaves, and one green note when the read is available.
+```
 
-## Sequencing
+Pruned by edit 2 (now owned by the constant): "plain speech — no markdown, bullets, headings, or emoji; no preamble ("Here's the plan"), no meta-commentary" and the trailing "Calm and specific, like a good caddie talking, not a report." (this also removes the module's only embedded banned-literal quote, keeping the §5 scan strict). Kept: the 80-word/one-paragraph output contract and the whole GROUND TRUTH framing — FROZEN.
 
-1. **Backend clamp first** (independent, smallest): types.py constant → RED tests → relay helper + line-144 clamp → routes echo clamp → GREEN → `ruff check . && uv run pytest`.
-2. **Frontend persona threading:** persona.ts pub-sub → orb/shell RED tests (incl. the api-mock factory extension) → CaddieOrbSheet + LooperSheet edits → greeting tweak → GREEN.
-3. Full gates (below), then one manual pass: with persona set to Hype on the round page, leave the round, summon the orb on Home → reply arrives as Hype (network tab: `personality_id: "hype"`), speaker-toggle on → spoken in Hype's voice; greeting reads "The Hype Man here — …".
+Test to update: `tests/eval/test_strategy_tool.py::test_strategy_system_states_the_output_contract` — replace `assert "no markdown" in system.lower()` with `assert CADDIE_HOUSE_REGISTER in system` (import it); keep `assert "80 words" in system`. `test_strategy_system_contains_the_grounding_rule_constants` stays green untouched.
 
-## Verification contract (gates)
+### 2.3 (5b) Text-mouth `stable_text` — `routes/caddie.py:990-1019` and `:1803-1830` (BOTH builders)
 
-- Frontend: `cd frontend && npm run lint && npx tsc --noEmit && npm run test && npm run test:caddie-experience && npx tsx voice-tests/runner.ts --smoke && npm run build`
-- Backend: `cd backend && ruff check . && uv run pytest` (DB-integration tests deferred to CI)
-- Shared shapes: NO change to `frontend/src/lib/types.ts` / `backend/app/models.py` (confirmed — no request/response shape changes anywhere in this bundle).
-- Reviewer diff-guard: zero diffs in `src/lib/voice/realtime.ts`, `src/lib/voice/realtime-ordering.ts`, `src/hooks/useCaddieLiveSession.ts`, `backend/supabase/migrations/**`.
+Import `CADDIE_HOUSE_REGISTER` alongside the existing `voice_prompts` imports. In `_build_session_voice_prompt`, the `--- INSTRUCTIONS ---` section becomes (exact; the stateless `_build_voice_prompt` at :1803 is identical MINUS the "You have memory..." paragraph — preserve that existing single point of difference):
 
-## Risks / flags
+```
+--- INSTRUCTIONS ---
+You are caddying for this golfer right now, on the course. Respond to their question or comment.
+Your reply is SPOKEN ALOUD on the course.
+{CADDIE_HOUSE_REGISTER}
+If they ask about club selection, aim, or strategy, use the CURRENT SITUATION section to give
+specific, actionable advice — and when the hole context shows an uphill/downhill change or a
+plays-like distance, factor it in and SAY it briefly ("plays more like 195 with the climb").
+Any "Local knowledge" line is written for golfers in general — filter it through THIS player's
+real distances before repeating it: a hazard beyond their reach off the tee is irrelevant
+(don't mention it); talk about what's in play at THEIR landing zone. A 300-yard driver doesn't
+care about a bunker at 370. If they're just chatting, be personable but keep it golf-focused.
+You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
+or known tendencies when relevant.
+```
 
-- **Boot fetches from layout:** two parallel, failure-tolerant GETs at app boot (plus duplicates when a round page mounts its own hook instance). Accepted as minimal; a module-level cache is a follow-up if it ever shows up in perf traces.
-- **Partial name coherence by design:** the shell's "Looper" kicker/turn labels remain — deferred deliberately (shared chrome across lanes; see 1.5). Flag in the PR so the audit item stays visible.
-- **Clamp can mask config drift:** an invalid voice now degrades silently to `sage` at runtime. Mitigated by the `logger.warning` and by the eval teeth staying red for any code-side persona regression; the prod-row repair remains owner-gated follow-up.
-- **Custom personas with no `voice_id`:** already resolve to default at mint (None-path unchanged) — no behavior change.
+Removed (owned by the constant): ": keep it to 2-3 short sentences max unless they ask for more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji. One clear recommendation beats a pep talk." and "Never break character." Kept verbatim: persona head, memory section, the CURRENT SITUATION/elevation/local-knowledge guidance, the memory paragraph (session builder only), and the ENTIRE rule stack `{output_language_rule()}…{DECISION_GROUNDING_RULE}` in its exact current order.
 
-## Critical Files for Implementation
+Cache-stability (Anthropic prompt cache — the critical constraint):
+- The BLOCK 0 (stable, `cache_control: ephemeral`) / BLOCK 1 (volatile) split, and cache_control placement, are untouched — pinned by `tests/test_caddie_caching.py` tests 1/2/4/6, which must stay green UNEDITED.
+- The house constant is a module constant interpolated at a FIXED position inside BLOCK 0 — nothing per-turn/per-hole enters the stable block, so per-round cache hits resume immediately after the one-time re-prime.
+- BLOCK 1 (`volatile_text` / context assembly / `format_tee_numbers_line`) must be byte-identical — zero edits in that region.
+- The golden literal `You have memory of the entire round conversation` (scenario `followup-3wood-after-driver`) is preserved verbatim.
 
-- /Users/justinlee/projects/scorecard/frontend/src/components/CaddieOrbSheet.tsx
-- /Users/justinlee/projects/scorecard/frontend/src/components/LooperSheet.tsx
-- /Users/justinlee/projects/scorecard/frontend/src/lib/caddie/persona.ts
-- /Users/justinlee/projects/scorecard/backend/app/services/realtime_relay.py
-- /Users/justinlee/projects/scorecard/backend/app/routes/realtime.py
+### 2.4 (1b/5a) Personas — `personalities.py` (hardcoded seed dict ONLY; hype EXEMPT, untouched)
+
+Prune ONLY clean restatements of brevity/calm/robotic (the register owns them); all persona flavor stays. Exact edits:
+- `strategist.realtime_instructions`: delete the final sentence "Two or three short sentences per response unless the player asks you to go deeper."
+- `strategist.system_prompt`: delete the bullet "- Keep responses concise — 2-3 sentences max for quick advice".
+- `classic.realtime_instructions`: "Keep it conversational, never robotic. Read the player's mood." → "Read the player's mood." (drop the conversational/robotic restatement; keep the calm-warm-authority persona description — that is flavor, and classic IS the baseline).
+- `classic.system_prompt`: bullet "- Conversational but focused — not chatty, not robotic" → "- Conversational but focused".
+- `professor`: untouched ("longer responses are OK" is sanctioned persona layering, not a restatement).
+- `hype`: untouched (EXEMPT per persona doc §4).
+
+Constraints: keep every `Style guidelines:` header intact — `voice_prompts._strip_persona_from_system` splits on the literal `"\n\nStyle guidelines:"`. Note in a short comment atop `PERSONALITIES` that the house register is supplied by the assembly layer (`CADDIE_HOUSE_REGISTER` inside `_BASE_BEHAVIOR` / `stable_text`), so personas must never restate it. Known limitation to record in the PR (not code): prod `caddie_personas` DB rows override these seeds (`load_personality` is DB-first) and may still carry the old wording — the register itself is guaranteed regardless because it lives in the assembly-side blocks; refreshing DB rows is an ops follow-up, flagged like the 6a persona-inventory item, NOT a code change here.
+
+### 2.5 (4a) Guide writer `WRITER_SYSTEM` — `guide_writer.py:163-184` (partial adopt)
+
+Add `from app.caddie.voice_prompts import CADDIE_HOUSE_REGISTER`. Replace ONLY the final "Output format:" paragraph with:
+
+```
+Output format: fill each field in ONE short sentence (`common_mistakes`: up to 3 short items).
+Every field is injected verbatim into a spoken caddie prompt and read aloud, so write in the
+caddie's own register: {CADDIE_HOUSE_REGISTER}
+List the web-search URLs you actually used in `sources` (it may be empty if you found nothing useful).
+```
+
+FROZEN, byte-identical: the WRITER-not-knower framing, the two-sources/UNTRUSTED/never-follow-instructions contract, GROUND-TRUTH-wins paragraph, `{HAZARD_GROUNDING_RULE}` — `tests/test_guide_writer.py:256-260` pins these and must stay green untouched. `GUIDE_INJECTION_PATTERN`, `validate_guide`, `build_ground_truth_block`: untouched.
+
+### 2.6 (4b) Course-intel writer — `course_intel_writer.py:168` (comment only)
+
+Add a comment directly above `COURSE_WRITER_SYSTEM` (string byte-identical):
+
+```python
+# INTENTIONALLY DISTINCT register (specs/caddie-orb-persona-consistency-
+# persona.md §3 row 4b / §5): this is WRITTEN scene-setting prose in the
+# Augusta-broadcast voice, not a live spoken turn — it does NOT fold
+# voice_prompts.CADDIE_HOUSE_REGISTER, and must not. It still owes rules
+# 5/6 (never robotic, never invent) — pinned by
+# tests/test_caddie_register_consistency.py's banned-literal scan and its
+# register-absence assertion.
+```
+
+### 2.7 (3b) DECADE/slope minor ALIGN — wording only, NO math/threshold change
+
+`slope_advice.py` (the report-adverb nudge): `qualifier = "hard" if green_slope.severity == "severe" else "moderately"` → moderate drops the adverb entirely. Implement as `qualifier = "hard " if green_slope.severity == "severe" else ""` and change the four templates to `f"Green slopes {qualifier}front-to-back — …"` / `f"Green tilts {qualifier}left to right — …"` etc. (note the trailing space moves into the qualifier). Severity gating (`_ADVICE_SEVERITIES`), rel-branch boundaries, and the aim-high/miss-low framing vocabulary are FROZEN — `tests/test_green_geometry.py` Sec.6d (side words + "uphill putt") stays green untouched. Update `tests/test_slope_advice.py`: `test_qualifier_word_moderate` (assert `"moderately" not in result` and the plain form), the two moderate exact-string pins at ~254/268 (drop `moderately `), severe pins unchanged.
+
+`decade_advice.py` (the written-shorthand nudge, `decade_aim_advice`'s two return strings ONLY): `f"The percentages favor aiming ~{n_yards}y {aim_direction} of the flag…"` → `f"The percentages favor aiming about {n_yards} yards {aim_direction} of the flag…"` (both the hazard-named and danger-side variants). Keep "The percentages favor aiming" verbatim — it is genuine DECADE golf-speak, and `tests/test_positioning_shot.py:274` (`"percentages favor aiming" not in joined`) keeps its teeth, as does `test_decade_advice.py:310`'s `startswith`. Deliberately NOT changed: `decade_landing_advice` / `cross_hazard_line`'s `~{carry}` notation — it matches the FROZEN numbers-block notation in `format_tee_numbers_line` ("plays like ~X"), and changing it would touch `tests/test_bag_caddie_grounding_unit.py`'s exact pins for zero register gain; record this judgment in a one-line comment. Update `tests/test_decade_advice.py`: the `_extract` regex at :37-38 (`r"~(\d+)y"` → `r"about (\d+) yards"`) and the unit-form test at ~313. All thresholds/breakpoints/windows (`AIM_THRESHOLD_YDS`, sigmas, drive-zone constants) byte-identical.
+
+### 2.8 Explicitly untouched
+
+`strategy_turn.py::compose_degraded_line` (KEEP AS IS — its terse output already serves rule 4; existing guards at `tests/eval/test_strategy_tool.py:620-745` stay green untouched). All grounding constants, `output_language_rule`, `STRATEGY_TOOL_RULE` (its "Let me look at this one." bridge is a designer-owned sanctioned acknowledgment, not preamble), `TOOL_USE_RULE`, `format_tee_numbers_line`, `format_par_sanity_note`, `_situation_block`, all validators, all tool payloads, `frontend/**` (6b/6c KEEP-AS-IS; 6a flagged as a separate backlog item, no code), `types.ts`/`models.py` (no shared shape changes — confirm diff touches neither).
+
+## 3. Eval design (CI-safe, offline, thin)
+
+### 3.1 Tier-1: register-as-rule (imported-constant pattern — no new check KIND)
+
+The cleanest home is the EXISTING `prompt_contains_rule` machinery, which already implements "assert the imported constant is in the assembled prompt" and already has teeth coverage — adding a new check kind would also trip the registry-closure tests for no benefit.
+- `tests/eval/checks.py`: import `CADDIE_HOUSE_REGISTER`; add `"CADDIE_HOUSE_REGISTER": CADDIE_HOUSE_REGISTER` to `_RULE_TEXT` (:223). The existing empty-rule toothlessness guard applies automatically.
+- `tests/eval/schema.py`: add `"CADDIE_HOUSE_REGISTER"` to `_VALID_RULE_NAMES` (:103).
+- `tests/eval/golden/caddie_advice.jsonl`:
+  - `chatty-question-stays-calm`: replace `{"check": "prompt_contains_literal", "literal": "2-3 short sentences", "mouths": ["text"]}` with `{"check": "prompt_contains_rule", "rule": "CADDIE_HOUSE_REGISTER", "mouths": ["text", "realtime"]}` — this is the check that asserts the constant in BOTH assembled ADOPT mouths that Tier-1 covers.
+  - `text-mouth-states-no-markdown-contract`: keep the `never use markdown` literal check; widen `"mouths"` to `["text", "realtime"]` (the literal now exists in both via the constant).
+- `tests/eval/test_harness_has_teeth.py`: update :130's literal `"2-3 short sentences"` → `"1 to 3 short sentences"` (still a real literal in the real prompt; mutant half unchanged). :141 (`never use markdown`) unchanged. Add one register mutant test mirroring the OBSERVED_REALITY one: `prompt_contains_rule` with `rule="CADDIE_HOUSE_REGISTER"` passes on the real ctx and goes RED on `ctx.text_prompt/realtime_prompt.replace(CADDIE_HOUSE_REGISTER, "")`.
+
+### 3.2 New standalone pytest — `backend/tests/test_caddie_register_consistency.py`
+
+Offline, no network/DB (standard header: `os.environ.setdefault("DATABASE_URL", …stub…)` + `LOOPER_SECRETS_DISABLED` before app imports, same as `test_golden_tier1.py`). Contents:
+
+1. **Adoption pins for the non-Tier-1 mouths** (imported constant, never re-typed): `CADDIE_HOUSE_REGISTER in voice_prompts._BASE_BEHAVIOR`; `in strategy._strategy_system()`; `in guide_writer.WRITER_SYSTEM`; and `not in course_intel_writer.COURSE_WRITER_SYSTEM` (pins 4b's intentional distinctness). Plus a shape guard: constant is non-empty and contains no `"\n"` (protects the line-set comparison and one-line interpolation).
+2. **Banned-literal static scan** — persona doc §2's list as a module-level `BANNED_REGISTER_LITERALS` tuple (lowercase substrings: the AI-tells, meta-preamble, SaaS-speak, and the two degraded regression strings `no trouble` / `the none`). Scan (case-insensitive substring) over exactly: `CADDIE_HOUSE_REGISTER`, `_BASE_BEHAVIOR`, `_strategy_system()`, `WRITER_SYSTEM`, `COURSE_WRITER_SYSTEM`, each builtin persona's `realtime_instructions` + `system_prompt` (`PERSONALITIES`), all four `slope_miss_advice` branch outputs × both severities, sample outputs of `decade_aim_advice`/`decade_landing_advice`/`cross_hazard_line`, and one `compose_degraded_line` sample (read-only invocation). Substring-literals ONLY — do NOT apply the markdown/emoji structural checks here (persona system_prompts legitimately contain `- ` style-guideline bullets; markdown/emoji checks stay Tier-2 on live ANSWERS via the existing `no_markdown`).
+3. **Persona-doc banned-list pin** (reference, not re-type): `test_banned_list_matches_persona_doc` reads `Path(__file__).resolve().parents[2] / "specs" / "caddie-orb-persona-consistency-persona.md"` and asserts every entry of `BANNED_REGISTER_LITERALS` appears verbatim in the doc's §2. Direction of truth: the doc is the source; a doc edit that renames/removes a literal makes this test fail loudly, so the code list can never silently drift from the contract. (Full markdown-backtick parsing is deliberately avoided as brittle — this containment pin is the documented "reference it" mechanism.)
+4. **Cheap required-marker spot checks** (static, per doc §2 "where cheap"): `hype`'s prompts contain `"!"`; `professor`'s contain `"why"` (case-insensitive); `strategist`'s contain a digit; `classic` asserts nothing (baseline). Live-answer banned/required checks are explicitly OUT of CI — they may later ride `run_tier2.py`/`run_consistency.py` behind `CADDIE_EVAL_LIVE=1` (note this in the module docstring; do not implement).
+
+### 3.3 Proving the change is register-only (the assembled-prompt guard)
+
+`tests/test_caddie_caching.py` is the test that will go red and whose expected strings MUST be updated — and it is also the proof mechanism. Update `_OLD_SESSION_TEMPLATE` (:182) and `_OLD_STATELESS_TEMPLATE` (:217): mirror §2.3's new INSTRUCTIONS text exactly, with the register as a `{house_register}` placeholder, and pass `house_register=CADDIE_HOUSE_REGISTER` (imported) in both `.format(...)` calls — extending the file's existing convention where every deliberate addition is referenced via its imported constant. Extend the comment block at :161-179 with one line citing this spec. Because the guard compares normalized LINE SETS of the full assembled prompt against the template, a green run proves: persona head, memory section, every grounding rule, the context/volatile block, and the block/breakpoint structure are all unchanged — the ONLY delta is the swapped register lines, which arrive via the same imported constant production uses. Tests 1/2 (two-block list, breakpoint on block 0 only, stable-before-volatile) are NOT edited and pin the cache structure.
+
+## 4. File-by-file change list
+
+Production (7 files):
+1. `backend/app/caddie/voice_prompts.py` — add `CADDIE_HOUSE_REGISTER` (above `_BASE_BEHAVIOR`); rewrite `_BASE_BEHAVIOR` per §2.1. Nothing else in the module changes.
+2. `backend/app/routes/caddie.py` — import the constant; rewrite the `--- INSTRUCTIONS ---` section of BOTH `stable_text` f-strings per §2.3 (rule stack and BLOCK 1 untouched).
+3. `backend/app/caddie/strategy.py` — import the constant; two edits in `_strategy_system()` per §2.2.
+4. `backend/app/caddie/guide_writer.py` — import the constant; Output-format paragraph per §2.5.
+5. `backend/app/caddie/personalities.py` — four seed prunes per §2.4 + comment.
+6. `backend/app/caddie/course_intel_writer.py` — comment only per §2.6.
+7. `backend/app/caddie/slope_advice.py` + `backend/app/caddie/decade_advice.py` — wording per §2.7.
+
+Tests/eval (7 files):
+8. `backend/tests/eval/checks.py` — `_RULE_TEXT` entry + import.
+9. `backend/tests/eval/schema.py` — `_VALID_RULE_NAMES` entry.
+10. `backend/tests/eval/golden/caddie_advice.jsonl` — two scenario check edits (§3.1).
+11. `backend/tests/eval/test_harness_has_teeth.py` — one literal update + one new register mutant.
+12. `backend/tests/test_caddie_caching.py` — template mirror per §3.3.
+13. `backend/tests/eval/test_strategy_tool.py` — `test_strategy_system_states_the_output_contract` per §2.2 only.
+14. `backend/tests/test_slope_advice.py`, `backend/tests/test_decade_advice.py` — pins per §2.7.
+
+New: 15. `backend/tests/test_caddie_register_consistency.py` (§3.2).
+
+## 5. Edge cases / risks
+
+- **Constant-definition order**: `_BASE_BEHAVIOR` and `WRITER_SYSTEM` interpolate at import time — `CADDIE_HOUSE_REGISTER` must be defined above `_BASE_BEHAVIOR`; strategy/guide_writer import it, no cycle (`voice_prompts` imports neither).
+- **guide_writer → voice_prompts import**: pulls `app.db.models`/`app.caddie.session` transitively at import. Every existing test file that imports guide_writer stubs `DATABASE_URL` first; builder must run `uv run pytest tests/test_guide_writer.py tests/eval -x` early to confirm clean import.
+- **DB personas override seeds** (prod): register is assembly-side so it always lands; the prune de-duplicates seeds only. State the DB-row-refresh ops follow-up in the PR, alongside the 6a persona-inventory backlog flag.
+- **`_strip_persona_from_system` seam**: persona prunes must not remove/alter the `"\n\nStyle guidelines:"` separator.
+- **Banned-scan false positives**: verified none in current strings (Professor's "Here's the situation:" is not "here's the plan"; the two route-model DOCSTRINGS containing "leverages" at `routes/caddie.py:268,292` are OpenAPI descriptions, not prompt text — out of scan scope; do not "fix" them).
+- **Which assembled strings change bytes (expected)**: realtime instructions (behavior block + pruned builtin persona blocks), both `stable_text` BLOCK 0s (one-time Anthropic cache re-prime per round shape, then normal hits), `_strategy_system()`, `WRITER_SYSTEM`, moderate-severity slope strings, `decade_aim_advice` strings. **Must stay byte-identical**: every grounding/tool/language rule constant, BLOCK 1 / situation blocks / `messages`, `format_tee_numbers_line` + corridor clauses, `compose_degraded_line`, `COURSE_WRITER_SYSTEM`, `GUIDE_INJECTION_PATTERN`, all validators/payloads.
+- **Ruff**: keep the constant as parenthesized concatenation (source lines within limit; value single-line).
+
+## 6. Gates (exact commands)
+
+Backend, from `/Users/justinlee/projects/scorecard/backend`:
+- `uv run ruff check .`
+- `uv run python ci_scripts/scoping_lint.py` (must stay green untouched)
+- `uv run pytest` — full CI parity. Within it, the contract split:
+  - Updated-then-green (prompt assembly + register): `tests/test_caddie_caching.py`, `tests/eval/test_golden_tier1.py`, `tests/eval/test_harness_has_teeth.py`, `tests/eval/test_strategy_tool.py`, `tests/test_slope_advice.py`, `tests/test_decade_advice.py`, new `tests/test_caddie_register_consistency.py`.
+  - Green UNTOUCHED (frozen numbers/verdict/grounding contracts — proof of intended-only change): `tests/eval/test_strategy_tool.py` degraded-line + ground-truth tests, `tests/test_numbers_coherence_prompt.py`, `tests/test_decision_grounding_prompt.py`, `tests/test_positioning_prompt.py`, `tests/test_positioning_shot.py`, `tests/test_epistemic_humility_prompt.py`, `tests/test_input_grounding_prompt.py`, `tests/test_output_language_prompt.py`, `tests/test_realtime_grounding.py`, `tests/test_situation_block_strip.py`, `tests/test_green_geometry.py`, `tests/test_guide_writer.py`, `tests/test_bag_caddie_grounding_unit.py`, `tests/eval/test_realtime_session_config.py` (voice-config pins over the pruned `PERSONALITIES` — voice_ids untouched), `tests/test_caddie_log_lines.py`, `tests/test_caddie_tools.py`, `tests/test_realtime_tools.py`.
+
+Frontend, from `/Users/justinlee/projects/scorecard/frontend` (backend-only change — these must pass trivially; confirm the diff contains zero frontend files): `npm run lint` · `npx tsc --noEmit` · `npx tsx voice-tests/runner.ts --smoke` · `npm test` · `npm run build`.
+
+Shared source-of-truth pins: `frontend/src/lib/types.ts` ↔ `backend/app/models.py` untouched (no shared shapes change — verify in diff); the persona-doc banned-list is pinned by `test_banned_list_matches_persona_doc` (§3.2 item 3), never re-typed without a drift alarm.
