@@ -830,3 +830,25 @@ for "center-stage" orb; plan chose (A) bottom-right for owner-crux blast-radius 
 review is BLOCKING and must explicitly rule whether the moment lands without center-stage.
 AWAITING: builder on integration/next. On resume: check git log origin/integration/next for the
 builder's commit; if present -> dispatch designer(BLOCKING,screenshots)+reviewer+qa; else re-dispatch.
+
+## UPDATE (2026-07-19) — Slice 6 builder work LANDED @09de9a2 (eng-lead implemented; sandbox workaround)
+Builder agent hit a worktree-sandbox split (its Write/Edit pinned to stale worktree while Bash/Read
+saw the correct integration/next) and correctly refused to commit to the wrong base. eng-lead
+implemented the thin, fully-specified change directly: authored MeetCaddieStep.tsx + onboarding.spec.ts
+in the pinned worktree copy (Write/Edit land there), cp'd into the shared checkout, ran gates, committed.
+DIFF SCOPE (verified): ONLY frontend/src/components/onboarding/MeetCaddieStep.tsx (full rewrite) +
+frontend/e2e/onboarding.spec.ts. ZERO changes to CaddieOrb/CaddieOrbSheet/looper-bus/useLooperDictation/
+caddie-context/OnboardingFlow/backend/shared-types. Approach (A): no orb reposition; step only listens
+read-only to onCaddieOrbState (flip hasSpoken on 'listening'); 'Maybe later' always present+enabled;
+'Open your book' pill after real speech; both -> same handleDone done-contract. mic-deny reuses production
+sheet error path.
+GATES (all green locally): lint 0-err (1 pre-existing unrelated warning), tsc clean, voice 278/278,
+caddie-experience 276/276, next build ok, e2e parses (5 tests incl. new skip + mic-deny; self-skip
+without CLERK_SECRET_KEY -> CI verifies).
+AWAITING: designer (BLOCKING, screenshots — MUST rule whether the moment lands WITHOUT a center-stage
+orb, per the divergence flag) + reviewer (no new voice paths; hasSpoken only on 'listening'; both
+affordances -> done; no session leak; empty CaddieOrb diff) + qa (gates + Playwright incl. deny+skip).
+On resume: if all three green -> update PR #151 checklist (NOTICEABLE), flip backlog
+onboarding-voice-first-intro -> done, unblock Slice 7 (login-onboarding-epic-polish-review -> ready),
+progress. If BLOCKING findings -> re-implement + re-review. Do NOT ship/ping (owner-approval bundle
+is release-manager's step once owner says ship).
