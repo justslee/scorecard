@@ -99,6 +99,16 @@ export interface Hazard {
   lng?: number;
 }
 
+// One researched, attributed piece of local knowledge about a hole — mirrors
+// `backend/app/caddie/types.py::LoreItem` exactly
+// (specs/caddie-guide-local-lore-plan.md).
+export interface LoreItem {
+  text: string;
+  category: 'green_character' | 'feature' | 'history' | 'architect_intent';
+  source: string;
+  confidence: string;
+}
+
 // Compact per-hole strategy guide, researched offline and cached in the green
 // feature's JSONB `properties.strategy_guide` — mirrors
 // `backend/app/caddie/types.py::HoleStrategyGuide` exactly. Optional-safe:
@@ -113,6 +123,12 @@ export interface HoleStrategyGuide {
   generated_at: string;
   model: string;
   schema_version: number;
+  // Researched LOCAL-LORE layer (specs/caddie-guide-local-lore-plan.md) —
+  // optional so pre-lore cached payloads still type-check.
+  local_lore?: LoreItem[];
+  lore_generated_at?: string;
+  lore_model?: string;
+  lore_sources?: string[];
 }
 
 // Where/how far the fairway bends (the dogleg), measured from the tee along
