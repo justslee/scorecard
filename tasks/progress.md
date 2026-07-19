@@ -657,3 +657,22 @@ builder branch; check its commits; merge into integration/next; do NOT re-run th
 MIGRATION FLAG for PR/owner: new alembic rev 016 (0013_016_golfer_profile_onboarding.py) ADD COLUMN
 golfer_profiles.onboarding_step text (NO default) + one-time UPDATE ... SET 'done' WHERE NULL — auto-
 applies at merge via deploy alembic upgrade; owner ship-it approves it explicitly.
+
+## BUILD DONE (2026-07-18) — onboarding-shell-and-gate (Slice 4) implemented on branch work-onboarding-shell
+Builder implemented the full plan on `work-onboarding-shell` (based on origin/integration/next@9d814cb),
+pushed @f132e9d (3 commits: 6154d9c migration+lockstep-types, 5040197 identity-store+AuthGate+nav,
+f132e9d onboarding route+4 steps+e2e). NOT merged into integration/next yet — eng-lead to merge +
+run reviewer(+/security-review)+qa+designer(BLOCKING screenshots).
+Migration invariant verified: 0013_016_golfer_profile_onboarding.py ADD COLUMN has NO DEFAULT; new
+rows insert NULL (funneled into onboarding); one-time backfill only touches pre-existing rows ->
+'done'. Guarded by a pure unit test (test_onboarding_migration.py, asserts no-DEFAULT + backfill +
+downgrade) and a DB-backed integration test (test_onboarding_step.py, self-skips locally, CI-only).
+Gates (local): frontend lint 0-err, tsc clean, voice-tests 278/278, vitest 2824/2824 (152 files),
+next build succeeds (/onboarding is a static export route), backend ruff clean, backend pytest
+2993 passed / 140 skipped (7 new integration tests self-skip — no local Postgres, CI-only). Playwright
+lists all 7 tests (4 existing auth + 3 new onboarding) and self-skips cleanly (no CLERK_SECRET_KEY
+locally) — CI's Clerk job is the source of truth for the full onboarding E2E flow.
+Deviation from plan: none material — one extra tsc fallout site found beyond the plan's list
+(profile/page.tsx handleSave's `updated: GolferProfile` literal ~line 257) and fixed the same way.
+If I die: branch `work-onboarding-shell` @f132e9d is pushed and ready for eng-lead to merge into
+integration/next — do NOT re-run the builder.
