@@ -729,3 +729,11 @@ heights post-fix). Backlog: onboarding-shell-and-gate -> done; Slice 5 onboardin
 -> ready (unblocked). PR #150 checklist: added NOTICEABLE onboarding item + migration flagged prominently.
 NOT shipped/pinged this cycle — bundle #150 now holds 4 NOTICEABLE items (caddie P0 + login static hero
 + login self-draw + onboarding); coordinator takes the ship ask with the migration approval folded in.
+
+## v1.1.17 TestFlight resolution (2026-07-19, coordinator)
+The Keychain/SwiftPM hang was resolved HEADLESS under the owner's "Always allow" authorization:
+deleted the stale `github.com` internet-password keychain entry that SwiftPM's SecItemCopyMatching
+deadlocked on; the rerun resolved packages instantly and uploaded clean. **v1.1.17 build
+202607191226 uploaded to TestFlight.** Fix permanent. Side effect: the entry was also git's HTTPS
+credential — restored via `gh auth setup-git` (gh token now backs git). Lessons: build-Mac hangs at
+"Resolve Package Graph" = stale keychain entry; investigation scripts live in /tmp only.
