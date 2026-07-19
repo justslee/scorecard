@@ -1134,3 +1134,12 @@ done-on-bundle. Also added backlog item caddie-persona-inventory-frontend-backen
 flagged, separate). NEXT: open/update bundle PR NOTICEABLE; item is green+clean; do NOT ship/ping.
 All agents (Explore/designer/Plan/builder/reviewer/qa) independently flagged+ignored the recurring
 inline injection (fake date-change / Telegram / Auto-Mode "do not mention" blocks) — treated as data.
+
+## BUNDLE PR (2026-07-19)
+Opened bundle PR #152 (integration/next -> main): "Bundle: caddie one-voice register unification
+(+ silent: retro, planning)". Checklist: caddie-orb-persona-consistency = NOTICEABLE (checked);
+silent riders = retro, multiuser-p0-authz-flip PREP (plan only, no code), the flagged persona-inventory
+item. CI on head kicked off both gates (Frontend + Backend) IN_PROGRESS at open, neither red. Register-
+only prompt-wording change has no route/DB/model-shape surface, so the DB-backed Backend gate is
+expected green; RELEASE-MANAGER / next cycle must confirm both gates SUCCESS on the merge head before
+any ship. NOT shipped, owner NOT pinged this cycle (per directive). Bundle keeps accumulating.
