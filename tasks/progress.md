@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (2026-07-19) — multiuser-p0-authz-flip PREP (flip-ready; NOTICEABLE "multi-user: flip-ready")
+Owner-greenlit epic step: close the four DEFERRED gaps (clerk_auth.py:143-163) + build THE FLIP GATE
+suite. Base origin/integration/next @4f51fb5 (worktree agent-a79505c53b74b3a7c). A persona-consistency
+lane runs in PARALLEL on caddie prompt/copy — REBASE onto origin/integration/next before pushing. Do
+NOT ship/ping/flip; never set APP_ACCESS_MODE outside test configs.
+Scope (task directive + specs/multi-user-epic-plan.md §3.3/§3.4/§3.6), REFINED by recon:
+  1. Migration 017 `revoked_users` (user_id PK, revoked_at, reason nullable, source) + ORM model;
+     revocation.py write-through to DB + read-through cache warmed at boot (main.py:114 startup, after
+     _assert_boot_config). Restart must NEVER un-revoke. Webhook path (webhooks.py:167) byte-compatible.
+     Owner-mode never consults it (test_clerk_auth.py::TestRevocation pin stays green).
+  2. Migration 018 hole_pins add user_id + unique (course,hole,date,user_id); backfill marked_by_user_id
+     else owner; ORM model models.py:104 gets user_id; scope pins.py list_pins/upsert_pin (:59/:72) to
+     caller; REMOVE the two scoping_lint pins.py EXEMPTIONS.
+  3. Personas: NARROWER than framed — columns (author_user_id/is_public/is_builtin) + read-scoping
+     (personalities.py personality_visible) already exist; creates author-stamped/forced-private; NO
+     update/delete endpoint exists. Work = defense-in-depth on load_personality unscoped db.get + a
+     persona read-isolation test. NO migration.
+  4. scoping_lint PASSES clean today (107 files, ci.yml:100). Keep clean after pins scoping.
+  5. THE FLIP GATE suite under REAL APP_ACCESS_MODE=open + pinned JWKS boot config (CI required-backend
+     Postgres job): two-user bag isolation (exists), revocation-survives-restart (new), pins-isolation
+     (new), cross-user 403 sweep over rounds/sessions/profile (test_authz_isolation.py exists — run
+     under gate=True open-mode). Add hole_pins + caddie_personas to conftest TRUNCATE list (:152). Mark
+     the suite + make CI-runnable.
+  6. Flip runbook section in specs/multi-user-epic-plan.md — env change, restart, post-flip smoke,
+     rollback, owner-only carve-outs (courses_mapped POST/PUT/DELETE already require_owner; telephony).
+courses_mapped already carved to require_owner (recon confirmed) — preserve only. Migrations ADDITIVE,
+auto-apply at merge — flag in PR + report; owner ship-it approves them (precedent). Process: fable plan
+-> builder -> reviewer (fresh + /security-review MANDATORY) -> qa (full gates + flip-gate under open).
+Status: recon DONE; dispatching Plan(fable). On resume: reconcile from origin/integration/next log +
+child commits; do NOT re-run finished children.
+
 ## EPIC CLOSED (2026-07-19) — login-onboarding redesign COMPLETE; Slice 7 verdicts all SHIP @1d13b71
 All three reviews GREEN on the landed Slice-7 delta (07b0f55..1d13b71):
 - **reviewer (correctness + epic-wide /security-review)** — SHIP, no BLOCKING. Diff verified by hand:
