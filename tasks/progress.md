@@ -818,3 +818,15 @@ justifies; must NOT regress bottom-right behavior anywhere else; reduced-motion 
 STATE: Plan(fable) dispatched. On resume: if specs/onboarding-voice-first-intro-plan.md exists ->
 builder already briefable; else re-run Plan. Then builder on integration/next, then designer
 (BLOCKING, screenshots) + reviewer + qa. Do NOT ship/ping. Slice 7 stays blocked until this lands.
+
+## UPDATE (2026-07-19) — Plan(fable) DONE @555b49e; builder dispatched
+Plan saved: specs/onboarding-voice-first-intro-plan.md. Decision = approach (A): keep the real
+CaddieOrb bottom-right (already on /onboarding), rewrite MeetCaddieStep.tsx as a serif invitation +
+example-ask hints composed toward the real orb; the user's own tap/hold on the real orb runs the
+LIVE session (grounded in their Slice-5 bag). ZERO CaddieOrb/sheet/bus/voice changes. Mic-deny reuses
+production path (useLooperDictation NotAllowedError -> sheet promotion). Both "finish" and "Maybe
+later" go through the SAME OnboardingFlow.handleDone completion contract. DIVERGENCE FLAG: caller asked
+for "center-stage" orb; plan chose (A) bottom-right for owner-crux blast-radius reasons -> designer
+review is BLOCKING and must explicitly rule whether the moment lands without center-stage.
+AWAITING: builder on integration/next. On resume: check git log origin/integration/next for the
+builder's commit; if present -> dispatch designer(BLOCKING,screenshots)+reviewer+qa; else re-dispatch.
