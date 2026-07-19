@@ -395,7 +395,7 @@ async def test_build_voice_prompt_downgrades_invisible_persona_to_classic(monkey
 
     loaded_ids = []
 
-    async def _fake_load_personality(persona_id):
+    async def _fake_load_personality(persona_id, user_id=None):
         loaded_ids.append(persona_id)
         return CaddiePersonality(
             id=persona_id, name="Classic", description="", avatar="🏌️",
@@ -426,7 +426,7 @@ async def test_build_session_voice_prompt_downgrades_invisible_persona_to_classi
 
     loaded_ids = []
 
-    async def _fake_load_personality(persona_id):
+    async def _fake_load_personality(persona_id, user_id=None):
         loaded_ids.append(persona_id)
         return CaddiePersonality(
             id=persona_id, name="Classic", description="", avatar="🏌️",
@@ -464,7 +464,7 @@ async def test_build_session_voice_prompt_downgrades_invisible_persona_to_classi
 # ── Strategy guide: both-mouth injection (caddie-hole-strategy-guides Slice 1) ──
 
 
-async def _fake_load_classic_personality(persona_id):
+async def _fake_load_classic_personality(persona_id, user_id=None):
     return CaddiePersonality(
         id=persona_id, name="Classic", description="", avatar="🏌️",
         system_prompt="Classic system prompt.",
@@ -559,7 +559,7 @@ async def _fake_personality_visible_always(persona_id, user_id=None):
     return True
 
 
-async def _fake_load_personality_classic(persona_id):
+async def _fake_load_personality_classic(persona_id, user_id=None):
     return CaddiePersonality(
         id=persona_id, name="Classic", description="", avatar="🏌️",
         system_prompt="Classic system prompt.",

@@ -47,7 +47,7 @@ async def _fake_personality_visible_always(persona_id, user_id=None):
     return True
 
 
-async def _fake_load_personality_classic(persona_id):
+async def _fake_load_personality_classic(persona_id, user_id=None):
     return CaddiePersonality(
         id=persona_id, name="Classic", description="", avatar="🏌️",
         system_prompt="Classic system prompt.",

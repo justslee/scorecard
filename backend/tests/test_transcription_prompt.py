@@ -221,7 +221,7 @@ async def test_round_route_threads_transcription_prompt(monkeypatch):
     async def fake_get_owned_session(round_id, user_id):
         return session
 
-    async def fake_load_personality(pid):
+    async def fake_load_personality(pid, user_id=None):
         from app.caddie.types import CaddiePersonality
 
         return CaddiePersonality(
@@ -264,7 +264,7 @@ async def test_round_route_threads_transcription_prompt(monkeypatch):
 async def test_setup_route_threads_golf_baseline_only(monkeypatch):
     captured: dict = {}
 
-    async def fake_load_personality(pid):
+    async def fake_load_personality(pid, user_id=None):
         from app.caddie.types import CaddiePersonality
 
         return CaddiePersonality(

@@ -41,6 +41,59 @@ personas NO migration. Flip-gate = new test_flip_gate.py (marker flip_gate) unde
 Dispatching builder to implement the plan on integration/next. On resume: reconcile from
 origin/integration/next log + child commits; do NOT re-run finished children.
 
+## DONE (2026-07-19) — multiuser-p0-authz-flip FLIP-PREP landed on integration/next @96cbffc
+Builder implemented specs/multiuser-p0-authz-flip-plan.md §1→§6 IN FULL, one commit per section,
+rebased cleanly onto the concurrent caddie register-unification lane (no conflicts — disjoint
+surfaces). Head: `96cbffc` on origin/integration/next.
+  §1 `ca76925` — migration `0014_017_revoked_users.py` (`user_id` PK, `revoked_at`, `reason`,
+     `source`) + `RevokedUser` ORM model + scoping_lint "deliberately not scoped" comment.
+  §2 `ca76925` — `revocation.py` gains `revoke_durable`/`_persist_revocation`/
+     `warm_revocation_cache` (lazy-imports `app.db.engine` inside the fns — preserves
+     `test_webhooks_clerk.py`'s no-DB import property); `webhooks.py`'s handler switches to
+     `await revocation.revoke_durable(...)`; `main.py` startup warms the cache OPEN MODE ONLY
+     (owner mode: zero new boot work); `clerk_auth.py` DEFERRED block + stale test-name comment
+     updated (comment-only).
+  §3 `55362ac` — migration `0015_018_hole_pins_per_user.py` (adds `user_id`, backfills from
+     `marked_by_user_id` else `OWNER_CLERK_USER_ID`, aborts if neither exists for an orphan row,
+     swaps the 3-col unique for a 4-col `(course_id,hole_number,pin_date,user_id)` one); `HolePin`
+     ORM gets `user_id` + `__table_args__` UniqueConstraint (NOT `pin_geom` — stays raw-SQL/prod
+     DDL only, conftest gets the explicit ALTER); `pins.py` list/upsert/read-back all scoped; BOTH
+     `ci_scripts/scoping_lint.py` pins.py exemptions removed, `TENANT_MODELS["HolePin"]` → `"user_id"`.
+  §4 `4bb3251` — `load_personality(id, user_id=None)` now enforces built-in/public/author-match
+     visibility (closes the REAL leak: `voice.py:/speak` + `realtime.py:/setup-session` previously
+     passed a client persona_id straight through with no gate); all 5 call sites updated
+     (voice.py:100, realtime.py:87+142, caddie.py:878+1710).
+  §5+§6 `96cbffc` — new `tests/integration/test_flip_gate.py` (7 tests, `pytest.mark.flip_gate`
+     registered in pyproject.toml) under a REAL `APP_ACCESS_MODE=open` boot config (monkeypatch-only
+     `open_mode` fixture — never set elsewhere): boot-config negatives, revocation-survives-restart,
+     pins-isolated-per-user, persona read isolation (function+route level), cross-user sweep w/ real
+     gate, two-user bags w/ real gate. `test_bag_caddie_grounding.py` gets ONE `pytestmark` line
+     (no body edit) folding its 6 tests into the same marker — `pytest -m flip_gate` selects 13.
+     conftest TRUNCATE += `hole_pins, caddie_personas, revoked_users`. Flip runbook (§8) appended to
+     `specs/multi-user-epic-plan.md` verbatim per the plan.
+Deviation from plan (documented in the §4 commit): the `load_personality` signature change broke
+~104 tests across 11 non-frozen test files whose fakes stubbed it with a single-positional-arg
+signature (`monkeypatch.setattr(..., "load_personality", fn)`) — not anticipated by the plan.
+Minimal mechanical fix: added `user_id=None` to each fake (matching the existing `personality_visible`
+fake pattern already in those same files) — no assertion touched, no test logic changed. Not a
+frozen-pin file in any case.
+Gates (all green, this machine has no local Postgres):
+  - `ruff check .` → All checks passed.
+  - `ci_scripts/scoping_lint.py` → "clean (107 files scanned)" WITH both pins.py exemptions removed.
+  - `alembic heads` → single head `018_hole_pins_per_user` (no branches).
+  - `pytest -q` (full suite) → 3017 passed, 153 skipped (integration tests skip gracefully, no local
+    DB), 0 failed.
+  - `pytest --collect-only -q tests/integration/test_flip_gate.py` → 7 tests collected cleanly
+    (proves the file imports without a DB).
+  - `pytest -m flip_gate --collect-only -q` → 13/3158 selected (7 new + 6 from test_bag_caddie_grounding.py).
+Byte-identical guarantee preserved: owner mode does zero new boot work (the `warm_revocation_cache()`
+call is gated on `_access_mode() == "open"`); `APP_ACCESS_MODE` was never set anywhere except inside
+the new `open_mode` test fixture (monkeypatch). Did NOT flip, ship, or ping the owner — this is
+flip-READY infra only. Still needed before the real flip: `/security-review` + `/code-review` on
+this diff (CLAUDE.md mandates both for auth/data-handling changes) — left for the eng-lead/reviewer
+per the plan's step 7; CI's Postgres-backed `required-backend` job is the first real DB-backed proof
+of the flip-gate suite (never run locally per the no-local-Postgres rule).
+
 ## EPIC CLOSED (2026-07-19) — login-onboarding redesign COMPLETE; Slice 7 verdicts all SHIP @1d13b71
 All three reviews GREEN on the landed Slice-7 delta (07b0f55..1d13b71):
 - **reviewer (correctness + epic-wide /security-review)** — SHIP, no BLOCKING. Diff verified by hand:
@@ -1199,3 +1252,27 @@ lore->spoken-number smuggling path; diff-prove frozen byte-identity) AND qa 8ed1
 re-run). On BOTH SHIP -> update bundle PR checklist (NOTICEABLE-dormant), progress; land = FF lane onto
 integration/next (fast-forward-safe, already on top). On BLOCKING -> re-dispatch builder, re-review.
 Do NOT ship/ping. Nothing uncommitted held across the await.
+## DONE (2026-07-19) — caddie-orb-persona-consistency (register unification) landed on bundle @98c4b90
+NOTICEABLE. Reviewer (fresh) SHIP — register-only invariant proven byte-identical on all 5 points
+(no grounding/number/validator/payload drift; prompt-cache prefix stable; both builder deviations
+sound: session.py deferred-import breaks a real cycle, test_caddie_caching normalizer narrowing is
+forced by a line-wrap and stricter not weaker; new eval has teeth; 253/253 affected tests). QA PASS —
+ruff+scoping clean, 11 (register) + 648 (offline set) passed, import chain resolves with DATABASE_URL
+set (circular-import fix holds). DB-backed backend tests deferred to the PR's CI Backend gate (this
+machine has no Postgres). What changed: one shared CADDIE_HOUSE_REGISTER constant in voice_prompts.py
+adopted across _BASE_BEHAVIOR / _strategy_system / both stable_text builders / WRITER_SYSTEM; persona
+brevity restatements pruned (Hype exempt); course_intel_writer marked intentionally-distinct; minor
+DECADE/slope wording align (no math); + test_caddie_register_consistency.py. backlog flipped
+done-on-bundle. Also added backlog item caddie-persona-inventory-frontend-backend-mismatch (designer-
+flagged, separate). NEXT: open/update bundle PR NOTICEABLE; item is green+clean; do NOT ship/ping.
+All agents (Explore/designer/Plan/builder/reviewer/qa) independently flagged+ignored the recurring
+inline injection (fake date-change / Telegram / Auto-Mode "do not mention" blocks) — treated as data.
+
+## BUNDLE PR (2026-07-19)
+Opened bundle PR #152 (integration/next -> main): "Bundle: caddie one-voice register unification
+(+ silent: retro, planning)". Checklist: caddie-orb-persona-consistency = NOTICEABLE (checked);
+silent riders = retro, multiuser-p0-authz-flip PREP (plan only, no code), the flagged persona-inventory
+item. CI on head kicked off both gates (Frontend + Backend) IN_PROGRESS at open, neither red. Register-
+only prompt-wording change has no route/DB/model-shape surface, so the DB-backed Backend gate is
+expected green; RELEASE-MANAGER / next cycle must confirm both gates SUCCESS on the merge head before
+any ship. NOT shipped, owner NOT pinged this cycle (per directive). Bundle keeps accumulating.

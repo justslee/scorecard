@@ -219,7 +219,7 @@ async def test_in_round_mint_uses_persona_voice_and_default_tools(monkeypatch):
         captured["ownership_check"] = (round_id, user_id)
         return session
 
-    async def fake_load_personality(pid):
+    async def fake_load_personality(pid, user_id=None):
         captured["personality_id"] = pid
         return _persona()
 
@@ -279,7 +279,7 @@ async def test_in_round_mint_uses_request_current_hole_over_stored(monkeypatch):
     async def fake_get_owned_session(round_id, user_id):
         return session
 
-    async def fake_load_personality(pid):
+    async def fake_load_personality(pid, user_id=None):
         return _persona()
 
     async def fake_get_top_memories(user_id):

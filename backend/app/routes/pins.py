@@ -5,7 +5,11 @@ of DECADE precision left on the table; the actual pin moves day to day. This
 route lets the player drop a pin on each green at round start, and lets ops
 upload a daily sheet for premium courses.
 
-Storage: `hole_pins` (migration 004), keyed by (course_id, hole_number, pin_date).
+Storage: `hole_pins` (migration 004), keyed per-user since migration 018
+(multiuser-p0-authz-flip §3.3.1): (course_id, hole_number, pin_date,
+user_id). Each member's pin is its own row — no cross-user clobber/leak. A
+future community/admin pin sheet (`source='admin'`) can layer on top without
+touching this per-user shape.
 """
 
 from datetime import date as date_cls
@@ -57,13 +61,22 @@ def _row_to_out(row: HolePin) -> PinOut:
 
 
 @router.get("/{course_id}/pins", response_model=list[PinOut])
-async def list_pins(course_id: str, date: Optional[date_cls] = None):
-    """List pins for a course on a given date (defaults to today)."""
+async def list_pins(
+    course_id: str,
+    date: Optional[date_cls] = None,
+    user_id: str = Depends(current_user_id),
+):
+    """List the calling user's pins for a course on a given date (defaults
+    to today). Per-user since migration 018 — never another member's pins."""
     target = date or date_cls.today()
     async with async_session() as db:
         result = await db.execute(
             select(HolePin)
-            .where(HolePin.course_id == course_id, HolePin.pin_date == target)
+            .where(
+                HolePin.course_id == course_id,
+                HolePin.pin_date == target,
+                HolePin.user_id == user_id,
+            )
             .order_by(HolePin.hole_number)
         )
         return [_row_to_out(r) for r in result.scalars().all()]
@@ -75,12 +88,13 @@ async def upsert_pin(
     pin: PinIn,
     user_id: str = Depends(current_user_id),
 ):
-    """Upsert a pin for (course_id, hole_number, pin_date).
+    """Upsert THIS user's pin for (course_id, hole_number, pin_date).
 
     Authentication required. Source is forced to 'manual' (admin overrides
     will have their own role-gated endpoint). Re-marking the same hole on the
-    same day overwrites — the player can correct themselves. The most recent
-    caller becomes `marked_by_user_id`.
+    same day overwrites the caller's OWN prior pin — since migration 018
+    each user has their own row, so this can never clobber another member's
+    pin for the same course/hole/date.
     """
     target_date = pin.pin_date or date_cls.today()
 
@@ -89,15 +103,15 @@ async def upsert_pin(
         await db.execute(
             text("""
                 insert into public.hole_pins (
-                    course_id, hole_number, pin_date, pin_lat, pin_lng, pin_geom,
+                    course_id, hole_number, pin_date, user_id, pin_lat, pin_lng, pin_geom,
                     source, marked_by_user_id
                 )
                 values (
-                    :course_id, :hole_number, :pin_date, :pin_lat, :pin_lng,
+                    :course_id, :hole_number, :pin_date, :user_id, :pin_lat, :pin_lng,
                     ST_SetSRID(ST_MakePoint(:pin_lng, :pin_lat), 4326)::geography,
                     'manual', :user_id
                 )
-                on conflict (course_id, hole_number, pin_date) do update set
+                on conflict (course_id, hole_number, pin_date, user_id) do update set
                     pin_lat = excluded.pin_lat,
                     pin_lng = excluded.pin_lng,
                     pin_geom = excluded.pin_geom,
@@ -121,6 +135,7 @@ async def upsert_pin(
                 HolePin.course_id == course_id,
                 HolePin.hole_number == pin.hole_number,
                 HolePin.pin_date == target_date,
+                HolePin.user_id == user_id,
             )
         )
         row = result.scalar_one()

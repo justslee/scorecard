@@ -84,7 +84,7 @@ async def start_setup_session(
     calls the set_round_setup tool; the frontend creates the round from that.
     Round-less by design — unlike /session it needs no existing caddie session.
     """
-    personality = await load_personality(request.personality_id)
+    personality = await load_personality(request.personality_id, user_id=user_id)
     instructions = build_setup_instructions()
 
     mint = await mint_ephemeral_session(
@@ -139,7 +139,7 @@ async def start_realtime_session(
         if await personality_visible(request.personality_id, user_id)
         else "classic"
     )
-    personality = await load_personality(persona_id)
+    personality = await load_personality(persona_id, user_id=user_id)
     memories = await memory_mod.get_top_memories(user_id) if user_id else []
     instructions = build_realtime_instructions(personality, session=session, memories=memories)
 

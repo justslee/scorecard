@@ -250,6 +250,19 @@ State-machine table tests (every illegal transition 4xx); isolation: non-partici
 
 ---
 
+## 8. Flip runbook (APP_ACCESS_MODE owner → open)
+
+Owner-gated, deliberate action — nothing in the unattended loop ever performs these steps. Precondition: the "flip-ready" bundle is merged (migrations `017_revoked_users` and `018_hole_pins_per_user` are additive and were auto-applied by the deploy's `alembic upgrade head` at merge — verify with `alembic current` = `018_hole_pins_per_user` before flipping), and the `flip_gate` suite is green in CI (`cd backend && uv run pytest -m flip_gate`).
+
+1. **Env change (prod, Secrets Manager / backend/.env):** set `APP_ACCESS_MODE=open`; ensure `CLERK_JWKS_URL` is set, `ALLOW_ANONYMOUS` is UNSET, and set the two newly-required vars: `CLERK_ISSUER` (the Clerk instance issuer URL) and `CLERK_AUTHORIZED_PARTIES` (comma-separated: the Capacitor origin `https://localhost` + the prod web origin). Set `CLERK_WEBHOOK_SECRET` (Svix) and configure the Clerk webhook (`user.deleted`, `user.banned`, `session.revoked` → `POST /api/webhooks/clerk`). Open Clerk signups (dashboard) as the same action.
+2. **Restart the backend.** `_assert_boot_config()` refuses to boot on any misconfiguration above; startup then warms the revocation cache from `revoked_users` (open mode only) — a restart can never silently un-revoke a banned member.
+3. **Migration order note:** 017 then 018, both already applied (additive, backward-compatible with owner-mode code — that is why they merge ahead of the flip). No flip-day migration work. The separate §3.2 backfill/tighten migrations remain their own reviewed PR.
+4. **Live post-flip smoke:** sign in with a second real Clerk account: it sees empty rounds/pins/profile (never the owner's data); create a round + mark a pin; verify the owner's app is unaffected (his rounds, his pins for the same course/date unchanged); verify a revoked test account 403s on `/api/rounds`. Owner account: everything byte-identical.
+5. **Rollback:** unset `APP_ACCESS_MODE` (or set `owner`) + restart — require_member reverts to the owner-only gate. Migrations STAY (additive and backward-compatible: `hole_pins.user_id` is stamped by owner-mode writes too; `revoked_users` is inert in owner mode). Optionally re-restrict Clerk signups.
+6. **Carve-outs that STAY owner-only after the flip:** `courses_mapped.py` POST/PUT/DELETE (:93/:142/:165 — global course geometry); caller-voice GET/PUT, rehearsal-call, voice-booking config (`tee_times.py` param-level `require_owner`); `request_availability_call` (real outbound telephony; per-member callback numbers are a future slice). Availability-job stamp-and-match and `user_session` centralization remain deferred, safe behind these carve-outs (see the DEFERRED block in `clerk_auth.py`).
+
+---
+
 ### Critical Files for Implementation
 - `backend/app/services/clerk_auth.py` — the gate: `require_member`, azp check, boot guards, revocation hook
 - `backend/app/main.py` — the one-line chokepoint flip (:62) + startup guards + webhook router

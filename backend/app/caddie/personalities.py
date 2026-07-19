@@ -176,11 +176,25 @@ def _row_to_personality(row: CaddiePersonaRow) -> CaddiePersonality:
     )
 
 
-async def load_personality(personality_id: str) -> CaddiePersonality:
-    """Resolve a personality by id — DB first, hardcoded fallback."""
+async def load_personality(personality_id: str, user_id: Optional[str] = None) -> CaddiePersonality:
+    """Resolve a personality by id — DB first, hardcoded fallback.
+
+    A DB persona is returned only if it is built-in, public, or authored by
+    user_id; anything else falls back to the default persona (same silent-
+    fallback semantics as an unknown id — no enumeration signal). This is
+    the enforcement backstop: every caller (voice.py:/speak,
+    realtime.py:/setup-session and /session, caddie.py's session/voice and
+    stateless /voice paths) is expected to pass its own identity, but a
+    persona id straight from client input must never load another user's
+    private system_prompt/voice even if a caller forgets the pre-gate
+    (multiuser-p0-authz-flip §4 — closes a real leak: voice.py:/speak and
+    realtime.py:/setup-session previously called this with NO gate at all).
+    """
     async with async_session() as db:
         row = await db.get(CaddiePersonaRow, personality_id)
-        if row is not None:
+        if row is not None and (
+            row.is_builtin or row.is_public or (user_id and row.author_user_id == user_id)
+        ):
             return _row_to_personality(row)
     return PERSONALITIES.get(personality_id, PERSONALITIES[DEFAULT_PERSONALITY_ID])
 

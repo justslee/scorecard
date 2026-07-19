@@ -125,6 +125,22 @@ async def _ensure_schema(engine) -> None:
                 "jsonb NOT NULL DEFAULT '{}'::jsonb"
             )
         )
+
+        # hole_pins.pin_geom is populated by the raw-SQL upsert in
+        # app/routes/pins.py (PostGIS geography point) but is NOT part of the
+        # HolePin ORM model (see models.py's HolePin docstring — adding it
+        # would force create_all to need PostGIS before the 001 replay above
+        # creates the extension). Same precedent as the course_intel block
+        # directly above: schema outside both Base.metadata AND the guarded
+        # 001 supabase SQL is added here explicitly. Nullable here vs NOT
+        # NULL in prod (migration 004) is fine — the only write path always
+        # supplies it.
+        await conn.execute(
+            text(
+                "ALTER TABLE hole_pins ADD COLUMN IF NOT EXISTS pin_geom "
+                "geography(point, 4326)"
+            )
+        )
     _schema_ready = True
 
 
@@ -155,7 +171,8 @@ async def _db():
                     " rounds, course_reviews, players, golfer_profiles, tournaments,"
                     " tee_time_bookings, caddie_sessions, caddie_messages, shots,"
                     " player_profiles, caddie_memories, scoring_courses,"
-                    " hole_features, hole_yardages, holes, tee_sets, courses"
+                    " hole_features, hole_yardages, holes, tee_sets, courses,"
+                    " hole_pins, caddie_personas, revoked_users"
                     " RESTART IDENTITY CASCADE"
                 )
             )

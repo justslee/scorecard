@@ -876,7 +876,7 @@ async def _build_session_voice_prompt(
         if await personality_visible(request.personality_id, user_id)
         else "classic"
     )
-    personality = await load_personality(persona_id)
+    personality = await load_personality(persona_id, user_id=user_id)
     # Resolve the turn's hole ONCE — an omitted hole_number falls back to the
     # session's live current_hole (caddie-hole-number-truthy-default-fallback
     # -dead) rather than silently pinning hole 1 or nulling out current_hole.
@@ -1707,7 +1707,7 @@ async def _build_voice_prompt(
         if await personality_visible(request.personality_id, user_id)
         else "classic"
     )
-    personality = await load_personality(persona_id)
+    personality = await load_personality(persona_id, user_id=user_id)
 
     # Personal grounding — mirror _build_session_voice_prompt so the orb's
     # off-course answers (and the stateless in-round fallback) carry the same
