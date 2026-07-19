@@ -1041,14 +1041,17 @@ GUIDE_INJECTION_PATTERN (guide_writer.py:367). Thin register eval belongs in OFF
 Numbers/verdict contracts frozen.
 
 ## AWAITING (2026-07-19)
-Base: integration/next @ a85a7e5 (fresh post-#151 + 2 progress commits, pushed). Audit DONE. NOW awaiting
-designer aa8aa936918c1614a -> persona doc + dispositions (save to
-specs/caddie-orb-persona-consistency-persona.md). Decisions delegated: fold vs EXEMPT Hype (lean exempt);
-course-intel broadcast keep-distinct; degraded composer warmth (don't over-engineer); persona-count
-mismatch likely separate backlog item. NEXT on return -> save persona doc -> Fable Plan
-(specs/caddie-orb-persona-consistency-plan.md) -> builder (shared house-register constant + align
-outliers + thin register eval; REGISTER ONLY, numbers byte-identical) -> fresh reviewer (diff-prove
-validators/payloads unchanged + prompt-cache prefix stability) -> qa (gates + caddie suites + register
-eval). NOTE: eng-lead worktree is sandboxed to a stale branch; all git/file work runs on the MAIN
-checkout /Users/justinlee/projects/scorecard (on integration/next, pushes to origin). Nothing uncommitted
-held across this await.
+Base: integration/next @ 468fc28. Audit DONE; designer persona doc SAVED
+(specs/caddie-orb-persona-consistency-persona.md) + persona-inventory-mismatch backlog item added
+(pure-addition, JSON-validated). Decisions LOCKED: house register = 5 spoken rules + grounding
+cross-ref; Hype EXEMPT; course-intel KEEP distinct; degraded composer KEEP terse (do NOT touch);
+persona-count mismatch = separate item. ADOPT-SHARED-CONSTANT: _BASE_BEHAVIOR, _strategy_system,
+stable_text, WRITER_SYSTEM(partial). Prune per-persona brevity restatement. Minor ALIGN DECADE/slope
+SaaS phrasing (no math change). Thin OFFLINE register eval (Tier-1 imported-constant + a scan test).
+NOW awaiting Fable Plan agent aabbda4b7b5b3d3ee -> save to specs/caddie-orb-persona-consistency-plan.md.
+NEXT -> builder (implement the plan on integration/next; REGISTER ONLY, numbers byte-identical,
+prompt-cache prefix preserved) -> fresh reviewer (diff-prove validators/payloads/numbers unchanged +
+cache-prefix stability) -> qa (ruff + offline golden/numbers suites + new register test; frontend
+gates likely N/A backend-only). NOTE: eng-lead worktree sandboxed to a stale branch; all git/file
+work runs on MAIN checkout /Users/justinlee/projects/scorecard (integration/next, pushes to origin).
+Nothing uncommitted held across this await.
