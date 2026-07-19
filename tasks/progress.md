@@ -584,3 +584,14 @@ before starting, per the parallel-lanes-use-worktrees pattern). AWAITING: review
 Playwright) + designer(BLOCKING keyframe capture 0.2/0.9/1.7/2.6s + reduced-motion + settled-vs-
 static-hero comparison). Do NOT ship/ping — NOTICEABLE item folds into the existing bundle
 (PR #150) once verdicts land.
+
+## AWAITING (2026-07-18) — reviewer + qa on login-animation-moment @7d13b4c
+Builder DONE @7d13b4c (4 code files, zero backend diff; builder-run gates all green:
+lint 0-err, tsc clean, build ok, voice 278/278, vitest 2802/2802, ruff pass). Reviewer
+(perf-safety) + qa (full gates + auth Playwright + keyframe capture) dispatched against 7d13b4c.
+Designer (BLOCKING on rendered sequence) deferred until qa produces keyframes (avoid dev-server
+port race), then dispatched pointing at qa's shots. Outcomes: all SHIP/PASS -> backlog flip
+(login-animation-moment done, onboarding-shell-and-gate ready), PR #150 checklist NOTICEABLE,
+progress. Any BLOCKING -> re-dispatch builder with the specifics, re-review. Do NOT ship/ping.
+Builder deviation to confirm: pen-stroke path placed AFTER ribbon (so opaque fill doesn't occlude
+the drawing stroke) — reviewer+designer to bless against the settled final frame.
