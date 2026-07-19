@@ -201,6 +201,22 @@ def test_rule8_number_below_min_plausible_survives():
     assert validate_lore([item], []) == [item]
 
 
+def test_rule8_hyphenated_range_bans_both_ends():
+    """Reviewer bypass (2026-07-19): a hyphenated range whose FIRST element is
+    sub-100 but whose SECOND is a real carry must still drop — rule 8 scans
+    every standalone 2-3 digit token, not just `_CARRY_NUMBER_PATTERN`'s
+    first-number capture (which swallowed the second into a non-capturing
+    group and leaked it to the spoken layer)."""
+    assert validate_lore([_item(text="Lay up 95-140 depending on the pin.")], []) == []
+    assert validate_lore([_item(text="The safe number is 90-240 off the tee.")], []) == []
+    # En-dash form leaks the same way through the old pattern — check it too.
+    assert validate_lore([_item(text="Play to 80–200 and no farther.")], []) == []
+    # A range wholly below 100 (both ends) is still not carry-shaped -> survives.
+    assert validate_lore([_item(text="A 10-20 foot putt is common here.")], []) == [
+        _item(text="A 10-20 foot putt is common here.")
+    ]
+
+
 def test_rule9_batch_capped_at_five_in_writer_order():
     items = [_item(text=f"Fact number {i} about the green.") for i in range(8)]
     survivors = validate_lore(items, [])

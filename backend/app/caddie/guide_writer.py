@@ -1213,14 +1213,16 @@ def validate_lore(items: list[LoreItem], hazards: list[Hazard]) -> list[LoreItem
          hazard types.
       7. Geometry contradiction, side/carry — reuses `_has_side_flip`
          unchanged, over `[item.text]`.
-      8. Engine-number ban (THE HARD SAFETY RULE) — any `_CARRY_NUMBER_PATTERN`
-         match with a value in [`_MIN_PLAUSIBLE_CARRY`, `_MAX_PLAUSIBLE_CARRY`]
+      8. Engine-number ban (THE HARD SAFETY RULE) — any standalone 2-3 digit
+         token with a value in [`_MIN_PLAUSIBLE_CARRY`, `_MAX_PLAUSIBLE_CARRY`]
          (100-650) anywhere in `text` drops the item, even when geometry-true
          — `_has_side_flip` only checks a number when a side word co-occurs
          (keep-if-true is leaky here); a true distance drifts on remap;
-         honest omission beats a smuggled attributed yardage. Slope
-         percentages (single/double digits) and tournament years (4-digit,
-         blocked by the pattern's `(?!\\d)` lookahead) can never match.
+         honest omission beats a smuggled attributed yardage. Every 2-3 digit
+         run is checked independently (NOT `_CARRY_NUMBER_PATTERN`, which only
+         captures the first number of a hyphenated range and leaked the
+         second), so both ends of "95-140" are banned; 4-digit years (2024)
+         and single-digit / percent slopes (2-4%) never match.
       9. Batch cap — return the first `_MAX_LORE_ITEMS` (5) survivors, in
          writer order.
 
@@ -1287,11 +1289,18 @@ def validate_lore(items: list[LoreItem], hazards: list[Hazard]) -> list[LoreItem
             log.info("lore drop reason=geometry-side")
             continue
 
-        # 8. Engine-number ban — THE HARD SAFETY RULE.
+        # 8. Engine-number ban — THE HARD SAFETY RULE. Scan EVERY standalone
+        # 2-3 digit token, not `_CARRY_NUMBER_PATTERN` matches: that pattern
+        # captures only the FIRST number of a hyphen/en-dash range in
+        # `group(1)` (the second is swallowed by a non-capturing group), so a
+        # range whose first element is sub-100 leaked a real carry — "lay up
+        # 95-140" checked only 95 and passed 140 to the spoken layer (reviewer
+        # bypass, 2026-07-19). `\b(\d{2,3})(?!\b?\d)` matches each 2-3 digit run
+        # independently: both ends of a range are checked, while 4-digit years
+        # (2024) and single-digit / percent slopes (2-4%) still never match.
         number_banned = False
-        for m in _CARRY_NUMBER_PATTERN.finditer(lowered):
-            n = int(m.group(1))
-            if _MIN_PLAUSIBLE_CARRY <= n <= _MAX_PLAUSIBLE_CARRY:
+        for m in re.finditer(r"\b(\d{2,3})(?!\d)", lowered):
+            if _MIN_PLAUSIBLE_CARRY <= int(m.group(1)) <= _MAX_PLAUSIBLE_CARRY:
                 number_banned = True
                 break
         if number_banned:
