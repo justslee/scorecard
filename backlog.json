@@ -118,7 +118,8 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
+      "note": "Narrow orb-persona-threading fix was ALREADY shipped (commit 9df28c9). The caddie-crux CONSISTENCY dimension remained: the caddie's REGISTER drifted across its mouths. Landed on the bundle @98c4b90 (2026-07-19) as NOTICEABLE: one shared CADDIE_HOUSE_REGISTER constant adopted across the realtime/text/strategy-brain/guide mouths, per-persona brevity restatements pruned (Hype exempt by design), minor DECADE/slope wording align, + a thin offline register eval (test_caddie_register_consistency.py). Design contract specs/caddie-orb-persona-consistency-persona.md; plan specs/caddie-orb-persona-consistency-plan.md. Reviewer SHIP (byte-identical grounding/numbers invariant proven), QA PASS. Register-only; numbers/verdict frozen.",
       "why": "CADDIE-EXPERIENCE dim 8 (well-integrated), the single highest-impact incoherence from the 2026-07-15 integration audit. CaddieOrbSheet.tsx hardcodes personality_id:'classic' in both talkToCaddieStream (:202) and the talkToCaddie fallback (:215), and the TTS voice is hardcoded 'classic' at LooperSheet.tsx:109. The backend /caddie/voice route fully honors personality_id, so this is a pure frontend omission. Effect: a golfer who picks The Hype Man / The Strategist on the round page gets that persona on-course, but the moment they tap the ever-present orb on Home / Partners / My Card they SILENTLY get The Classic Caddie in a different voice. Also affects the My Card converse lane (same path). FIX: consume useCaddiePersona() (the round-page standard) in CaddieOrbSheet and thread personaId into both API calls and the TTS speak()/tts.speak calls. The most visible cross-surface identity break.",
       "depends_on": []
     },

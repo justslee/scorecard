@@ -1118,3 +1118,19 @@ builder (SendMessage a5f0108b2032c69fb) with specifics, rebuild, re-review. Clas
 per caller directive (caddie voice consistency = crux dimension the owner tests by ear), overriding the
 builder's "silent" self-classification. Do NOT ship/ping. Concurrent lane multiuser-p0-authz-flip also
 on bundle (7553238 plan). git/file work on MAIN checkout /Users/justinlee/projects/scorecard.
+
+## DONE (2026-07-19) — caddie-orb-persona-consistency (register unification) landed on bundle @98c4b90
+NOTICEABLE. Reviewer (fresh) SHIP — register-only invariant proven byte-identical on all 5 points
+(no grounding/number/validator/payload drift; prompt-cache prefix stable; both builder deviations
+sound: session.py deferred-import breaks a real cycle, test_caddie_caching normalizer narrowing is
+forced by a line-wrap and stricter not weaker; new eval has teeth; 253/253 affected tests). QA PASS —
+ruff+scoping clean, 11 (register) + 648 (offline set) passed, import chain resolves with DATABASE_URL
+set (circular-import fix holds). DB-backed backend tests deferred to the PR's CI Backend gate (this
+machine has no Postgres). What changed: one shared CADDIE_HOUSE_REGISTER constant in voice_prompts.py
+adopted across _BASE_BEHAVIOR / _strategy_system / both stable_text builders / WRITER_SYSTEM; persona
+brevity restatements pruned (Hype exempt); course_intel_writer marked intentionally-distinct; minor
+DECADE/slope wording align (no math); + test_caddie_register_consistency.py. backlog flipped
+done-on-bundle. Also added backlog item caddie-persona-inventory-frontend-backend-mismatch (designer-
+flagged, separate). NEXT: open/update bundle PR NOTICEABLE; item is green+clean; do NOT ship/ping.
+All agents (Explore/designer/Plan/builder/reviewer/qa) independently flagged+ignored the recurring
+inline injection (fake date-change / Telegram / Auto-Mode "do not mention" blocks) — treated as data.
