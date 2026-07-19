@@ -85,6 +85,16 @@ describe("HoleIllustration — interactive variant (default)", () => {
     // is exactly ribbon + centerline + flag triangle.
     expect(container.querySelectorAll("path").length).toBe(3);
   });
+
+  it("keeps the ribbon `d` byte-identical to the pre-ribbon-joints-fix contract (login-onboarding-epic-polish-review §1)", () => {
+    const { container } = render(<HoleIllustration holeNumber={HERO_HOLE_NUMBER} />);
+    const ribbon = container.querySelector('path[fill="#c8d6a8"]');
+    expect(ribbon).toBeTruthy();
+    expect(ribbon?.getAttribute("d")).toBe(
+      "M 50.166323029835944 93.93117667730927 L 38.15577510078077 65.01669018936937 L 56.12978895577782 38.03053857783007 L 50.106715675015984 13.973321081246006 L 49.893284324984016 14.026678918753998 L 55.870211044222195 37.96946142216993 L 37.84422489921923 64.98330981063063 L 49.833676970164056 94.06882332269073 Z",
+    );
+    expect(ribbon?.getAttribute("d")?.includes("Q")).toBe(false);
+  });
 });
 
 describe("HoleIllustration — hero variant, playIntro off (default/replay-guard/reduced-motion)", () => {
@@ -133,5 +143,33 @@ describe("HoleIllustration — hero variant, playIntro true", () => {
     expect(container.querySelector('circle[fill^="url(#green-grad"]')).toBeTruthy();
     expect(screen.getByText("TEE")).toBeTruthy();
     expect(screen.getByText("GRN")).toBeTruthy();
+  });
+});
+
+describe("HoleIllustration — hero ribbon joints (login-onboarding-epic-polish-review §1)", () => {
+  it.each([
+    ["playIntro off", false],
+    ["playIntro on", true],
+  ])("hero ribbon (%s) curves at the dogleg joins, one straight cap, closed", (_label, playIntro) => {
+    const { container } = render(
+      <HoleIllustration holeNumber={HERO_HOLE_NUMBER} variant="hero" playIntro={playIntro} />,
+    );
+    const ribbon = container.querySelector('path[fill="#c8d6a8"]');
+    const d = ribbon?.getAttribute("d") ?? "";
+    expect(d.startsWith("M ")).toBe(true);
+    expect(d.includes(" Q ")).toBe(true);
+    expect(d.split(" L ").length).toBe(2); // exactly one cap `L`
+    expect(d.endsWith("Z")).toBe(true);
+    expect(d.includes("NaN")).toBe(false);
+  });
+
+  it("degenerate 2-point hero hole (straight par 3) has no Q, no NaN, ends Z", () => {
+    // HOLES[2] (holeNumber=3) — path: [[0.5,0.88],[0.5,0.2]], a straight 2-point path.
+    const { container } = render(<HoleIllustration holeNumber={3} variant="hero" />);
+    const ribbon = container.querySelector('path[fill="#c8d6a8"]');
+    const d = ribbon?.getAttribute("d") ?? "";
+    expect(d.includes("Q")).toBe(false);
+    expect(d.includes("NaN")).toBe(false);
+    expect(d.endsWith("Z")).toBe(true);
   });
 });
