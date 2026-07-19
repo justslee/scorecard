@@ -699,3 +699,11 @@ list never clamps. Steps 1/2/4 + shell/ticks/orb-placeholder all SHIP. Screensho
 onboarding-shots/. Fix dispatched to builder (fresh branch work-onboarding-bagfix off origin/
 integration/next). On fix: re-designer (BLOCKING re-verify bag scroll) -> if SHIP, records+PR. If I
 die: builder fix branch is work-onboarding-bagfix; merge into integration/next after re-designer green.
+
+## AWAITING UPDATE (2026-07-18) — bag-fix @ce74c02 merged; designer re-verify dispatched
+work-onboarding-bagfix (single-file OnboardingFlow.tsx shell: height:100dvh+overflow:hidden, minHeight
+:0 down the flex chain) fast-forwarded into integration/next @ce74c02. Builder gates green (tsc/lint/
+vitest2824/build) + visual proof doc==viewport, both CTAs in-view at 375x812 AND 375x667, Name step
+unchanged. Re-dispatched designer to re-verify the BLOCKING bag-scroll at both heights. On designer
+SHIP: finalize (backlog flip onboarding-shell-and-gate->done + unblock Slice 5 onboarding-bag-caddie-
+grounding->ready; PR #150 checklist NOTICEABLE + migration flag; progress; final report). No ship/ping.
