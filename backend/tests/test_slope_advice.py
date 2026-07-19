@@ -94,7 +94,8 @@ class TestBackToFrontSlope:
     def test_qualifier_word_moderate(self):
         s = self._back_to_front(approach=0.0, severity="moderate")
         result = slope_miss_advice(s, approach_bearing_deg=0.0)
-        assert "moderately" in result
+        assert "moderately" not in result
+        assert "Green slopes back-to-front" in result
 
     def test_different_approach_bearing_back_to_front(self):
         # Approaching from the west (bearing=270°); slope drops south (270+180=90 → 90°)
@@ -251,7 +252,7 @@ class TestLateralFramingContract:
     def test_moderate_left_to_right_exact(self):
         s = _slope(direction=90.0, severity="moderate")
         assert slope_miss_advice(s, approach_bearing_deg=0.0) == (
-            "Green tilts moderately left to right — "
+            "Green tilts left to right — "
             "aim left, the high side; a miss right sits below the hole and leaves the uphill putt"
         )
 
@@ -265,7 +266,7 @@ class TestLateralFramingContract:
     def test_moderate_right_to_left_exact(self):
         s = _slope(direction=270.0, severity="moderate")
         assert slope_miss_advice(s, approach_bearing_deg=0.0) == (
-            "Green tilts moderately right to left — "
+            "Green tilts right to left — "
             "aim right, the high side; a miss left sits below the hole and leaves the uphill putt"
         )
 

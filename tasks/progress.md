@@ -31,8 +31,15 @@ Scope (task directive + specs/multi-user-epic-plan.md §3.3/§3.4/§3.6), REFINE
 courses_mapped already carved to require_owner (recon confirmed) — preserve only. Migrations ADDITIVE,
 auto-apply at merge — flag in PR + report; owner ship-it approves them (precedent). Process: fable plan
 -> builder -> reviewer (fresh + /security-review MANDATORY) -> qa (full gates + flip-gate under open).
-Status: recon DONE; dispatching Plan(fable). On resume: reconcile from origin/integration/next log +
-child commits; do NOT re-run finished children.
+Status: recon DONE; Plan(fable) DONE -> specs/multiuser-p0-authz-flip-plan.md. Plan caught 3 material
+corrections: (1) personas gap is REAL not just defense-in-depth — voice.py:100 + realtime.py:87 pass
+client persona_id to load_personality with NO visibility gate (B can bind A's private persona); fix =
+load_personality enforces visibility + pass user_id from all 5 callers. (2) hole_pins test schema broken
+(ORM lacks pin_geom + unique constraint) — needs conftest pin_geom ALTER + HolePin __table_args__.
+(3) stale test name (TestByteIdenticalOwnerMode). 2 migrations: 017 revoked_users, 018 hole_pins user_id;
+personas NO migration. Flip-gate = new test_flip_gate.py (marker flip_gate) under REAL open_mode fixture.
+Dispatching builder to implement the plan on integration/next. On resume: reconcile from
+origin/integration/next log + child commits; do NOT re-run finished children.
 
 ## EPIC CLOSED (2026-07-19) — login-onboarding redesign COMPLETE; Slice 7 verdicts all SHIP @1d13b71
 All three reviews GREEN on the landed Slice-7 delta (07b0f55..1d13b71):
@@ -1115,3 +1122,28 @@ agent af6826add40cb8b5a on lane/caddie-local-lore. On builder SHIP -> fresh revi
 number-smuggling path + diff-prove frozen functions byte-identical) + qa (gates + guide suites) in
 parallel. On BLOCKING -> re-dispatch builder. Land = rebase lane onto latest integration/next then FF
 onto the bundle PR as NOTICEABLE. Do NOT ship/ping. Nothing uncommitted held across the await.
+
+## AWAITING (2026-07-19) — caddie-orb-persona-consistency BUILD
+Plan SAVED: specs/caddie-orb-persona-consistency-plan.md (@2f0baee). Dispatching builder in an
+ISOLATED WORKTREE (concurrent lane multiuser-p0-authz-flip also on the bundle — avoid shared-tree
+collisions). Builder syncs to origin/integration/next, implements the plan (REGISTER ONLY: one shared
+CADDIE_HOUSE_REGISTER constant adopted in _BASE_BEHAVIOR/_strategy_system/stable_text/WRITER_SYSTEM;
+prune persona brevity restatements; minor DECADE/slope align; thin offline register eval; numbers/
+verdict frozen), runs offline backend gates (ruff + scoping_lint + DB-stubbed pytest subset), pushes
+to origin/integration/next, reports head SHA. NEXT on builder return -> fresh reviewer (diff-prove
+validators/payloads/numbers byte-identical + cache-prefix stability) -> qa (gates + register test) ->
+update bundle PR NOTICEABLE + flip backlog. Do NOT ship/ping. eng-lead runs git/file work on MAIN
+checkout /Users/justinlee/projects/scorecard.
+## AWAITING (2026-07-19) — caddie register-unification REVIEW
+Builder LANDED at 98c4b90 (origin/integration/next); parent 7553238; review range 7553238..98c4b90
+(18 backend files). Builder offline gates GREEN (648/648 targeted + 3017/3017 sanity, ruff+scoping clean).
+Two documented deviations: (1) session.py deferred validate_guide to a runtime-local import to break a
+real circular import (guide_writer->voice_prompts->session->guide_writer); (2) test_caddie_caching
+normalizer regex narrowed to the reworded span. Awaiting fresh reviewer aca3b28301b088833 (prove
+byte-identical grounding/numbers/validators + cache-prefix stability + scrutinize both deviations) +
+qa abe05c69bea791755 (re-run offline gates + import sanity + diff-scope). NEXT: BOTH SHIP/PASS ->
+update bundle PR (open if absent) as NOTICEABLE + flip backlog + progress. BLOCKING -> re-dispatch
+builder (SendMessage a5f0108b2032c69fb) with specifics, rebuild, re-review. Classification: NOTICEABLE
+per caller directive (caddie voice consistency = crux dimension the owner tests by ear), overriding the
+builder's "silent" self-classification. Do NOT ship/ping. Concurrent lane multiuser-p0-authz-flip also
+on bundle (7553238 plan). git/file work on MAIN checkout /Users/justinlee/projects/scorecard.

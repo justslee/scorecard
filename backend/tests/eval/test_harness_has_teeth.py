@@ -21,7 +21,11 @@ import pathlib  # noqa: E402
 from app.caddie.guide_writer import validate_guide  # noqa: E402
 from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
 from app.caddie.types import Hazard, HoleStrategyGuide  # noqa: E402
-from app.caddie.voice_prompts import INPUT_GROUNDING_RULE, OBSERVED_REALITY_RULE  # noqa: E402
+from app.caddie.voice_prompts import (  # noqa: E402
+    CADDIE_HOUSE_REGISTER,
+    INPUT_GROUNDING_RULE,
+    OBSERVED_REALITY_RULE,
+)
 
 from tests.eval import checks as checks_mod  # noqa: E402
 from tests.eval.schema import (  # noqa: E402
@@ -57,6 +61,27 @@ async def test_prompt_contains_rule_goes_red_on_observed_reality_mutant(monkeypa
     )
     mutant_result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
     assert not mutant_result.passed, "check must go RED on the pre-fix (rule-stripped) prompt"
+
+
+async def test_prompt_contains_rule_goes_red_on_house_register_mutant(monkeypatch):
+    """Mirrors the OBSERVED_REALITY_RULE mutant above for the shared house
+    register (specs/caddie-orb-persona-consistency-plan.md §3.1): the check
+    must PASS on the real assembled prompt and FAIL once the constant is
+    stripped from both mouths."""
+    scenario = _scenario("hole4-observed-reality-gaslight")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.PROMPT_CONTAINS_RULE, rule="CADDIE_HOUSE_REGISTER", mouths=["text", "realtime"])
+
+    real_result = checks_mod.TIER1_CHECKS[check.check.value](ctx, check)
+    assert real_result.passed, "sanity: the real assembled prompt must contain CADDIE_HOUSE_REGISTER"
+
+    mutant_ctx = dataclasses.replace(
+        ctx,
+        text_prompt=ctx.text_prompt.replace(CADDIE_HOUSE_REGISTER, ""),
+        realtime_prompt=ctx.realtime_prompt.replace(CADDIE_HOUSE_REGISTER, ""),
+    )
+    mutant_result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
+    assert not mutant_result.passed, "check must go RED when the house register is stripped"
 
 
 async def test_prompt_contains_rule_goes_red_on_hazard_grounding_mutant(monkeypatch):
@@ -127,11 +152,11 @@ async def test_prompt_contains_rule_goes_red_when_constant_emptied(monkeypatch):
 async def test_prompt_contains_literal_goes_red_when_sentence_limit_stripped(monkeypatch):
     scenario = _scenario("chatty-question-stays-calm")
     ctx = await _build_prompts(scenario, monkeypatch)
-    check = Tier1Check(check=Tier1CheckName.PROMPT_CONTAINS_LITERAL, literal="2-3 short sentences", mouths=["text"])
+    check = Tier1Check(check=Tier1CheckName.PROMPT_CONTAINS_LITERAL, literal="1 to 3 short sentences", mouths=["text"])
 
     assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
 
-    mutant_ctx = dataclasses.replace(ctx, text_prompt=ctx.text_prompt.replace("2-3 short sentences", ""))
+    mutant_ctx = dataclasses.replace(ctx, text_prompt=ctx.text_prompt.replace("1 to 3 short sentences", ""))
     assert not checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check).passed
 
 

@@ -402,7 +402,7 @@ def decade_aim_advice(
         )
         hazard_desc = _friendly_hazard_name(worst)
         return (
-            f"The percentages favor aiming ~{n_yards}y {aim_direction} of the flag"
+            f"The percentages favor aiming about {n_yards} yards {aim_direction} of the flag"
             f" — {hazard_desc} guards the {dangerous_side}."
         )
 
@@ -410,7 +410,7 @@ def decade_aim_advice(
     # (e.g. front/back/center hazard drove a y-shifted candidate — unusual
     # given our lateral-only grid, but handled gracefully).
     return (
-        f"The percentages favor aiming ~{n_yards}y {aim_direction} of the flag"
+        f"The percentages favor aiming about {n_yards} yards {aim_direction} of the flag"
         f" — the {dangerous_side} is the danger side."
     )
 
@@ -572,6 +572,11 @@ def decade_landing_advice(
             key=lambda h: _SEVERITY_ORDER.get(h.penalty_severity, 0),
         )
         hazard_desc = _friendly_hazard_name(worst)
+        # `~N` notation kept as-is (register-consistency plan §2.7): it
+        # matches the FROZEN numbers-block notation in
+        # `voice_prompts.format_tee_numbers_line` ("plays like ~X") — changing
+        # it here for zero register gain would touch
+        # tests/test_bag_caddie_grounding_unit.py's exact pins.
         return (
             f"Favor the {aim_direction} half of the fairway — {hazard_desc} at "
             f"~{int(round(worst.carry_yards))} on the {dangerous_side}."

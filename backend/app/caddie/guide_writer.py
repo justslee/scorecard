@@ -42,6 +42,7 @@ from pydantic import BaseModel, Field
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, TREE_RUN_SPLIT_GAP_YDS
 from app.caddie.physics import elevation_only_plays_like
 from app.caddie.types import Hazard, HoleStrategyGuide, LoreItem
+from app.caddie.voice_prompts import CADDIE_HOUSE_REGISTER
 
 log = logging.getLogger("looper.guide_writer")
 
@@ -177,10 +178,10 @@ online.
 
 {HAZARD_GROUNDING_RULE}
 
-Output format: fill each field in ONE short sentence (`common_mistakes`: up to 3 short items). No
-markdown, no bullet points, no headers — this is injected verbatim into a spoken caddie prompt, so
-keep it lean and conversational. List the web-search URLs you actually used in `sources` (it may
-be empty if you found nothing useful).
+Output format: fill each field in ONE short sentence (`common_mistakes`: up to 3 short items).
+Every field is injected verbatim into a spoken caddie prompt and read aloud, so write in the
+caddie's own register: {CADDIE_HOUSE_REGISTER}
+List the web-search URLs you actually used in `sources` (it may be empty if you found nothing useful).
 """
 
 _MAX_CONTINUATIONS = 5
