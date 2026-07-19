@@ -391,3 +391,42 @@ per Northstar if ever irreconcilable.
 Homegrown auth; redesigning the existing `/profile` bag editor; changing the caddie's empty-bag
 fallback; multi-user P1 phone/email "connect with a friend" flows; a "replay onboarding" settings
 toggle. All deferred/unchanged.
+
+## 10. Google/Apple flip-readiness checklist (owner runbook)
+
+### A. Clerk Dashboard / provider consoles (owner — `auth-clerk-enable-social-connections`)
+1. Clerk Dashboard → Configure → SSO connections → enable **Google**, with **custom production OAuth
+   credentials** (Google Cloud web client for Clerk; plus an **iOS client ID** for the native plugin).
+2. Enable **Apple**: Apple Developer portal — Sign in with Apple capability on the App ID, Services ID +
+   key, pasted into the Clerk Apple connection.
+3. Confirm **Native Applications** is still enabled (`authdiag` shows `native_api_disabled` if not).
+
+### B. App-side flip PR (small; the only code work)
+**Already handled — no change at flip:** native FAPI hooks + Keychain (`AuthProvider.tsx`,
+`native-token-store.ts`); centralized sign-out Keychain clear (`ClerkTokenBridge.tsx` observer); nonce
+generation + claim check (`lib/auth-spike/`, unit-proven); plugin pinned
+`@capgo/capacitor-social-login@8.3.35`; enumeration-safe error copy (`useAuthFlow.authErrorCopy`);
+JWT-parity harness (`lib/auth-spike/jwt-parity.ts`); `NativeAuthDiag`.
+**Still stubbed — the flip PR does:**
+1. Wire `OAuthButtons.tsx` handlers — web: `signIn.sso(...)`; native: `SocialLogin.login()` →
+   `clerk.authenticateWithGoogleOneTap({token})` / `signIn.create({strategy:'oauth_token_apple',token})`.
+   Set `OAUTH_LIVE = true`; drop the "coming online shortly" caption. Apple stays first (App Store 4.8).
+2. Ungate `/sso-callback` — live-by-default; add it to `AUTH_PREFIXES` in `AuthGate.tsx`.
+3. Env: `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_IOS_SERVER_CLIENT_ID` (**must equal the
+   audience the Clerk Google connection expects** — epic risk #1), `NEXT_PUBLIC_APPLE_CLIENT_ID`.
+4. Xcode: add the Sign in with Apple capability + entitlement.
+5. Update `SignInScreen.test.tsx` + `e2e/auth.spec.ts` for enabled buttons.
+
+### C. LIVE verification after flip (in order)
+1. **JWT parity (§7 gate 1):** email-code (baseline), Google web, Google native, Apple native; decode
+   each session JWT; `iss` + `azp` + claim shape identical; unchanged backend verifies each.
+2. **Native bridge (§7 gate 2):** `authdiag` `native-sent:true`, token persisted, cold-start restore.
+3. **Sign-out (§7 gate 3):** headless `signOut()` → `ClerkTokenBridge` observer clears the Keychain —
+   verify the entry is gone (never add per-site clears).
+4. **Credential no-log (§7 gate 4):** `node scripts/assert-no-credential-log.mjs` — covers the plugin's
+   raw ID token surface.
+5. **Fallback safety (§7 gate 5):** system-browser redirect fallback stays **not shippable** until a
+   Universal-Link callback exists — ID-token path only.
+6. **OAuth-cancel edge:** cancel the native sheet → calm return to method step, no error dialog, no
+   orphan `golfer_profiles` row.
+7. Re-run Playwright auth e2e; `/security-review` on the flip PR (new raw-ID-token surface).
