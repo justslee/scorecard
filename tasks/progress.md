@@ -633,3 +633,16 @@ Backlog: login-animation-moment -> done; onboarding-shell-and-gate (Slice 4) unb
 PR #150 checklist updated (Slice 3 NOTICEABLE). NOT shipped/pinged this cycle — the bundle now holds
 3 NOTICEABLE items (caddie P0 + login static hero + login self-draw); owner approval is a separate
 release-manager step when the owner directs a ship.
+
+## AWAITING (2026-07-18) — onboarding-shell-and-gate (Slice 4, NOTICEABLE) — Plan(fable) dispatched
+Cycle picked Slice 4 of the login epic. Synced integration/next w/ origin/main (already up to date).
+Base head bda7152. Plan agent (fable) dispatched to write the gate/resume state machine + additive
+migration-safety plan -> I save to specs/onboarding-shell-and-gate-plan.md, then dispatch builder on
+integration/next. If I die: re-read this, check specs/ for the plan file + git log for any builder
+commits, continue from branch state — do NOT re-run a finished child.
+Key migration-safety invariant the plan MUST nail: onboarding_step is additive NULLABLE (default
+NULL); a ONE-TIME UPDATE ... SET onboarding_step='done' backfills PRE-EXISTING rows only. New rows
+insert NULL -> onboarded. If the column default were 'done', new sign-ups would skip onboarding —
+WRONG. Existing-user safety (owner never onboarded) = reviewer BLOCKING check.
+Note: frontend clubDistances uses camelCase keys (threeWood, sevenIron); backend
+DEFAULT_CLUB_DISTANCES uses short keys (3wood, 7iron) — bag pre-fill needs a short->camel map.
