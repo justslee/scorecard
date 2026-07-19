@@ -84,7 +84,7 @@ TENANT_MODELS: dict[str, str] = {
     # scope" + the DEFERRED comment block above clerk_auth.require_member).
     # Still listed here (rather than silently excluded) so their exemptions
     # below are visible, explained, and re-checked by anyone reading this file.
-    "HolePin": "marked_by_user_id — NOT YET per-user (deferred §3.3.1, needs a migration)",
+    "HolePin": "user_id",
     "CaddiePersona": "author_user_id — author-scoping is a deferred gap (§3.3.4)",
 }
 
@@ -109,17 +109,6 @@ EXEMPTIONS: dict[tuple[str, str], str] = {
     ("app/caddie/session.py", "_load_messages"): (
         "Safe only via get_owned_session — every route that reaches this helper "
         "has already verified round ownership (see get_owned_session's docstring)."
-    ),
-    ("app/routes/pins.py", "list_pins"): (
-        "hole_pins is global per-course/date pin data, NOT yet per-user — "
-        "documented deferred gap (§3.3.1: needs a schema migration, banned in "
-        "slice 1). Read-only; today's product intent is a SHARED daily pin "
-        "sheet, not private-per-golfer data, so this is not a silent regression."
-    ),
-    ("app/routes/pins.py", "upsert_pin"): (
-        "Same as list_pins — hole_pins is intentionally global today (§3.3.1 "
-        "deferred gap); the read-back select after the raw-SQL upsert inherits "
-        "the same posture."
     ),
 }
 

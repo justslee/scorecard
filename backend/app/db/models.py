@@ -12,7 +12,8 @@ Core scoring schema (Alembic revision 002_core_scoring / 005_core_scoring):
 from datetime import datetime, date
 from typing import Optional
 from sqlalchemy import (
-    BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, Text, func,
+    BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, Text,
+    UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -102,12 +103,34 @@ class CaddieMemory(Base):
 
 
 class HolePin(Base):
+    """Daily pin sheet — keyed per-user since migration 018
+    (multiuser-p0-authz-flip §3.3.1): (course_id, hole_number, pin_date,
+    user_id) is the unique key, so each member's pin on a course/hole/day
+    is its own row (no cross-user clobber/leak).
+
+    ``pin_geom`` (PostGIS geography point) exists in the prod DDL
+    (supabase/migrations/004_simplify_hole_pins.sql) and the test schema
+    (tests/integration/conftest.py's explicit ALTER, mirroring the
+    course_intel precedent) but deliberately NOT here — adding it to the ORM
+    would need a GeoAlchemy2 column type and would force
+    Base.metadata.create_all to require PostGIS before the 001 SQL replay
+    creates the extension. The only write path (pins.py's raw-SQL upsert)
+    always supplies it directly.
+    """
+
     __tablename__ = "hole_pins"
+    __table_args__ = (
+        UniqueConstraint(
+            "course_id", "hole_number", "pin_date", "user_id",
+            name="hole_pins_course_hole_date_user_key",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid())
     course_id: Mapped[str] = mapped_column(Text, nullable=False)
     hole_number: Mapped[int] = mapped_column(Integer, nullable=False)
     pin_date: Mapped[date] = mapped_column(Date, nullable=False)
+    user_id: Mapped[str] = mapped_column(Text, nullable=False)
     pin_lat: Mapped[float] = mapped_column(Numeric, nullable=False)
     pin_lng: Mapped[float] = mapped_column(Numeric, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False, default="manual")
