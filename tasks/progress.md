@@ -3,7 +3,55 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING (2026-07-19) — login-onboarding-epic-polish-review (Slice 7, FINAL, NOTICEABLE) — Plan(fable) dispatched
+## DONE (builder) — 2026-07-19 — login-onboarding-epic-polish-review (Slice 7, FINAL, NOTICEABLE) — @e8228a7
+Builder implemented specs/login-onboarding-epic-polish-review-plan.md in full on `integration/next`
+(head **e8228a7**, pushed, 8 commits). Epic-closing polish/edge-sweep/cleanup slice:
+- §1 ribbon-joints: `fairwayRibbon()` gains a gated 4th `join` param ("miter" default / "smooth"
+  opt-in) + `smoothJoinSegments()` helper (same Q/T grammar as `smoothPath`); only the hero call
+  opts into "smooth". Interactive call byte-identical — pinned by a test captured against HEAD
+  BEFORE the refactor (discipline followed per plan). Hero structural + degenerate-hole tests added.
+  `HoleIllustration.test.tsx`: 9→12 tests, all pass.
+- §2 wash-ease: `T.wash` (easeInOutSine) added to `tokens.ts`; swapped into the six fill-fade
+  VARIANTS + `penStroke.opacity` only (pathLength keeps `T.ease`); `SignInScreen.tsx` untouched.
+- §3 dead-code: deleted `AuthButtons.tsx` (0 importers); removed `clerkAppearance` object +
+  `appearance` prop on `<ClerkProvider>` (only Clerk-rendered element left is the headless
+  `AuthenticateWithRedirectCallback` in sso-callback); re-ran grep proofs post-delete, clean.
+- §4 F1 (useAuthFlow stall): `guarded()` races `fn()` against a 15s timer (`StallError` sentinel);
+  clears busy + unblocks `back()` on timeout; late resolution benign. 3 new fake-timer tests.
+- §4 F2 (onboarding write stall): `withStallTimeout<T>` added to `steps.ts`; wraps every awaited
+  write in `OnboardingFlow.tsx` (4× `updateGolferProfile`, `saveGolferBagAsync`); falls into the
+  existing `SAVE_ERROR_COPY` catch, zero new copy. 4 new tests in `steps.test.ts`.
+  → **FLAG for security reviewer**: `identity.ts` `hydrateGolferProfile`'s account-switch re-anchor
+  retained the previous user's `profile` object (NameStep prefill leak until GET resolved) — fixed
+  with `profile: null` on re-anchor. No new test file (none existed; not in the plan's gate list).
+- §4 F4 (back-swipe): `shouldEnableBackSwipe` now excludes `/sign-in(/*)`, `/sign-up(/*)`,
+  `/sso-callback(/*)` — same class as the existing `/onboarding` exclusion. New test cases.
+- §4 F5 — **NOTICEABLE, APP-WIDE**: `frontend/ios/App/App/Info.plist` iPhone
+  `UISupportedInterfaceOrientations` locked to portrait-only (landscape clipped OnboardingFlow's
+  Continue pill — genuinely broken, not cosmetic). `~ipad` array untouched. Flagged in its own
+  commit message for the owner/reviewer to explicitly confirm on a TestFlight build.
+- §5: appended the Google/Apple flip-readiness checklist verbatim as new `## 10.` section at the
+  end of `specs/login-onboarding-redesign-plan.md`. No other edits to that file.
+
+Gates (frontend/backend, this worktree): `npm run lint` (0 errors, 1 pre-existing unrelated
+warning), `npx tsc --noEmit` (clean), `npm run build` (succeeds, static export unaffected),
+targeted vitest (`HoleIllustration`/`useAuthFlow`/`SignInScreen`/`steps`/`shouldEnableBackSwipe`,
+90/90 pass), full `vitest run` (152 files / 2843 pass, no regressions), voice-tests smoke
+(278/278 pass), `assert-no-credential-log.mjs` + `assert-no-auth-bypass.mjs` (clean), backend
+`ruff check .` (clean, backend untouched otherwise). `npm run test:e2e` self-skips locally (no
+`CLERK_SECRET_KEY`) — expected per plan, CI's advisory job covers it.
+
+No deviations from the plan's contract; F3's function name/signature in `identity.ts` matched the
+plan's description exactly (`hydrateGolferProfile` → `setOnboardingSnapshot` re-anchor call).
+
+Next: reviewer (epic-wide `/security-review` — CORE, fresh adversarial, please weigh the F3
+profile-leak fix and the F5 orientation-lock explicitly), designer (closing whole-flow pass +
+confirm the F5 portrait lock doesn't break any existing landscape-dependent screen), qa (device
+matrix + E2E CI wiring verification per the grounding notes below). Do NOT ship/ping — release-
+manager owns the owner ship-ask. This is the epic's FINAL slice — once reviewed, the epic retro
+note (plan §8) should be filled in.
+
+## AWAITING (2026-07-19) — login-onboarding-epic-polish-review (Slice 7, FINAL, NOTICEABLE) — Plan(fable) dispatched — SUPERSEDED, see DONE entry above
 Base origin/integration/next @a67eb55 (clean). Bundle PR #151. Closing slice of the login-onboarding epic.
 Working in eng-lead launch worktree agent-a8f7f4ecc57524519 (ff'd to a67eb55); commits push to
 origin/integration/next via `git push origin worktree-agent-a8f7f4ecc57524519:integration/next`.
