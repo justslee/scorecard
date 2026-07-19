@@ -83,6 +83,19 @@ _PROFILE_KEY_MAP = {
 # shorthands the model actually says. `canonical_club` lowercases and strips
 # spaces/hyphens first, so "7 iron", "7-Iron", "sand wedge", and "7iron" all
 # resolve to the same key.
+#
+# This is the wire's OTHER end from `frontend/src/lib/caddie/clubs.ts`'s
+# `buildClubMap()`: the frontend now emits canonical keys directly (no more
+# 'hy'/'3w'/'4i' short codes on the wire), so entries here exist for TWO
+# reasons only — (1) legacy short-code rows already persisted in
+# `caddie_sessions.club_distances` (some hybrid-carrying users' bags still
+# say 'hy'), and (2) LLM/voice-spoken shorthand that never goes through
+# `buildClubMap` at all. Aliases are therefore additive-only: never remove
+# one, even after every client ships canonical keys (specs/
+# caddie-yardage-selector-p0-plan.md §2.2/§5). `'hy'` (P0 2026-07-18:
+# `buildClubMap` emitted 'hy' for hybrid, which had NO alias here and was
+# silently dropped by `normalize_club_distances` for every hybrid-carrying
+# golfer) joins `'3h'` — both alias to `hybrid`, neither is ever removed.
 _CLUB_ALIASES: dict[str, str] = {
     **{display.lower().replace(" ", ""): key for key, display in CLUB_DISPLAY_NAMES.items()},
     "pitchingwedge": "pw",
@@ -96,6 +109,7 @@ _CLUB_ALIASES: dict[str, str] = {
     "lob": "lw",
     "d": "driver",
     "3h": "hybrid",
+    "hy": "hybrid",
 }
 
 

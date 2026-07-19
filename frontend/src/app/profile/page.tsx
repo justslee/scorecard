@@ -20,9 +20,11 @@ import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
 // ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
 // The caddie (CaddiePanel) normalises these same camelCase keys to short keys
 // (driver→driver, threeWood→3wood, …) when calling the recommendation API.
-type ClubKey = keyof GolferProfile["clubDistances"];
+// Exported for reuse by the onboarding Bag step (frontend/src/components/onboarding/BagStep.tsx)
+// — do NOT duplicate this list.
+export type ClubKey = keyof GolferProfile["clubDistances"];
 
-const CLUB_CONFIG: { key: ClubKey; label: string }[] = [
+export const CLUB_CONFIG: { key: ClubKey; label: string }[] = [
   { key: "driver",        label: "Driver"    },
   { key: "threeWood",     label: "3-wood"    },
   { key: "fiveWood",      label: "5-wood"    },
@@ -263,6 +265,7 @@ export default function ProfilePage() {
         // (saveGolferProfileAsync does not send it to the PUT body)
         // so we carry through the existing bag without risk of clobber.
         clubDistances: profile?.clubDistances ?? {},
+        onboardingStep: profile?.onboardingStep ?? null,
       };
       // saveGolferProfileAsync: write-through (local cache + PUT).
       // Will re-throw on API rejections (4xx/5xx); TypeError (offline) is silent.
@@ -855,7 +858,7 @@ function Bag({
       await saveGolferBagAsync(clubDistances);
       // Update parent profile state so view refreshes immediately.
       onBagSaved({
-        ...(profile ?? { id: "", name: null, handicap: null, homeCourse: null }),
+        ...(profile ?? { id: "", name: null, handicap: null, homeCourse: null, onboardingStep: null }),
         clubDistances,
       });
       setBagEditing(false);

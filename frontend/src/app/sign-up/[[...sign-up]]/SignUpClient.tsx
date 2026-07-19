@@ -3,18 +3,23 @@
 import dynamic from "next/dynamic";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 
-// Load the Clerk widget client-only. Under static export the page is prerendered
-// with no ClerkProvider (the publishable key is injected at runtime via the build
-// env), so rendering <SignUp> at prerender would throw.
-const SignUp = dynamic(() => import("@clerk/react").then((m) => m.SignUp), {
+// Load the headless sign-up screen client-only. Under static export the
+// page is prerendered with no ClerkProvider (the publishable key is
+// injected at runtime via the build env), so any Clerk-hook component
+// would throw at prerender time. `PaperShell` below is the `loading`
+// placeholder — instant first paint, no white screen — while the real
+// screen (and Clerk) load in.
+const SignInScreen = dynamic(() => import("@/components/auth/SignInScreen"), {
   ssr: false,
+  loading: () => <PaperShell kicker="Create your account" />,
 });
 
-export default function SignUpClient() {
+/** Static paper background + masthead — the pre-hydration first paint. */
+function PaperShell({ kicker }: { kicker: string }) {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         background: `${PAPER_NOISE}, ${T.paper}`,
         backgroundBlendMode: "multiply",
         display: "flex",
@@ -25,46 +30,34 @@ export default function SignUpClient() {
         fontFamily: T.sans,
       }}
     >
-      <div style={{ width: "100%", maxWidth: 400 }}>
-        {/* Yardage-book masthead */}
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontStyle: "italic",
-              fontSize: 44,
-              letterSpacing: -1,
-              color: T.ink,
-              lineHeight: 1,
-            }}
-          >
-            Looper.
-          </div>
-          <div
-            style={{
-              fontFamily: T.mono,
-              fontSize: 8.5,
-              letterSpacing: 1.8,
-              color: T.pencil,
-              textTransform: "uppercase",
-              marginTop: 10,
-            }}
-          >
-            Create your account
-          </div>
-        </div>
-
-        {/* Clerk sign-up widget. Appearance is driven by the ClerkProvider
-            appearance prop (paper/ink palette). Per-element override kept minimal. */}
-        <SignUp
-          routing="hash"
-          appearance={{
-            elements: {
-              rootBox: "mx-auto",
-            },
-          }}
-        />
+      <div
+        style={{
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: 44,
+          letterSpacing: -1,
+          color: T.ink,
+          lineHeight: 1,
+        }}
+      >
+        Looper.
+      </div>
+      <div
+        style={{
+          fontFamily: T.mono,
+          fontSize: 8.5,
+          letterSpacing: 1.8,
+          color: T.pencil,
+          textTransform: "uppercase",
+          marginTop: 10,
+        }}
+      >
+        {kicker}
       </div>
     </div>
   );
+}
+
+export default function SignUpClient() {
+  return <SignInScreen intent="signUp" />;
 }

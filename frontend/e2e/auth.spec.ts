@@ -5,6 +5,10 @@
  * (voice-tests, vitest, next build) never exercise. A broken sign-in
  * was the #1 QA gap the owner called out.
  *
+ * Rewritten for the custom headless login screen (login-screen-visual plan
+ * §7) — drives `SignInScreen` directly (email/code and email/password),
+ * not the prebuilt Clerk `<SignIn>` widget (deleted this slice).
+ *
  * ─── Tier breakdown ────────────────────────────────────────────────────────
  *
  *  Tier 1 — "AuthGate renders sign-in screen" (1 test)
@@ -39,8 +43,8 @@
  *    npm run test:e2e
  */
 
-import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { test, expect } from "@playwright/test";
+import { signInWithEmailCode } from "./helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,13 +53,6 @@ const hasPublicKey = !!(
   process.env.CLERK_PUBLISHABLE_KEY
 );
 const hasSecretKey = !!process.env.CLERK_SECRET_KEY;
-
-/**
- * The Looper Clerk dev-instance test user.
- * Create (or verify) in the Clerk dashboard → Users → "looper+clerk_test@looperapp.org".
- * Any +clerk_test address auto-accepts OTP 424242 in Clerk dev/test mode.
- */
-const TEST_USER_EMAIL = "looper+clerk_test@looperapp.org";
 
 // ─── Tier 1: AuthGate sign-in screen render ───────────────────────────────────
 
@@ -74,8 +71,8 @@ test.describe("Tier 1 — AuthGate", () => {
     await page.goto("/");
 
     // PaperLoading renders first while Clerk initialises. Wait for it to resolve.
-    // "Your yardage book" is the mono kicker on SignInClient — unique to the
-    // sign-in screen; it does NOT appear on the home page after auth.
+    // "Your yardage book" is the mono kicker on SignInScreen's hero — unique to
+    // the sign-in screen; it does NOT appear on the home page after auth.
     await expect(page.getByText("Your yardage book")).toBeVisible({
       timeout: 15_000,
     });
@@ -87,10 +84,27 @@ test.describe("Tier 1 — AuthGate", () => {
 
     // Confirm no home-page content leaked through the gate.
     await expect(page.getByText("Recent rounds")).not.toBeVisible();
+
+    // The custom headless method-step controls are present: live email pill,
+    // Apple/Google rendered but disabled (login-screen-visual plan §3).
+    const emailButton = page.getByRole("button", { name: "Continue with email" });
+    await expect(emailButton).toBeVisible();
+    await expect(emailButton).toBeEnabled();
+
+    const appleButton = page.getByRole("button", { name: "Continue with Apple" });
+    await expect(appleButton).toBeVisible();
+    await expect(appleButton).toBeDisabled();
+
+    const googleButton = page.getByRole("button", { name: "Continue with Google" });
+    await expect(googleButton).toBeVisible();
+    await expect(googleButton).toBeDisabled();
+
+    // The prebuilt Clerk `<SignIn>` widget is gone — no identifier field.
+    await expect(page.locator('input[name="identifier"]')).toHaveCount(0);
   });
 });
 
-// ─── Tier 2: Full sign-in flow + core journeys ────────────────────────────────
+// ─── Tier 2: Full auth flow + core journeys ────────────────────────────────
 
 test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
   test.beforeEach(async ({}, testInfo) => {
@@ -104,7 +118,7 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
     }
   });
 
-  test("completes sign-in with Clerk test user and reaches home", async ({
+  test("completes sign-in with Clerk test user (email code) and reaches home", async ({
     page,
   }) => {
     test.skip(
@@ -112,60 +126,10 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
       "CLERK_SECRET_KEY not set — skipping full sign-in flow.",
     );
 
-    // Inject the Clerk testing token so bot-detection accepts OTP 424242.
-    await setupClerkTestingToken({ page });
-
-    await page.goto("/");
-
-    // Wait for the sign-in screen.
-    await expect(page.getByText("Your yardage book")).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Enter the test user email. Clerk's SignIn widget with routing="hash"
-    // renders the identifier field at the root URL (embedded in AuthGate).
-    const emailInput = page.locator('input[name="identifier"]');
-    await emailInput.waitFor({ timeout: 10_000 });
-    await emailInput.fill(TEST_USER_EMAIL);
-
-    // Submit the email to proceed to the OTP step.
-    await page.locator('button[type="submit"]').first().click();
-
-    // Clerk transitions to OTP entry. The widget renders up to 6 individual
-    // digit inputs. Typing into the first input propagates through all of them.
-    const firstDigit = page
-      .locator(
-        // Multiple possible Clerk OTP field selectors across versions.
-        [
-          'input[data-otp-input-index="0"]',
-          'input[aria-label*="digit 1"], input[aria-label*="Digit 1"]',
-          ".cl-otpCodeFieldInput",
-          'input[autocomplete="one-time-code"]',
-        ].join(", "),
-      )
-      .first();
-
-    await firstDigit.waitFor({ timeout: 10_000 });
-    // Focus the first digit and type; Clerk moves focus automatically.
-    await firstDigit.focus();
-    await page.keyboard.type("424242");
-
-    // Submit OTP (Clerk auto-submits on the last digit, but also provide a click
-    // fallback in case auto-submit doesn't fire in the headless environment).
-    const submitBtn = page.locator('button[type="submit"]').first();
-    const homeContent = page.getByText("Recent rounds");
-
-    // Wait for either auto-completion or the submit button to appear & be clicked.
-    await Promise.race([
-      homeContent.waitFor({ timeout: 15_000 }),
-      submitBtn
-        .waitFor({ timeout: 3_000 })
-        .then(() => submitBtn.click())
-        .catch(() => undefined),
-    ]);
+    await signInWithEmailCode(page);
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
 
     // After sign-in, the AuthGate clears and the home page renders.
-    await expect(homeContent).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("Your yardage book")).not.toBeVisible();
   });
 
@@ -175,34 +139,8 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
       "CLERK_SECRET_KEY not set — skipping core journey.",
     );
 
-    await setupClerkTestingToken({ page });
-    await page.goto("/");
-
-    // Sign in (same flow as above — compact version).
-    await expect(page.getByText("Your yardage book")).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.locator('input[name="identifier"]').fill(TEST_USER_EMAIL);
-    await page.locator('button[type="submit"]').first().click();
-
-    const firstDigit = page
-      .locator(
-        [
-          'input[data-otp-input-index="0"]',
-          'input[aria-label*="digit 1"], input[aria-label*="Digit 1"]',
-          ".cl-otpCodeFieldInput",
-          'input[autocomplete="one-time-code"]',
-        ].join(", "),
-      )
-      .first();
-    await firstDigit.waitFor({ timeout: 10_000 });
-    await firstDigit.focus();
-    await page.keyboard.type("424242");
-
-    // Wait for home to appear.
-    await expect(page.getByText("Recent rounds")).toBeVisible({
-      timeout: 15_000,
-    });
+    await signInWithEmailCode(page);
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
 
     // Home shell: "Start a round" CTA must be present.
     // The exact greeting ("Good morning." etc.) varies by time of day, so we
@@ -225,31 +163,8 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
       "CLERK_SECRET_KEY not set — skipping core journey.",
     );
 
-    await setupClerkTestingToken({ page });
-    await page.goto("/");
-
-    await expect(page.getByText("Your yardage book")).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.locator('input[name="identifier"]').fill(TEST_USER_EMAIL);
-    await page.locator('button[type="submit"]').first().click();
-
-    const firstDigit = page
-      .locator(
-        [
-          'input[data-otp-input-index="0"]',
-          'input[aria-label*="digit 1"], input[aria-label*="Digit 1"]',
-          ".cl-otpCodeFieldInput",
-          'input[autocomplete="one-time-code"]',
-        ].join(", "),
-      )
-      .first();
-    await firstDigit.waitFor({ timeout: 10_000 });
-    await firstDigit.focus();
-    await page.keyboard.type("424242");
-    await expect(page.getByText("Recent rounds")).toBeVisible({
-      timeout: 15_000,
-    });
+    await signInWithEmailCode(page);
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
 
     // Navigate to the new round screen.
     await page.goto("/round/new");

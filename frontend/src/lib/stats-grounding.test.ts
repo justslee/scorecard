@@ -67,6 +67,7 @@ function makeProfile(overrides: Partial<GolferProfile> = {}): GolferProfile {
     handicap: null,
     homeCourse: null,
     clubDistances: {},
+    onboardingStep: null,
     ...overrides,
   };
 }

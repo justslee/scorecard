@@ -122,6 +122,7 @@ describe("user-switch on one device", () => {
       handicap: 12,
       homeCourse: null,
       clubDistances: {},
+      onboardingStep: null,
     };
 
     setClerkUser("user_a");

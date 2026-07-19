@@ -26,6 +26,12 @@ const SHOW_EXACT = [
   '/profile',
   '/tee-time',
   '/settings',
+  // Onboarding (specs/onboarding-shell-and-gate-plan.md §2.13): the orb
+  // appears small + idle from the Name step, in its normal production
+  // position — this is also the Slice-6 seam, since CaddieOrbSheet is
+  // mounted globally inside AuthGate's children and openLooper() will Just
+  // Work once the real voice moment lands there.
+  '/onboarding',
 ] as const;
 
 // Prefix SHOW routes — dynamic detail pages under these hubs also show the orb.

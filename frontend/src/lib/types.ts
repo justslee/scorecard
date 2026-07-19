@@ -271,6 +271,9 @@ export interface GolferProfile {
     lobWedge?: number;
     putter?: number;
   };
+  /** Last COMPLETED onboarding step: null | 'name' | 'handicap' | 'bag' | 'done'.
+   *  Kept in sync with backend/app/models.py GolferProfile.onboardingStep. */
+  onboardingStep: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

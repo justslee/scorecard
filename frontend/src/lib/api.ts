@@ -456,6 +456,8 @@ export interface GolferProfileCreate {
   handicap?: number;
   homeCourse?: string;
   clubDistances?: GolferProfile['clubDistances'];
+  /** Last COMPLETED onboarding step — omit = not started; onboarding only ever writes concrete steps. */
+  onboardingStep?: string | null;
 }
 
 /**
@@ -470,6 +472,8 @@ export interface GolferProfileUpdate {
   handicap?: number | null;
   homeCourse?: string | null;
   clubDistances?: GolferProfile['clubDistances'];
+  /** omit = no change; onboarding only ever writes concrete steps. */
+  onboardingStep?: string | null;
 }
 
 /**

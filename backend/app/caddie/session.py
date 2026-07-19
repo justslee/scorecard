@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, delete, text, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.caddie.club_selection import normalize_club_distances
 from app.caddie.types import (
     WeatherConditions,
     HoleIntelligence,
@@ -117,7 +118,17 @@ def _row_to_session(row: CaddieSessionRow, messages: list[CaddieMessageRow]) -> 
         conversation_history=[
             VoiceCaddieMessage(role=m.role, content=m.content) for m in messages
         ],
-        club_distances={k: int(v) for k, v in (row.club_distances or {}).items()},
+        # Heal-on-load (specs/caddie-yardage-selector-p0-plan.md §2.2): a
+        # verbatim `{k: int(v) ...}` copy would leave legacy short-code rows
+        # ('hy', '3w', '4i', ...) un-normalized for any consumer that reads
+        # `session.club_distances` OUTSIDE the `generate_recommendation`
+        # chokepoint (e.g. the bag context line, routes/caddie.py). Running
+        # every rehydrated row through the SAME chokepoint the live bag
+        # assignment uses makes canonical keys structural at session load,
+        # not just at recommendation time. Idempotent on already-canonical
+        # rows; drops (and logs) anything still unrecognized rather than
+        # fabricating a club ([[no-fake-data-fallbacks]]).
+        club_distances=normalize_club_distances(dict(row.club_distances or {})),
         handicap=float(row.handicap) if row.handicap is not None else None,
         realtime_session_id=row.realtime_session_id,
         status=row.status,

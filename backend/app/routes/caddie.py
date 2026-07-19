@@ -91,7 +91,14 @@ def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str], call_in
     """One structured line proving prompt-cache engagement (or an honest
     below-floor no-op) — cache_read/cache_creation vs plain input tokens.
     `call_index` tags which model call of a (possibly multi-call) tool-loop
-    turn this was. Logging must never break a reply, so this never raises."""
+    turn this was. Logging must never break a reply, so this never raises.
+
+    Message kept BARE (not folded like the other three Lead-3 sites,
+    specs/caddie-yardage-selector-p0-plan.md §4): this isn't the yardage
+    field-debug payload the owner's report named, and its numbers are
+    already asserted via `extra=` in test_caddie_caching.py — folding them
+    into the message bought nothing new and only collided with that
+    existing coverage."""
     try:
         log.info(
             "caddie_usage",
@@ -116,14 +123,22 @@ def _log_hole_hazards_intel(intel: HoleIntelligence, tee: Optional[dict]) -> Non
     course geometry only, no PII/user GPS/keys — greppable from journalctl
     by event name for the next field report. Never raises."""
     try:
+        hazards_line = format_hazards_line(intel.hole_number, intel.hazards)
+        tee_lat = (tee or {}).get("lat")
+        tee_lng = (tee or {}).get("lng")
+        tee_str = (
+            f"{tee_lat:.5f},{tee_lng:.5f}" if tee_lat is not None and tee_lng is not None
+            else "unknown"
+        )
         log.info(
-            "hole_hazards_intel",
+            "hole_hazards_intel hole=%s n_hazards=%d tee=%s hazards=%s",
+            intel.hole_number, len(intel.hazards), tee_str, hazards_line,
             extra={
                 "hole": intel.hole_number,
-                "hazards_line": format_hazards_line(intel.hole_number, intel.hazards),
+                "hazards_line": hazards_line,
                 "n_hazards": len(intel.hazards),
-                "tee_lat": (tee or {}).get("lat"),
-                "tee_lng": (tee or {}).get("lng"),
+                "tee_lat": tee_lat,
+                "tee_lng": tee_lng,
             },
         )
     except Exception:  # noqa: BLE001 — logging must never break a reply
@@ -138,13 +153,16 @@ def _log_caddie_reco_context(hole_number: int, hazards_line: str, tsn: Optional[
     fields are `None` when absent. Never raises."""
     try:
         tsn = tsn or {}
+        to_green = tsn.get("to_green_yards")
+        drive_total = tsn.get("drive_total_yards")
         log.info(
-            "caddie_reco_context",
+            "caddie_reco_context hole=%s to_green=%s drive_total=%s hazards=%s",
+            hole_number, to_green, drive_total, hazards_line,
             extra={
                 "hole": hole_number,
                 "hazards_line": hazards_line,
-                "to_green_yards": tsn.get("to_green_yards"),
-                "drive_total_yards": tsn.get("drive_total_yards"),
+                "to_green_yards": to_green,
+                "drive_total_yards": drive_total,
             },
         )
     except Exception:  # noqa: BLE001 — logging must never break a reply

@@ -25,6 +25,7 @@
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/ios": "^8.4.1",
     "@capacitor/preferences": "^8.0.1",
+    "@capgo/capacitor-social-login": "8.3.35",
     "@clerk/clerk-js": "^6.22.0",
     "@clerk/react": "^6.11.1",
     "@dnd-kit/core": "^6.3.1",

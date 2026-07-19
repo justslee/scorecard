@@ -21,7 +21,7 @@ import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { T } from '@/components/yardage/tokens';
 import { shouldShowCaddieOrb, isSetupCtaRoute } from '@/components/nav/shouldShowCaddieOrb';
-import { shouldShowTabBar } from '@/components/nav/shouldShowTabBar';
+import { shouldShowTabBar, normalizePath } from '@/components/nav/shouldShowTabBar';
 import { openLooper, looperContextForPath, sendLooperDockedGesture } from '@/lib/looper-bus';
 import { haptic } from '@/lib/haptics';
 import {
@@ -171,6 +171,11 @@ export default function CaddieOrb() {
   useEffect(() => {
     if (!visible) return;
     if (typeof window === 'undefined') return;
+    // Onboarding (specs/onboarding-shell-and-gate-plan.md §2.14): defer, don't
+    // burn, the "moved here" chip while on /onboarding — it fires naturally
+    // on the first real Home render instead (the epic §3.2 land-on-home
+    // handoff).
+    if (normalizePath(pathname) === '/onboarding') return;
     try {
       if (window.localStorage.getItem(INTRO_SEEN_KEY)) return;
       window.localStorage.setItem(INTRO_SEEN_KEY, '1');
@@ -186,7 +191,7 @@ export default function CaddieOrb() {
       clearTimeout(show2);
       clearTimeout(hide);
     };
-  }, [visible]);
+  }, [visible, pathname]);
 
   // One-time inverted-gesture re-teach (owner directive, v1.1.10 field test
   // — §5a). Byte-for-byte modeled on the intro effect above (burn-once,
@@ -197,6 +202,10 @@ export default function CaddieOrb() {
   useEffect(() => {
     if (!visible) return;
     if (typeof window === 'undefined') return;
+    // Onboarding (specs/onboarding-shell-and-gate-plan.md §2.14): same defer
+    // as the "moved here" chip above — fires naturally on the first real
+    // Home render instead.
+    if (normalizePath(pathname) === '/onboarding') return;
     try {
       if (window.localStorage.getItem(INVERT_INTRO_SEEN_KEY)) return;
       window.localStorage.setItem(INVERT_INTRO_SEEN_KEY, '1');
@@ -210,7 +219,7 @@ export default function CaddieOrb() {
       clearTimeout(show2);
       clearTimeout(hide);
     };
-  }, [visible]);
+  }, [visible, pathname]);
 
   // Hidden-while-docked cancel (§3e) — a full-screen overlay (CourseSearch)
   // or a nav onto a shouldShowCaddieOrb-false route can make the orb vanish

@@ -19,5 +19,10 @@ export function shouldEnableBackSwipe(pathname: string): boolean {
   // own back button (map/course/page.tsx handleBack → router.back()).
   if (p === '/map/course') return false;
 
+  // Onboarding (specs/onboarding-shell-and-gate-plan.md §2.15) has no "back" —
+  // a left-edge swipe would router.back() to '/' and bounce straight back
+  // through the gate, a pointless flash.
+  if (p === '/onboarding') return false;
+
   return true;
 }

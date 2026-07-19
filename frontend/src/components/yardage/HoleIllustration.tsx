@@ -1,13 +1,14 @@
 "use client";
 
 import {
+  cloneElement,
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
-import { useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { T } from "./tokens";
 import { shotPointForPath, type PathPoint } from "@/lib/hole-shot-point";
 import { bookTargetDistances, clampToDiagram } from "@/lib/yardage-book-target";
@@ -88,6 +89,102 @@ function fairwayRibbon(pts: Array<[number, number]>, widthStart = 0.18, widthEnd
   );
 }
 
+// Hero-only hazard override (login-screen-visual designer iteration): the
+// hero's greenside bunker in HOLES[3] ({x:0.5,y:0.22,r:0.05}) sits almost
+// directly under the green ({x:0.5,y:0.14}, r=5 scaled units) — near-equal
+// visual weight at ~8 scaled units apart fuses them into a stacked "lollipop"
+// blob. This does NOT touch HOLES[] (still indexed by every interactive
+// caller) — it's swapped in ONLY when `isHero` is true, moving the same
+// signature dogleg's bunker to a classic short-right defended position so
+// the green reads as its own disc-with-flag and the bunker as a distinct
+// defended feature.
+const HERO_HAZARD_OVERRIDES: Record<number, HoleSpec["hazards"]> = {
+  4: [{ t: "bunker", x: 0.62, y: 0.28, r: 0.035 }],
+};
+
+// ── Hero intro storyboard (specs/login-animation-moment-plan.md §2) ──────────
+// Seconds from hero mount. Every animated element declares
+// `variants={VARIANTS.<name>}` and inherits "hidden"/"drawn" from the single
+// `<motion.g>` orchestrator wrapped around the hero paint elements below —
+// this is the one framer pattern the whole intro runs through (plan §1.2).
+// SignInScreen mirrors beats 2/5/10 (page header / sheet / wordmark) locally
+// with a comment pinning them back to this table — those live outside this
+// component, so they are NOT in this object.
+const INTRO = {
+  rough: { delay: 0.0, duration: 0.35 }, // beat 1 — paper first
+  teeDot: { delay: 0.15 }, // beat 3 — round starts at the tee (spring)
+  penStroke: { delay: 0.25, duration: 1.4 }, // beat 4 — the pen draws tee→green
+  ribbon: { delay: 0.9, duration: 0.8 }, // beat 6 — fairway fills behind the pen
+  hazards: { delay: 1.5, stagger: 0.12, duration: 0.4 }, // beat 7 — hazards stipple
+  green: { delay: 1.6, duration: 0.4 }, // beat 8 — green inks
+  penLift: { delay: 1.65, duration: 0.3 }, // beat 9 — pen lifts, dashes remain
+  labels: { delay: 1.9, duration: 0.25 }, // beat 11 — labels annotate
+  flag: { delay: 2.0 }, // beat 12 — flag plants last, settles (spring)
+} as const;
+
+// ONE shared variants object, two states: "hidden" and "drawn". The hero-only
+// `<motion.g>` orchestrator sets `initial`/`animate` to these string keys;
+// every child below just declares which entry it uses. `hazard` is the one
+// index-computed exception (a uniform stagger can't express the differentiated
+// beat table) — its `drawn` value is a function of the per-hazard `custom` index.
+const VARIANTS: Record<string, Variants> = {
+  rough: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 0.25, transition: { delay: INTRO.rough.delay, duration: INTRO.rough.duration, ease: T.ease } },
+  },
+  // The NEW solid pen-stroke overlay — draws via framer `pathLength`, then
+  // crossfades out as the real dashed centerline fades in (plan §6 gotcha:
+  // pathLength drives inline stroke-dasharray, so the dashed line itself
+  // never uses it). Stays mounted at opacity 0, inert, matching the Slice-2
+  // static hero (which never had this element at all).
+  penStroke: {
+    hidden: { pathLength: 0, opacity: 0.45 },
+    drawn: {
+      pathLength: 1,
+      opacity: 0,
+      transition: {
+        pathLength: { delay: INTRO.penStroke.delay, duration: INTRO.penStroke.duration, ease: T.ease },
+        opacity: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.ease },
+      },
+    },
+  },
+  centerline: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 0.3, transition: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.ease } },
+  },
+  ribbon: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 1, transition: { delay: INTRO.ribbon.delay, duration: INTRO.ribbon.duration, ease: T.ease } },
+  },
+  hazard: {
+    hidden: { opacity: 0 },
+    drawn: (i: number) => ({
+      opacity: 1,
+      transition: {
+        delay: INTRO.hazards.delay + i * INTRO.hazards.stagger,
+        duration: INTRO.hazards.duration,
+        ease: T.ease,
+      },
+    }),
+  },
+  green: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 1, transition: { delay: INTRO.green.delay, duration: INTRO.green.duration, ease: T.ease } },
+  },
+  teeDot: {
+    hidden: { scale: 0, opacity: 0 },
+    drawn: { scale: 1, opacity: 1, transition: { ...T.spring, delay: INTRO.teeDot.delay } },
+  },
+  flag: {
+    hidden: { y: 4, opacity: 0 },
+    drawn: { y: 0, opacity: 1, transition: { ...T.spring, delay: INTRO.flag.delay } },
+  },
+  label: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 1, transition: { delay: INTRO.labels.delay, duration: INTRO.labels.duration, ease: T.ease } },
+  },
+};
+
 export type AimReadout = { fromTee: number; toGreen: number };
 
 /** Imperative escape hatch for the ONE action a parent needs to trigger on
@@ -111,6 +208,23 @@ const HoleIllustration = forwardRef<
      * the single readout surface (specs/yardage-target-concept.md §3); this
      * component owns the drag/aim geometry but never draws its own panel. */
     onAimChange?: (r: AimReadout | null) => void;
+    /** `"interactive"` (default) is byte-identical to the pre-existing
+     * behavior — every existing call site (HoleCard etc.) is unaffected.
+     * `"hero"` is a static, chrome-free rendering for the sign-in hero
+     * (specs/login-screen-visual-plan.md §4): no `#ece7db` background rect
+     * (paper + noise shows through — "no card chrome"), no aim reticle group,
+     * no tee→green thread line, no invisible drag-hit circle, and the native
+     * pointer-listener effect never attaches (no dead listeners). This exact
+     * element set (rough texture, fairway ribbon, dashed centerline, hazards,
+     * green + flag, tee dot, TEE/GRN labels) is the shared contract that
+     * `playIntro` (below) animates — a one-time ink-draw on the hero variant
+     * only, never a second hero component. */
+    variant?: "interactive" | "hero";
+    /** Hero-only, opt-in: play the one-time ink-draw intro
+     * (specs/login-animation-moment-plan.md). Default undefined — every
+     * existing call site (HoleCard etc.) and the Slice-2 static hero are
+     * unchanged. Ignored unless `variant === "hero"`. */
+    playIntro?: boolean;
   }
 >(function HoleIllustration(
   {
@@ -120,16 +234,30 @@ const HoleIllustration = forwardRef<
     showDetail = true,
     accent = "oklch(0.54 0.18 28)",
     onAimChange,
+    variant = "interactive",
+    playIntro,
   },
   ref,
 ) {
+  const isHero = variant === "hero";
   const hole = HOLES[(holeNumber - 1) % HOLES.length];
   const VB = 100;
   const scale = (v: number) => v * VB;
-  const pathD = smoothPath(hole.path.map(([x, y]) => [scale(x), scale(y)] as [number, number]));
-  const ribbonD = fairwayRibbon(hole.path.map(([x, y]) => [scale(x), scale(y)] as [number, number]));
+  const scaledPath = hole.path.map(([x, y]) => [scale(x), scale(y)] as [number, number]);
+  const pathD = smoothPath(scaledPath);
+  // `fairwayRibbon`'s width args are UNSCALED (0–1 fractions) while `pts` are
+  // pre-scaled into the 0–100 viewBox — the interactive call below relies on
+  // that exact (unscaled-width) mismatch and MUST NOT change (byte-identical
+  // contract, HoleCard indexes this in production round views). It renders a
+  // ~0.1–0.2 unit hairline there today; that's the existing, unchanged look.
+  // The hero is a NEW static surface with no such contract, so it scales the
+  // widths to match the viewBox and gets a bold, commanding fairway corridor.
+  const ribbonD = isHero
+    ? fairwayRibbon(scaledPath, scale(0.18), scale(0.11))
+    : fairwayRibbon(scaledPath);
   const tee = hole.path[0];
   const green = hole.path[hole.path.length - 1];
+  const hazards = isHero && HERO_HAZARD_OVERRIDES[holeNumber] ? HERO_HAZARD_OVERRIDES[holeNumber] : hole.hazards;
 
   // ── Draggable aim target (owner ask 2026-07-17) ──────────────────────────
   // Aim state lives INSIDE this component — no lift to HoleCard, `shotPoint`
@@ -142,6 +270,9 @@ const HoleIllustration = forwardRef<
   const [dragging, setDragging] = useState(false);
   const pointerIdRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
+  // Re-checked here (defense in depth) even though SignInScreen also gates
+  // on `useReducedMotion()` before passing `playIntro` down.
+  const drawIntro = isHero && playIntro === true && !reduceMotion;
 
   // Reset on hole change — adjust state during render (React's documented
   // pattern for "derived from a changed prop"), not in an effect, so there's
@@ -244,6 +375,7 @@ const HoleIllustration = forwardRef<
   // there prevents the event from ever reaching the ancestor, and there's no
   // React synthetic dispatch in the mix to poison.
   useEffect(() => {
+    if (isHero) return; // hero variant never attaches drag listeners — no dead listeners.
     const el = hitRef.current;
     if (!el) return;
     el.addEventListener("pointerdown", handlePointerDown);
@@ -256,10 +388,12 @@ const HoleIllustration = forwardRef<
       el.removeEventListener("pointerup", endDrag);
       el.removeEventListener("pointercancel", endDrag);
     };
-    // Intentionally empty deps: the handlers above only close over stable
-    // refs/setters (or read through toSvgPointRef), so they never go stale;
-    // re-registering per render would be pointless churn.
-  }, []);
+    // Deps: `isHero` only (never toggles on a mounted instance in practice —
+    // `variant` is a static prop — but listed so the guard above is honest to
+    // the linter). The handlers otherwise only close over stable refs/setters
+    // (or read through toSvgPointRef), so they never go stale; re-registering
+    // per render would be pointless churn.
+  }, [isHero]);
 
   const { toTarget, toGreen } = bookTargetDistances(aimPoint, hole.path, hole.yards);
   const reticleColor = dragging ? accent : T.ink;
@@ -282,6 +416,17 @@ const HoleIllustration = forwardRef<
     onAimChangeRef.current?.(aim ? { fromTee: toTarget, toGreen } : null);
   }, [aim, toTarget, toGreen]);
 
+  // Shared hazard geometry (bunker circle / water rect) — single-sourced from
+  // `hazards`/`scale`. The hero wraps it in a `motion.g` fade wrapper below;
+  // interactive renders it directly (via `cloneElement` for the list key) so
+  // its DOM gets no added node.
+  const hazardShape = (h: HoleSpec["hazards"][number]) =>
+    h.t === "bunker" ? (
+      <circle cx={scale(h.x)} cy={scale(h.y)} r={scale(h.r)} fill="#e8d9a8" stroke="#b8a878" strokeWidth="0.25" />
+    ) : (
+      <rect x={scale(h.x)} y={scale(h.y)} width={scale(h.w)} height={scale(h.h)} rx="1.5" fill="#6ba3c4" opacity="0.7" stroke="#4a7a9a" strokeWidth="0.25" />
+    );
+
   return (
     <svg ref={svgRef} viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
       <defs>
@@ -294,106 +439,199 @@ const HoleIllustration = forwardRef<
           <stop offset="0%" stopColor="#a8c98a" />
           <stop offset="100%" stopColor="#6b8a52" />
         </radialGradient>
+        {isHero && (
+          <>
+            {/* Feathers the rough texture so it dissolves into the paper
+                instead of terminating at the viewBox's hard square edge —
+                without this the hero reads as a bordered card panel (the
+                designer's "no card chrome" block). Interactive keeps its
+                current full-opacity full-rect texture untouched below. */}
+            <radialGradient id={`rough-fade-${holeNumber}`} cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0%" stopColor="#fff" stopOpacity="1" />
+              <stop offset="65%" stopColor="#fff" stopOpacity="0.7" />
+              <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+            </radialGradient>
+            <mask id={`rough-mask-${holeNumber}`}>
+              <rect x="0" y="0" width={VB} height={VB} fill={`url(#rough-fade-${holeNumber})`} />
+            </mask>
+          </>
+        )}
       </defs>
 
-      <rect x="0" y="0" width={VB} height={VB} fill="#ece7db" />
-      <rect x="0" y="0" width={VB} height={VB} fill={`url(#rough-${holeNumber})`} opacity="0.3" />
+      {!isHero && <rect x="0" y="0" width={VB} height={VB} fill="#ece7db" />}
 
-      <path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" />
-      <path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" />
+      {isHero ? (
+        // Hero-only orchestrator (plan §1.2): `initial={drawIntro ? "hidden"
+        // : false}` is the load-bearing static path — `initial={false}`
+        // renders every child's "drawn" values immediately with zero
+        // animation, so `playIntro` off (or reduced motion, or the
+        // once-per-install replay guard) renders the hero at its final state
+        // on the first client frame. Variant propagation is React-context
+        // based, so it flows straight through the plain <g>s nested below.
+        <motion.g initial={drawIntro ? "hidden" : false} animate="drawn">
+          <motion.rect
+            x="0"
+            y="0"
+            width={VB}
+            height={VB}
+            fill={`url(#rough-${holeNumber})`}
+            opacity={0.25}
+            mask={`url(#rough-mask-${holeNumber})`}
+            variants={VARIANTS.rough}
+          />
 
-      {hole.hazards.map((h, i) => {
-        if (h.t === "bunker") {
-          return <circle key={i} cx={scale(h.x)} cy={scale(h.y)} r={scale(h.r)} fill="#e8d9a8" stroke="#b8a878" strokeWidth="0.25" />;
-        }
-        return <rect key={i} x={scale(h.x)} y={scale(h.y)} width={scale(h.w)} height={scale(h.h)} rx="1.5" fill="#6ba3c4" opacity="0.7" stroke="#4a7a9a" strokeWidth="0.25" />;
-      })}
+          <motion.path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" variants={VARIANTS.ribbon} />
 
-      <circle cx={scale(green[0])} cy={scale(green[1])} r="5" fill={`url(#green-grad-${holeNumber})`} stroke="#4a6a32" strokeWidth="0.3" />
+          {/* Painted AFTER the ribbon (on top, SVG paint order) so the ink
+              line stays visible once the fairway fill lands at beat 6 —
+              otherwise the opaque ribbon fill would occlude the thin stroke
+              underneath it. */}
+          {drawIntro && (
+            <motion.path
+              d={pathD}
+              fill="none"
+              stroke="#1a2a1a"
+              strokeWidth="0.35"
+              strokeLinecap="round"
+              variants={VARIANTS.penStroke}
+            />
+          )}
 
-      <g transform={`translate(${scale(green[0])}, ${scale(green[1])})`}>
-        <line x1="0" y1="0" x2="0" y2="-6" stroke="#1a2a1a" strokeWidth="0.4" strokeLinecap="round" />
-        <path d="M 0 -6 L 3.5 -5.2 L 0 -4.4 Z" fill={accent} />
-      </g>
+          <motion.path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" variants={VARIANTS.centerline} />
 
-      <g transform={`translate(${scale(tee[0])}, ${scale(tee[1])})`}>
-        <circle r="1.4" fill="#1a2a1a" />
-        <circle r="0.6" fill="#f4f1ea" />
-      </g>
+          {hazards.map((h, i) => (
+            <motion.g key={i} custom={i} variants={VARIANTS.hazard}>
+              {hazardShape(h)}
+            </motion.g>
+          ))}
 
-      {/* Draggable aim reticle — supersedes the old passive shotPoint pulse
-          (never both: two markers would be noise). One dashed thread while
-          dragging, echoing the map's "what's left" leg, but restrained —
-          no permanent tee→target leg on this smaller, calmer surface. */}
-      <line
-        x1={scale(aimPoint[0])}
-        y1={scale(aimPoint[1])}
-        x2={scale(green[0])}
-        y2={scale(green[1])}
-        stroke={T.pencil}
-        strokeWidth="0.3"
-        strokeDasharray="1 1.5"
-        style={{
-          opacity: dragging ? 0.35 : 0,
-          transition: reduceMotion ? "none" : "opacity 0.3s ease",
-        }}
-      />
+          <motion.circle cx={scale(green[0])} cy={scale(green[1])} r="5" fill={`url(#green-grad-${holeNumber})`} stroke="#4a6a32" strokeWidth="0.3" variants={VARIANTS.green} />
 
-      {/* Translate via the XML attribute (position tracks the pointer
-          glued, every render, no CSS transition — no lag). Scale-on-grab
-          lives on a NESTED <g> as a separate CSS transform, so the grab
-          bounce can spring/ease independently of position. (A CSS
-          `transform` style completely overrides the XML `transform`
-          attribute on the same element per SVG2/CSS Transforms — mixing
-          both on ONE <g> would silently drop the translate, so they're
-          split across parent/child instead.) */}
-      <g transform={`translate(${scale(aimPoint[0])}, ${scale(aimPoint[1])})`}>
-        <g
-          style={{
-            transform: `scale(${dragging ? 1.15 : 1})`,
-            transformOrigin: "0px 0px",
-            transition: reduceMotion ? "none" : "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
-          }}
-        >
-          <circle r="3.2" fill="none" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="0" y1="-3.6" x2="0" y2="-4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="0" y1="3.6" x2="0" y2="4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="3.6" y1="0" x2="4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <line x1="-3.6" y1="0" x2="-4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
-          <circle r="0.9" fill={reticleColor} stroke={T.paper} strokeWidth="0.3" style={{ transition: colorTransition }} />
-        </g>
-      </g>
+          <g transform={`translate(${scale(green[0])}, ${scale(green[1])})`}>
+            <motion.g variants={VARIANTS.flag}>
+              <line x1="0" y1="0" x2="0" y2="-6" stroke="#1a2a1a" strokeWidth="0.4" strokeLinecap="round" />
+              <path d="M 0 -6 L 3.5 -5.2 L 0 -4.4 Z" fill={accent} />
+            </motion.g>
+          </g>
 
-      {/* Invisible hit target, ≥44pt physical touch target at both card
-          sizes (r=12 viewBox units ⇒ ~45.6px diameter at the 190px
-          collapsed card). Sits last so it's on top for hit-testing; the
-          visible glyph above is purely decorative. */}
-      <circle
-        ref={hitRef}
-        cx={scale(aimPoint[0])}
-        cy={scale(aimPoint[1])}
-        r="12"
-        fill="transparent"
-        style={{ touchAction: "none", cursor: "grab" }}
-        // Pointer handlers are wired imperatively via native addEventListener
-        // (see the effect above) rather than JSX onPointerDown/Move/Up props
-        // — that's what lets stopPropagation() actually isolate the drag from
-        // the round page's framer-motion `drag="x"` hole-swipe wrapper (see
-        // the effect's comment for why). setPointerCapture (inside
-        // handlePointerDown) still reroutes all subsequent pointermove/up to
-        // this element regardless of finger movement; touch-action:none
-        // blocks native browser pan gestures too. Do NOT add an
-        // onPointerDownCapture alongside a co-located bubble onPointerDown on
-        // this node: in React 19 that aborts the whole synthetic dispatch,
-        // silently killing the drag (regression, fixed — see git history).
-        onClick={(e) => e.stopPropagation()}
-        aria-label="Drag aim target"
-      />
+          <g transform={`translate(${scale(tee[0])}, ${scale(tee[1])})`}>
+            <motion.g variants={VARIANTS.teeDot} style={{ originX: "0px", originY: "0px" }}>
+              <circle r="1.4" fill="#1a2a1a" />
+              <circle r="0.6" fill="#f4f1ea" />
+            </motion.g>
+          </g>
 
-      {showDetail && (
+          {showDetail && (
+            <>
+              <motion.text x={scale(tee[0]) + 3} y={scale(tee[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>TEE</motion.text>
+              <motion.text x={scale(green[0]) + 6} y={scale(green[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>GRN</motion.text>
+            </>
+          )}
+        </motion.g>
+      ) : (
         <>
-          <text x={scale(tee[0]) + 3} y={scale(tee[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558">TEE</text>
-          <text x={scale(green[0]) + 6} y={scale(green[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558">GRN</text>
+          <motion.rect
+            x="0"
+            y="0"
+            width={VB}
+            height={VB}
+            fill={`url(#rough-${holeNumber})`}
+            opacity={0.3}
+            variants={VARIANTS.rough}
+          />
+
+          <motion.path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" variants={VARIANTS.ribbon} />
+          <motion.path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" variants={VARIANTS.centerline} />
+
+          {hazards.map((h, i) => cloneElement(hazardShape(h), { key: i }))}
+
+          <motion.circle cx={scale(green[0])} cy={scale(green[1])} r="5" fill={`url(#green-grad-${holeNumber})`} stroke="#4a6a32" strokeWidth="0.3" variants={VARIANTS.green} />
+
+          <g transform={`translate(${scale(green[0])}, ${scale(green[1])})`}>
+            <line x1="0" y1="0" x2="0" y2="-6" stroke="#1a2a1a" strokeWidth="0.4" strokeLinecap="round" />
+            <path d="M 0 -6 L 3.5 -5.2 L 0 -4.4 Z" fill={accent} />
+          </g>
+
+          <g transform={`translate(${scale(tee[0])}, ${scale(tee[1])})`}>
+            <circle r="1.4" fill="#1a2a1a" />
+            <circle r="0.6" fill="#f4f1ea" />
+          </g>
+
+          {/* Draggable aim reticle — supersedes the old passive shotPoint pulse
+              (never both: two markers would be noise). One dashed thread while
+              dragging, echoing the map's "what's left" leg, but restrained —
+              no permanent tee→target leg on this smaller, calmer surface. */}
+          <line
+            x1={scale(aimPoint[0])}
+            y1={scale(aimPoint[1])}
+            x2={scale(green[0])}
+            y2={scale(green[1])}
+            stroke={T.pencil}
+            strokeWidth="0.3"
+            strokeDasharray="1 1.5"
+            style={{
+              opacity: dragging ? 0.35 : 0,
+              transition: reduceMotion ? "none" : "opacity 0.3s ease",
+            }}
+          />
+
+          {/* Translate via the XML attribute (position tracks the pointer
+              glued, every render, no CSS transition — no lag). Scale-on-grab
+              lives on a NESTED <g> as a separate CSS transform, so the grab
+              bounce can spring/ease independently of position. (A CSS
+              `transform` style completely overrides the XML `transform`
+              attribute on the same element per SVG2/CSS Transforms — mixing
+              both on ONE <g> would silently drop the translate, so they're
+              split across parent/child instead.) */}
+          <g transform={`translate(${scale(aimPoint[0])}, ${scale(aimPoint[1])})`}>
+            <g
+              style={{
+                transform: `scale(${dragging ? 1.15 : 1})`,
+                transformOrigin: "0px 0px",
+                transition: reduceMotion ? "none" : "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
+              }}
+            >
+              <circle r="3.2" fill="none" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="0" y1="-3.6" x2="0" y2="-4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="0" y1="3.6" x2="0" y2="4.6" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="3.6" y1="0" x2="4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <line x1="-3.6" y1="0" x2="-4.6" y2="0" stroke={reticleColor} strokeWidth="0.5" strokeLinecap="round" style={{ transition: colorTransition }} />
+              <circle r="0.9" fill={reticleColor} stroke={T.paper} strokeWidth="0.3" style={{ transition: colorTransition }} />
+            </g>
+          </g>
+
+          {/* Invisible hit target, ≥44pt physical touch target at both card
+              sizes (r=12 viewBox units ⇒ ~45.6px diameter at the 190px
+              collapsed card). Sits last so it's on top for hit-testing; the
+              visible glyph above is purely decorative. */}
+          <circle
+            ref={hitRef}
+            cx={scale(aimPoint[0])}
+            cy={scale(aimPoint[1])}
+            r="12"
+            fill="transparent"
+            style={{ touchAction: "none", cursor: "grab" }}
+            // Pointer handlers are wired imperatively via native addEventListener
+            // (see the effect above) rather than JSX onPointerDown/Move/Up props
+            // — that's what lets stopPropagation() actually isolate the drag from
+            // the round page's framer-motion `drag="x"` hole-swipe wrapper (see
+            // the effect's comment for why). setPointerCapture (inside
+            // handlePointerDown) still reroutes all subsequent pointermove/up to
+            // this element regardless of finger movement; touch-action:none
+            // blocks native browser pan gestures too. Do NOT add an
+            // onPointerDownCapture alongside a co-located bubble onPointerDown on
+            // this node: in React 19 that aborts the whole synthetic dispatch,
+            // silently killing the drag (regression, fixed — see git history).
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Drag aim target"
+          />
+
+          {showDetail && (
+            <>
+              <motion.text x={scale(tee[0]) + 3} y={scale(tee[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>TEE</motion.text>
+              <motion.text x={scale(green[0]) + 6} y={scale(green[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>GRN</motion.text>
+            </>
+          )}
         </>
       )}
     </svg>
