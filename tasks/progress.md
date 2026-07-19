@@ -33,27 +33,37 @@ Classified SILENT — backend-only wiring + observability field, no user-visible
 along in the bundle; does not itself trigger an approval ping. eng-lead: reviewer(fresh) + qa next,
 then fold into the bundle PR.
 
-## AWAITING — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, NOTICEABLE) — Plan(fable) dispatched [SUPERSEDED BY BUILDER DONE ABOVE]
-Base synced: `integration/next` @ `2fc7ea8` (records: bundle #150 shipped annotations + SwiftPM pins)
-off `origin/integration/next` e01b74d; `origin/main` == bundle #150 merge (2a4a6241). Bundle #150
-already SHIPPED — need a FRESH bundle PR (integration/next → main) this cycle.
+## DONE — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, NOTICEABLE) — landed on bundle PR #151
+Base synced off `origin/integration/next` e01b74d (bundle #150 already SHIPPED to main @2a4a6241);
+opened the FRESH bundle **PR #151** (integration/next → main). Item head **212bc27** (branch head
+`af75f2f` after records). NOT shipped/pinged — the bundle awaits the owner's single "Ship it".
 
-**Core wiring gap already located (eng-lead pre-scan):** the caddie route
-`backend/app/routes/caddie.py` start_session sets `session.club_distances` ONLY from client-sent
-`request.club_distances` (~line 366); it does NOT server-side hydrate the user's stored bag from
-`golfer_profiles.bag_clubs`. `normalize_club_distances` already maps camelCase profile keys via
-`_PROFILE_KEY_MAP`, so `normalize_club_distances(golfer_profile.bag_clubs)` is a clean hydration.
-This is the seam the owner's DB-backed two-user test must pin.
+**What landed — the onboarding bag now genuinely grounds the caddie, proven per-user.**
+Plan(fable) @8475367 → specs/onboarding-bag-caddie-grounding-plan.md. Server-side hydration seam:
+new `memory.get_golfer_bag_clubs(user_id)` reads `golfer_profiles.bag_clubs`; `start_session`
+precedence ladder **request > stored-profile(normalized,non-empty) > keep-persisted-session > empty**
+(an empty/missing profile can NEVER clear a good session bag). All flows through
+`normalize_club_distances` (camelCase `_PROFILE_KEY_MAP`). Grounded surfaces: engine solve, tee &
+expected-strokes selectors, strategy PLAYER block, spoken yardages, stateless voice-prompt bag line,
+transcription vocab. Fixes: hardcoded "driver" removed from `decade_advice.cross_hazard_line`;
+no-driver dispersion line gated; empty-bag honesty strings (strategy + aim_point P4); additive
+`SessionStatus.bag_source`. record_shot free-text contract + CADDIE_TOOLS schema deliberately untouched.
 
-Plan(fable) @8475367 + builder DONE @212bc27 (head def98af, pushed origin/integration/next).
-Gates builder-side green (lint 0-err, tsc clean, voice 278/278, ruff clean, backend 3005 passed
-/146 skipped; new flip-time DB test collects 6, skips w/o local PG). Builder caught+fixed a
-fail-open coupling regression (separate try/except for the bag fetch in _build_voice_prompt).
-Pinned: 160y A→8iron B→6iron; 430y tee A→driver(300) B→3wood(200), no "driver" in B payload.
-AWAITING reviewer(fresh, incl /security-review for multi-user isolation) + qa on 2157cad..212bc27.
-On green: open FRESH bundle PR (integration/next → main), NOTICEABLE checklist; backlog flip +
-Slice 6 unblock. BLOCKING → re-dispatch builder. Do NOT ship/ping.
+**Owner's FLIP-TIME acceptance test** = `backend/tests/integration/test_bag_caddie_grounding.py`
+(6 tests, DB-backed, runs in CI's Postgres job, the MULTI-USER isolation gate): two users, same
+course/tee → payloads differ, each binds to its own bag, ZERO cross-leak; no-driver bag never
+crashes / never says "driver"; skipped-bag defaults; request-over-stored precedence. Pinned literals:
+160y A→8iron B→6iron; 430y tee A→driver(300) B→3wood(200). Builder caught+fixed a fail-open coupling
+regression (own try/except for the stateless-prompt bag fetch).
 
+**Verdicts:** reviewer(fresh, incl security trace of the exact range) SHIP — all 6 load-bearing risks
+verified (no-driver never crashes, isolation airtight, owner path byte-identical, fail-open decoupling
+correct, test genuinely gates, honesty); QA PASS 9/9 (lint 0-err, tsc, next build, voice 278/278,
+ruff, caddie-experience vitest 276/276, backend 3005 passed, flip-test collects 6 + skips locally).
+No designer — no visual surface (additive optional type field only).
+
+**Backlog:** onboarding-bag-caddie-grounding → done-on-bundle; onboarding-voice-first-intro (Slice 6)
+unblocked → ready. login-onboarding-epic-polish-review (Slice 7) stays blocked (needs Slice 6).
 ## DONE — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1) — verdict CONSTRAINED-GO
 Landed on `integration/next` (bundle PR #150), all three CI gates SUCCESS on head **429dd9c**
 (Frontend + Backend + E2E advisory). Silent rider — dev-flag-gated (`NEXT_PUBLIC_AUTH_SPIKE=1`),
