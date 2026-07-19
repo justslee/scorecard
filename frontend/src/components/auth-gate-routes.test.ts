@@ -12,7 +12,7 @@
 // sequence step 1 — it must be written and green before any spike UI exists.
 
 import { describe, expect, it } from "vitest";
-import { isAuthRoute } from "./AuthGate";
+import { isAuthRoute, isOnboardingRoute } from "./AuthGate";
 
 describe("isAuthRoute — flag OFF (default build, byte-identical to today)", () => {
   it("passes /sign-in and its sub-paths", () => {
@@ -65,5 +65,24 @@ describe("isAuthRoute — flag ON (spike prefixes passed explicitly)", () => {
     expect(isAuthRoute("/", SPIKE_PREFIXES)).toBe(false);
     expect(isAuthRoute("/round/abc", SPIKE_PREFIXES)).toBe(false);
     expect(isAuthRoute("/profile", SPIKE_PREFIXES)).toBe(false);
+  });
+});
+
+// isOnboardingRoute (specs/onboarding-shell-and-gate-plan.md §1.3/§6) — the
+// 4th AuthGate state's route boundary, same rules as isAuthRoute.
+describe("isOnboardingRoute", () => {
+  it("passes /onboarding and its sub-paths / hash fragments", () => {
+    expect(isOnboardingRoute("/onboarding")).toBe(true);
+    expect(isOnboardingRoute("/onboarding/")).toBe(true);
+    expect(isOnboardingRoute("/onboarding#x")).toBe(true);
+  });
+
+  it("does not partial-match a route with a shared prefix substring", () => {
+    expect(isOnboardingRoute("/onboarding-x")).toBe(false);
+  });
+
+  it("rejects unrelated routes", () => {
+    expect(isOnboardingRoute("/")).toBe(false);
+    expect(isOnboardingRoute("/profile")).toBe(false);
   });
 });

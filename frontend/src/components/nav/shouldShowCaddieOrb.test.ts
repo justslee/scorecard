@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { shouldShowCaddieOrb, isSetupCtaRoute } from './shouldShowCaddieOrb';
 
 describe('shouldShowCaddieOrb', () => {
-  it.each(['/', '/courses', '/players', '/profile', '/tee-time', '/settings'])(
+  it.each(['/', '/courses', '/players', '/profile', '/tee-time', '/settings', '/onboarding'])(
     'returns true for exact SHOW route %s',
     (path) => {
       expect(shouldShowCaddieOrb(path)).toBe(true);

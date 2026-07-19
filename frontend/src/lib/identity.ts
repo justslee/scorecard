@@ -20,10 +20,12 @@
  * every platform.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useUser } from "@clerk/react";
 import { getGolferProfileAsync, updateGolferProfile } from "./api";
 import { getCurrentUserId } from "./identity-core";
+import { storageKey } from "./storage-keys";
+import type { GolferProfile } from "./types";
 
 const LAST_USER_KEY = "scorecard_last_user_id";
 
@@ -33,22 +35,158 @@ const LAST_USER_KEY = "scorecard_last_user_id";
 // there.
 export { getCurrentUserId };
 
+// ---------------------------------------------------------------------------
+// Onboarding tri-state store (specs/onboarding-shell-and-gate-plan.md §1.2)
+// ---------------------------------------------------------------------------
+// A small module-level store, consumed via `useSyncExternalStore` so every
+// `useMe()` call site (IdentityBridge AND AuthGate) sees ONE shared value —
+// no new architectural seam, this lives beside `useMe` deliberately.
+
+/** The last COMPLETED onboarding step. */
+export type OnboardingStepValue = "name" | "handicap" | "bag" | "done";
+/** Tri-state gate value: 'unknown' until the profile GET resolves; null =
+ *  row exists/created but nothing completed yet (brand-new user). */
+export type OnboardingStepState = OnboardingStepValue | null | "unknown";
+
+const ONBOARDING_STEP_CACHE_NAME = "onboarding_step";
+/** localStorage can't store `null` directly — 'new' is the null sentinel. */
+const ONBOARDING_NULL_SENTINEL = "new";
+
+interface OnboardingSnapshot {
+  userId: string | null;
+  step: OnboardingStepState;
+  /** The GolferProfile fetched during hydration — lets the onboarding flow
+   *  prefill (name, handicap, ...) with NO second fetch. */
+  profile: GolferProfile | null;
+}
+
+function readCachedOnboardingStep(): OnboardingStepState {
+  try {
+    const raw = window.localStorage.getItem(storageKey(ONBOARDING_STEP_CACHE_NAME));
+    if (raw === null) return "unknown";
+    if (raw === ONBOARDING_NULL_SENTINEL) return null;
+    return raw as OnboardingStepValue;
+  } catch {
+    return "unknown"; // Storage unavailable (private mode / quota).
+  }
+}
+
+function writeCachedOnboardingStep(step: OnboardingStepValue | null): void {
+  try {
+    window.localStorage.setItem(
+      storageKey(ONBOARDING_STEP_CACHE_NAME),
+      step === null ? ONBOARDING_NULL_SENTINEL : step,
+    );
+  } catch {
+    // Private mode / quota — non-fatal, just no persisted cache for next open.
+  }
+}
+
+// Lazy-initialize SYNCHRONOUSLY from the namespaced cache so a returning
+// "done" user's first render already reads 'done' — zero-flash — while the
+// GET below revalidates in the background. On the server (no window) this
+// stays 'unknown', which is exactly right (AuthGate never mounts at
+// static-export prerender, per AuthGate.tsx's header comment).
+let onboardingSnapshot: OnboardingSnapshot = {
+  userId: typeof window !== "undefined" ? getCurrentUserId() : null,
+  step: typeof window !== "undefined" ? readCachedOnboardingStep() : "unknown",
+  profile: null,
+};
+
+const onboardingListeners = new Set<() => void>();
+
+/** Module-level once-per-user guard — replaces a per-instance ref so a
+ *  SECOND `useMe()` mount (AuthGate, alongside IdentityBridge) can never
+ *  double-fetch / double-run the ensure-PUT. */
+let hydratedForUserId: string | null = null;
+
+function notifyOnboardingListeners(): void {
+  onboardingListeners.forEach((listener) => listener());
+}
+
+function subscribeOnboarding(listener: () => void): () => void {
+  onboardingListeners.add(listener);
+  return () => onboardingListeners.delete(listener);
+}
+
+function getOnboardingSnapshot(): OnboardingSnapshot {
+  return onboardingSnapshot;
+}
+
+function setOnboardingSnapshot(
+  userId: string | null,
+  step: OnboardingStepState,
+  opts: { persist?: boolean; profile?: GolferProfile | null } = {},
+): void {
+  const { persist = false, profile } = opts;
+  onboardingSnapshot = {
+    userId,
+    step,
+    profile: profile !== undefined ? profile : onboardingSnapshot.profile,
+  };
+  if (persist && step !== "unknown") {
+    writeCachedOnboardingStep(step);
+  }
+  notifyOnboardingListeners();
+}
+
 /**
- * Idempotent, best-effort "ensure the golfer_profiles row exists" — reuses
- * the existing upsert PUT (no new backend endpoint). PUT with no fields is a
- * safe no-op against an existing row (backend only touches fields present in
- * `model_fields_set`, see backend/app/routes/profile.py) and creates an empty
- * row on first sign-in otherwise. Never throws — offline/API failure is
- * silently skipped; the profile route upserts lazily on the next real save
- * anyway, so nothing is lost by skipping here.
+ * Writer API for the onboarding flow — call after each successful step PUT.
+ * Calling it with 'done' is what lets `router.replace('/')` land straight on
+ * children with no bounce-back through the gate.
  */
-async function ensureGolferProfile(): Promise<void> {
+export function publishOnboardingStep(
+  userId: string,
+  step: OnboardingStepValue | null,
+): void {
+  setOnboardingSnapshot(userId, step, { persist: true });
+}
+
+/** The GolferProfile fetched during hydration, for the onboarding flow's
+ *  prefills (name / handicap). Null before hydration resolves. */
+export function getHydratedGolferProfile(): GolferProfile | null {
+  return onboardingSnapshot.profile;
+}
+
+/**
+ * Fetch the golfer profile once per signed-in user, publish the onboarding
+ * step (and retain the profile for prefills — no second fetch needed by the
+ * onboarding flow), and preserve the existing ensure-PUT-{} behavior when no
+ * row exists yet. Never throws into render: on fetch failure, fail OPEN to
+ * the cached step (or 'done' if nothing is cached) with `persist:false` so
+ * the next successful GET re-gates correctly — this also keeps the existing
+ * Tier-2 e2e core journeys green, since Playwright runs with no backend at
+ * localhost:8000 (specs/onboarding-shell-and-gate-plan.md §1.2/§4).
+ */
+async function hydrateGolferProfile(userId: string): Promise<void> {
+  // Re-anchor the snapshot to THIS user immediately (covers the case where
+  // module init ran before a user id was known, or a different user's cache
+  // was last on this device — account switch) so the tri-state reads
+  // correctly while the GET below is in flight.
+  if (onboardingSnapshot.userId !== userId) {
+    setOnboardingSnapshot(userId, readCachedOnboardingStep(), { persist: false });
+  }
+
   try {
     const existing = await getGolferProfileAsync();
-    if (existing) return;
+    if (existing) {
+      setOnboardingSnapshot(
+        userId,
+        (existing.onboardingStep as OnboardingStepValue | null) ?? null,
+        { persist: true, profile: existing },
+      );
+      return;
+    }
+    // 204 — no row yet. Ensure it exists (existing behavior: a safe no-op
+    // PUT that creates an empty row), then publish null (a freshly-ensured
+    // row has onboarding_step NULL — funneled into onboarding, by design).
     await updateGolferProfile({});
+    setOnboardingSnapshot(userId, null, { persist: true, profile: null });
   } catch {
-    // Offline / API error — non-fatal, retried on the next sign-in.
+    const cached = readCachedOnboardingStep();
+    setOnboardingSnapshot(userId, cached === "unknown" ? "done" : cached, {
+      persist: false,
+    });
   }
 }
 
@@ -79,21 +217,30 @@ export interface MeState {
   userId: string | null;
   isLoaded: boolean;
   isSignedIn: boolean;
+  /** Tri-state onboarding gate value — 'unknown' until the profile GET
+   *  resolves for THIS user (never leaks another user's step on account
+   *  switch — see `hydrateGolferProfile`'s per-user re-anchor). */
+  onboardingStep: OnboardingStepState;
 }
 
 /**
  * `useMe()` — the reactive "who am I" hook. Wraps `useUser()`. On sign-in it
- * best-effort ensures the `golfer_profiles` row exists (see
- * `ensureGolferProfile` above) and persists `scorecard_last_user_id` so
- * offline/logged-out reads on this device resolve to the correct namespace
- * (`getCurrentUserId()`'s fallback, `storage-api.ts`'s offline path).
+ * hydrates the onboarding step (see `hydrateGolferProfile` above, which also
+ * best-effort ensures the `golfer_profiles` row exists) and persists
+ * `scorecard_last_user_id` so offline/logged-out reads on this device
+ * resolve to the correct namespace (`getCurrentUserId()`'s fallback,
+ * `storage-api.ts`'s offline path).
  *
  * Defensive by design: every side effect is wrapped so a failure here can
  * never throw into render or block sign-in.
  */
 export function useMe(): MeState {
   const { isLoaded, isSignedIn, user } = useUser();
-  const ensuredForRef = useRef<string | null>(null);
+  const onboarding = useSyncExternalStore(
+    subscribeOnboarding,
+    getOnboardingSnapshot,
+    getOnboardingSnapshot,
+  );
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !user?.id) return;
@@ -105,18 +252,23 @@ export function useMe(): MeState {
       // the namespace across an offline reload.
     }
 
-    // Run the ensure-steps once per signed-in user id (not on every
-    // re-render — `user` is a fresh object reference from Clerk often).
-    if (ensuredForRef.current === user.id) return;
-    ensuredForRef.current = user.id;
+    // Run the hydrate-steps once per signed-in user id (module-level guard —
+    // not a per-instance ref — so a SECOND useMe() mount, e.g. AuthGate
+    // alongside IdentityBridge, can never double-fetch/double-ensure).
+    if (hydratedForUserId === user.id) return;
+    hydratedForUserId = user.id;
 
-    void ensureGolferProfile();
+    void hydrateGolferProfile(user.id);
   }, [isLoaded, isSignedIn, user?.id]);
 
+  const userId = isSignedIn && user?.id ? user.id : null;
+
   return {
-    userId: isSignedIn && user?.id ? user.id : null,
+    userId,
     isLoaded: Boolean(isLoaded),
     isSignedIn: Boolean(isSignedIn),
+    // Never leak a mismatched user's snapshot (account switch on one device).
+    onboardingStep: userId && onboarding.userId === userId ? onboarding.step : "unknown",
   };
 }
 

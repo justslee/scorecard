@@ -8,28 +8,37 @@
  * useAuth() hooks instead of window.Clerk (which never hydrates on the custom
  * scheme).
  *
- * Three render states:
- *   !isLoaded           → calm paper loading screen — never flash the app or
- *                          sign-in form while the Clerk session is resolving
- *   isSignedIn          → render children (the full app)
- *   !isSignedIn + auth  → render children (sign-in / sign-up pages must stay
+ * Four render states:
+ *   !isLoaded            → calm paper loading screen — never flash the app or
+ *                           sign-in form while the Clerk session is resolving
+ *   !isSignedIn + auth   → render children (sign-in / sign-up pages must stay
  *                          reachable so the Clerk widget can complete the flow)
- *   !isSignedIn + other → render <SignInClient> inline; once Clerk confirms the
- *                          session isSignedIn becomes true and children render
+ *   !isSignedIn + other  → render <SignInClient> inline; once Clerk confirms
+ *                          the session isSignedIn becomes true and we advance
+ *   isSignedIn + needs   → onboardingStep === 'unknown' → PaperLoading
+ *     onboarding           (never children, never onboarding — zero-flash);
+ *                          onboardingStep !== 'done' → redirect to /onboarding
+ *                          (unless already on an onboarding route)
+ *   isSignedIn + done    → render children (the full app)
  *
  * After sign-in completes, useAuth() updates → isSignedIn=true → this component
- * re-renders → children render → getToken() works → voice + backend calls succeed.
+ * re-renders → children render (or redirect to /onboarding first) → getToken()
+ * works → voice + backend calls succeed.
  */
 
+import { useEffect } from "react";
 import { useAuth } from "@clerk/react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import SignInClient from "@/app/sign-in/[[...sign-in]]/SignInClient";
 import { SPIKE_AUTH_PREFIXES } from "@/lib/auth-spike/spike-flag";
+import { useMe } from "@/lib/identity";
 
 /** URL prefixes that must remain reachable without a session. */
 const AUTH_PREFIXES = ["/sign-in", "/sign-up"];
+/** The first-run onboarding route — same boundary rules as isAuthRoute. */
+const ONBOARDING_PREFIXES = ["/onboarding"];
 
 /**
  * `extraPrefixes` lets the auth-headless-spike (NEXT_PUBLIC_AUTH_SPIKE=1)
@@ -41,6 +50,17 @@ const AUTH_PREFIXES = ["/sign-in", "/sign-up"];
 export function isAuthRoute(pathname: string, extraPrefixes: string[] = []): boolean {
   const prefixes = [...AUTH_PREFIXES, ...extraPrefixes];
   return prefixes.some(
+    (p) =>
+      pathname === p ||
+      pathname.startsWith(p + "/") ||
+      pathname.startsWith(p + "#"),
+  );
+}
+
+/** Same boundary rules as `isAuthRoute` — `/onboarding`, `/onboarding/…`,
+ *  `/onboarding#…` all match; `/onboarding-x` does not. */
+export function isOnboardingRoute(pathname: string): boolean {
+  return ONBOARDING_PREFIXES.some(
     (p) =>
       pathname === p ||
       pathname.startsWith(p + "/") ||
@@ -90,10 +110,26 @@ function PaperLoading() {
   );
 }
 
+/**
+ * Redirects a signed-in, not-yet-'done' user to /onboarding. A redirect (not
+ * an inline render) keeps /onboarding the ONE source of the flow and keeps
+ * AuthGate dumb — covers both "just signed in, not onboarded" and "a 'done'
+ * user deep-linked somewhere odd but hasn't actually finished" (shouldn't
+ * happen, but the redirect is the same safe fallback either way).
+ */
+function OnboardingRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/onboarding");
+  }, [router]);
+  return <PaperLoading />;
+}
+
 export default function AuthGate({ children }: { children: ReactNode }) {
   // All hooks called unconditionally at the top (React rules of hooks).
   const { isLoaded, isSignedIn } = useAuth();
   const pathname = usePathname();
+  const { onboardingStep } = useMe();
 
   // TEMPORARY test-build bypass (NEXT_PUBLIC_AUTH_BYPASS=1, set only by a manual
   // test build — never by the normal ship.sh prod build). Lets the owner exercise
@@ -126,6 +162,21 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return <SignInClient />;
   }
 
-  // Session active — render the full app.
+  // Signed in — gate on the first-run onboarding flow (unless we're already
+  // ON /onboarding, which always passes children through so the flow itself
+  // owns redirecting a 'done' user back to '/', e.g. a deep link).
+  if (!isOnboardingRoute(pathname)) {
+    // 'unknown' until the profile GET resolves — NEVER render children, NEVER
+    // onboarding, while we don't yet know (zero-flash tri-state).
+    if (onboardingStep === "unknown") {
+      return <PaperLoading />;
+    }
+    if (onboardingStep !== "done") {
+      return <OnboardingRedirect />;
+    }
+  }
+
+  // Session active, onboarding complete (or we're on /onboarding itself) —
+  // render the full app.
   return <>{children}</>;
 }

@@ -16,6 +16,25 @@
 // map no longer produces them.
 
 import { getGolferProfile } from '../storage';
+import type { GolferProfile } from '../types';
+
+/** Mirror of backend DEFAULT_CLUB_DISTANCES (club_selection.py), re-keyed to the
+ *  GolferProfile camelCase keys via buildClubMap's mapping run in reverse.
+ *  KEEP IN SYNC. Backend short key → camel key → yards:
+ *    driver→driver 250 · 3wood→threeWood 230 · 5wood→fiveWood 215 · hybrid→hybrid 200
+ *    4iron→fourIron 190 · 5iron→fiveIron 180 · 6iron→sixIron 170 · 7iron→sevenIron 160
+ *    8iron→eightIron 150 · 9iron→nineIron 140 · pw→pitchingWedge 130 · gw→gapWedge 115
+ *    sw→sandWedge 100 · lw→lobWedge 85 · (no putter in backend defaults — putter stays unset)
+ *
+ *  Used by the onboarding Bag step (frontend/src/components/onboarding/BagStep.tsx)
+ *  to prefill sensible defaults so a first-run golfer can accept-and-move-on.
+ */
+export const DEFAULT_BAG_CAMEL: GolferProfile['clubDistances'] = {
+  driver: 250, threeWood: 230, fiveWood: 215, hybrid: 200,
+  fourIron: 190, fiveIron: 180, sixIron: 170, sevenIron: 160,
+  eightIron: 150, nineIron: 140, pitchingWedge: 130, gapWedge: 115,
+  sandWedge: 100, lobWedge: 85,
+};
 
 export function buildClubMap(): Record<string, number> {
   const profile = getGolferProfile();

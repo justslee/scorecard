@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { buildClubMap } from './clubs';
+import { buildClubMap, DEFAULT_BAG_CAMEL } from './clubs';
 import { saveGolferProfile } from '../storage';
 import type { GolferProfile } from '../types';
 
@@ -98,5 +98,20 @@ describe('buildClubMap', () => {
 
   it('returns an empty map when no profile / no clubDistances is stored', () => {
     expect(buildClubMap()).toEqual({});
+  });
+
+  // Guards the onboarding Bag step's short<->camel defaults table
+  // (specs/onboarding-shell-and-gate-plan.md §2.12/§6) against drift from the
+  // backend's DEFAULT_CLUB_DISTANCES (club_selection.py).
+  it('DEFAULT_BAG_CAMEL round-trips through buildClubMap to the exact backend defaults', () => {
+    const profile = profileWithFullBag();
+    profile.clubDistances = DEFAULT_BAG_CAMEL;
+    saveGolferProfile(profile);
+    const clubMap = buildClubMap();
+    expect(clubMap).toEqual({
+      driver: 250, '3wood': 230, '5wood': 215, hybrid: 200,
+      '4iron': 190, '5iron': 180, '6iron': 170, '7iron': 160,
+      '8iron': 150, '9iron': 140, pw: 130, gw: 115, sw: 100, lw: 85,
+    });
   });
 });
