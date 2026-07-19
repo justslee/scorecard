@@ -1184,3 +1184,18 @@ the writer-prompt-only NUMBERS RULE as a soft layer, validate_strategy_text as t
 ship/ping (silent, and no noticeable bundle item is waiting on this alone). Concurrent lanes still
 active: multiuser-p0-authz-flip (PREP). git/file work for this lane stays in worktree
 agent-a3f58554840632c13 — do NOT touch the shared main checkout.
+
+## AWAITING (2026-07-19) — caddie-guide-local-lore reviewer + qa (parallel)
+Builder SHIPPED @8ed1453 on lane/caddie-local-lore (already contains origin/integration/next c836288 —
+builder merged persona lane 98c4b90 mid-build, resolved WRITER_SYSTEM/_strategy_system conflicts by
+keeping persona wording + appending lore; NO rebase owed). Builder gates all green: ruff clean; 225
+byte-identity teeth pass; 74 lore tests +1 skipped; 3091 full-offline pass 0 fail; frontend tsc/lint
+clean; voice-tests 278/278. session.py + routes/caddie.py ZERO diff; no frozen-function hunks.
+Builder self-classified SILENT (dormant until manual run_lore_backfill on prod). NOTE: owner directive
+said land NOTICEABLE — reconcile at land: capability is user-facing content but invisible until the
+owner-sanctioned backfill runs; mark NOTICEABLE-but-dormant, do NOT ship/ping this pass regardless.
+NOW awaiting: reviewer 8ed1453 (fresh adversarial + /security-review + /code-review — attack the
+lore->spoken-number smuggling path; diff-prove frozen byte-identity) AND qa 8ed1453 (independent gate
+re-run). On BOTH SHIP -> update bundle PR checklist (NOTICEABLE-dormant), progress; land = FF lane onto
+integration/next (fast-forward-safe, already on top). On BLOCKING -> re-dispatch builder, re-review.
+Do NOT ship/ping. Nothing uncommitted held across the await.
