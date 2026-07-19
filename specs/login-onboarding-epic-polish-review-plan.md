@@ -295,5 +295,45 @@ No backend changes; no cap restyling; no onboarding back button; no keyboard-scr
 (`overflow:hidden` stands unless QA fails it); no OAuth enabling (that's the §5 flip PR); no removal of
 spike files / `NativeAuthDiag` / `sso-callback`; no `SignInScreen` ease changes.
 
-## 8. Epic retro note (filled at close)
-_To be appended when the epic completes: what shipped vs the original plan._
+## 8. Epic retro note — CLOSED 2026-07-19
+
+The login + first-time-onboarding redesign epic is COMPLETE. Shipped vs the original plan
+(`login-onboarding-redesign-plan.md` §8 slice table):
+
+- **Slice 1 `auth-headless-spike`** — GO. Proved all headless flows; verdict in
+  `specs/auth-headless-spike-verdict.md`. Native token bridge + JWT parity confirmed.
+- **Slice 2 `login-screen-visual`** — shipped: headless `SignInScreen` replaced the prebuilt
+  `<SignIn>/<SignUp>` widgets outright; Apple/Google render live-DISABLED pending the owner's
+  Clerk-dashboard flip; email (code+password) live.
+- **Slice 3 `login-animation-moment`** — shipped: the signature hole (HOLES[3], 548yd hcp-1
+  dogleg) draws itself in ink via framer-motion `pathLength`; reduced-motion = complete static.
+- **Slice 4 `onboarding-shell-and-gate`** — shipped: additive `onboarding_step` column
+  (backfilled `'done'`), `AuthGate` fourth state, resume state machine, name/handicap/bag steps.
+- **Slice 5 `onboarding-bag-caddie-grounding`** — shipped: onboarding bag → `golfer_profiles`
+  → caddie payload; flip-time two-user acceptance test.
+- **Slice 6 `onboarding-voice-first-intro`** — shipped: the "meet your caddie" voice moment via
+  the real production orb (approach A, no center-stage reposition).
+- **Slice 7 `login-onboarding-epic-polish-review`** (this slice) — shipped: ribbon-joints
+  smoothing on the hero (folds in `login-hero-ribbon-joints-polish`), `T.wash` ease for the
+  large fill fades, dead prebuilt-widget/appearance cleanup (`AuthButtons.tsx` +
+  `clerkAppearance` deleted), edge-sweep fixes F1 (auth stall race), F2 (onboarding write
+  stall), F3 (account-switch profile-leak), F4 (auth-route back-swipe exclusion), F5 (iPhone
+  portrait lock), the epic-wide `/security-review`, and the §10 Google/Apple flip runbook.
+
+**Verdicts at close (Slice 7, @1d13b71):** reviewer SHIP (correctness verified by hand,
+interactive ribbon byte-identical, F3 leak genuinely closed, webhooks+clerk_auth git-proven
+byte-unchanged across the whole epic); epic-wide security PASS (all dispositions OK); QA all 7
+gates PASS; designer SHIP (ribbon smooth on 3x crops, wash calm, portrait composes).
+
+**Deltas from the original plan / carried forward (not blockers):**
+- Google/Apple SSO are code-ready but OFF — they light up via the owner runbook (§10 of
+  `login-onboarding-redesign-plan.md`) + `auth-clerk-enable-social-connections` (Slice 0, owner).
+- E2E CI: the `advisory-e2e` job's Tier-1 (AuthGate render) runs green in CI, but Tier-2 (full
+  sign-in + onboarding flows, 8 tests) self-skips because `CLERK_SECRET_KEY` is not a configured
+  repo secret, and the job is `continue-on-error` (advisory). To make it a required gate: add the
+  repo secret `CLERK_SECRET_KEY`, create the Clerk test user `looper+clerk_test@looperapp.org`,
+  then drop `continue-on-error` and add the job to branch protection.
+- F5 (iPhone portrait lock) is app-wide + owner-visible — the release note must ask the owner to
+  rotate-test the TestFlight build to confirm no screen depended on iPhone landscape.
+- Designer nice-to-have: capture the live authed `/onboarding` MeetCaddieStep with the CaddieOrb
+  present before the owner's TestFlight pass (local render couldn't reach the authed route).

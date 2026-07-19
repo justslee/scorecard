@@ -3,6 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## EPIC CLOSED (2026-07-19) — login-onboarding redesign COMPLETE; Slice 7 verdicts all SHIP @1d13b71
+All three reviews GREEN on the landed Slice-7 delta (07b0f55..1d13b71):
+- **reviewer (correctness + epic-wide /security-review)** — SHIP, no BLOCKING. Diff verified by hand:
+  interactive ribbon path proven BYTE-IDENTICAL (default join="miter" branch char-unchanged); F1 no
+  timer leak / no busy resurrection / back() unblocks; F2 all 5 writes wrapped, timer cleared on
+  settle, idempotent late PUT; F3 account-switch name-leak GENUINELY CLOSED (profile nulled, same-user
+  hydrate untouched); F4 not over-broad; F5 only iPhone lost landscape. Epic-wide security PASS — creds
+  only to Clerk FAPI, enumeration hygiene, sign-out clear stays centralized, additive onboarding_step,
+  no AUTH_BYPASS leak; **webhooks.py + clerk_auth.py git-proven byte-unchanged across the whole epic**
+  (git diff origin/main...1d13b71 empty for both). (Skill sub-tool wasn't invocable in reviewer ctx;
+  analysis done manually across the full epic diff — substance delivered.)
+- **qa** — all 7 gates PASS (lint 0-err, tsc, build 22 routes, vitest 90/90 + full 2843, voice 278/278,
+  credential+bypass guards, ruff). E2E CI wiring verdict: advisory-e2e is continue-on-error (advisory);
+  **Tier-1 (AuthGate render) genuinely runs+passes in CI** via the baked public-key fallback; Tier-2
+  (8 auth+onboarding flow tests) SELF-SKIPS in CI because CLERK_SECRET_KEY isn't a configured repo
+  secret. THE ONE GAP to make it required → add repo secret `CLERK_SECRET_KEY` + create test user
+  looper+clerk_test@looperapp.org, then drop continue-on-error + add to branch protection. (Non-blocking.)
+  QA footgun noted: a stale `serve` on port 3000 + reuseExistingServer gives false local E2E reds/greens.
+- **designer** — SHIP. Ribbon-joints smoothing confirmed on 3x-zoom crops of both HOLES[3] doglegs
+  (continuous curve, no miter kink / pinch / self-intersection); wash-ease reads calm (not pop-y);
+  reduced-motion renders the complete static hole; all screens compose cleanly at 375x812 portrait.
+  Front door lands as ONE composed yardage-book thing. Renders in scratchpad/shots7/. Release note must
+  ask the owner to rotate-test F5 on TestFlight; nice-to-have: capture authed MeetCaddieStep+orb live.
+Records: backlog login-onboarding-epic-polish-review → done; login-hero-ribbon-joints-polish → done
+(folded into §1); epic retro note appended to specs/login-onboarding-epic-polish-review-plan.md §8;
+flip runbook is §10 of specs/login-onboarding-redesign-plan.md. PR #151 checklist + title updated
+(Slice 7 NOTICEABLE: ribbon+wash+portrait; F1-F4+dead-code+security = silent). Owner said "ship it" —
+release-manager dispatches on this SHIP (merge integration/next → main, then cut fresh integration/next).
+Did NOT ship/ping myself (release-manager owns the merge + TestFlight + owner loop).
+
 ## DONE (builder) — 2026-07-19 — login-onboarding-epic-polish-review (Slice 7, FINAL, NOTICEABLE) — @e8228a7
 Builder implemented specs/login-onboarding-epic-polish-review-plan.md in full on `integration/next`
 (head **e8228a7**, pushed, 8 commits). Epic-closing polish/edge-sweep/cleanup slice:
