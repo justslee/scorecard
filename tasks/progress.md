@@ -676,3 +676,14 @@ Deviation from plan: none material — one extra tsc fallout site found beyond t
 (profile/page.tsx handleSave's `updated: GolferProfile` literal ~line 257) and fixed the same way.
 If I die: branch `work-onboarding-shell` @f132e9d is pushed and ready for eng-lead to merge into
 integration/next — do NOT re-run the builder.
+
+## AWAITING UPDATE (2026-07-18) — builder DONE @d926576 merged to integration/next; reviewer+qa+designer dispatched
+work-onboarding-shell fast-forwarded into integration/next @d926576 (commits 6154d9c types+migration /
+5040197 identity+gate+nav / f132e9d onboarding route+flow). Builder local gates all green (lint/tsc/
+voice 278 / vitest 2824 / build / ruff / pytest 2993; DB-integration + Playwright self-skip locally ->
+CI/QA verify). Dispatched concurrently on d926576: reviewer (existing-user safety + gate correctness +
+migration additive-safe + no auth-boundary change + /security-review the delta), qa (full gates +
+Playwright new-user/existing-bypass/kill-resume), designer (BLOCKING, 375px screenshots of all 4 steps
+vs plan §3, isolated worktree). On results: BLOCKING issues -> re-dispatch builder; all green -> flip
+backlog + unblock Slice 5 + update PR #150 checklist NOTICEABLE + migration flag + progress. If I die:
+reconcile from origin/integration/next@d926576 + the three child reports; do NOT re-run finished children.
