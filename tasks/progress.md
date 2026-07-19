@@ -608,3 +608,28 @@ slice touches ZERO auth logic (reviewer-confirmed), so CI's Clerk job is the sou
 flow at bundle-ship time. Designer BLOCKING on the rendered sequence dispatched (QA keyframes in scratchpad).
 On designer SHIP: backlog flip (login-animation-moment done, onboarding-shell-and-gate ready) + PR #150
 checklist NOTICEABLE + progress. On designer BLOCKING: re-dispatch builder with specifics, re-review.
+
+## DONE (2026-07-18) — login-animation-moment (Slice 3, NOTICEABLE) landed on integration/next
+The signature hole now DRAWS ITSELF in ink on first cold arrival at /sign-in, then settles to the
+Slice-2 static hero (~2.4s, plays once per install). Code @7d13b4c. Verdicts: reviewer SHIP (all 8
+perf/correctness/Northstar focus areas; full /security-review not warranted — only new I/O is the
+looper.loginHeroDrawSeen localStorage boolean; no test-bending), qa PASS (lint 0-err, tsc clean,
+build ok, voice 278/278, vitest 2802/2802, ruff pass, zero backend diff + keyframes: draw plays /
+reduced-motion=complete static / flag-set=no replay), designer SHIP (ground-truth instrumented
+capture on the PROD static build: choreography/timing/final-frame parity/reduced-motion/replay/
+pen-over-ribbon occlusion all verified correct).
+Seam: opt-in playIntro prop on HoleIllustration (framer pathLength pen stroke that crossfades into
+the existing dashed centerline — dashed line never uses pathLength), SignInScreen owns play-once via
+looper.loginHeroDrawSeen + session latch (read-in-initializer/burn-in-effect, StrictMode-safe).
+Interactive HoleIllustration (HoleCard) byte-identical; guardrails held (opacity/transform/pathLength
+only, no loop at rest, never gates input, reduced-motion=static complete hero).
+KNOWN CAVEATS / follow-ups (non-blocking):
+  - auth Playwright self-skipped 0/4 in local env (no Clerk keys) — this slice touches ZERO auth logic
+    (reviewer-confirmed); CI's Clerk job is the auth-flow source of truth at bundle-ship time.
+  - designer "wash-ease" polish nit: the fill fades (rough/ribbon/hazards/green/centerline/labels)
+    reuse T.ease (front-loaded, right for the pen draw, slightly pop-y for large fills); suggested a
+    separate symmetric wash ease for those fades only. Fast-follow, NOT a ship blocker.
+Backlog: login-animation-moment -> done; onboarding-shell-and-gate (Slice 4) unblocked -> ready.
+PR #150 checklist updated (Slice 3 NOTICEABLE). NOT shipped/pinged this cycle — the bundle now holds
+3 NOTICEABLE items (caddie P0 + login static hero + login self-draw); owner approval is a separate
+release-manager step when the owner directs a ship.
