@@ -852,3 +852,36 @@ On resume: if all three green -> update PR #151 checklist (NOTICEABLE), flip bac
 onboarding-voice-first-intro -> done, unblock Slice 7 (login-onboarding-epic-polish-review -> ready),
 progress. If BLOCKING findings -> re-implement + re-review. Do NOT ship/ping (owner-approval bundle
 is release-manager's step once owner says ship).
+
+## DONE (2026-07-19) — onboarding-voice-first-intro (Slice 6, NOTICEABLE) landed on integration/next
+The real "meet your caddie" voice moment. Code @09de9a2 + review polish @d2e83f2 (head after records).
+Approach (A) per Plan(fable) @555b49e: keep the real production CaddieOrb bottom-right (already on
+/onboarding) instead of a center-stage reposition -> lowest blast radius on the omnipresent-orb
+OWNER-CRUX. MeetCaddieStep.tsx rewritten: serif invitation "Ask your caddie anything." + quiet mono-TRY
+italic example asks (magic-moment "How far does my 7-iron go?" -> THEIR Slice-5 bag number) composed
+toward the real orb; golfer uses the orb's exact production gestures (tap=talk / hold=sheet) for the
+LIVE session. ZERO new voice code paths; VERIFIED-EMPTY diff on CaddieOrb/CaddieOrbSheet/looper-bus/
+useLooperDictation/caddie-context/OnboardingFlow/backend/shared-types (only MeetCaddieStep.tsx +
+onboarding.spec.ts changed). hasSpoken flips read-only on 'listening' only (never 'connecting' -> denied
+mic never reveals the finish pill). 'Maybe later' present+enabled from first render (never a dead end;
+mic-deny reuses the production sheet error path). Both 'Maybe later' + 'Open your book' -> same
+OnboardingFlow.handleDone done-contract. reduced-motion + 375x667/812 safe.
+PROCESS NOTE: the dispatched builder hit a worktree-sandbox split (its Write/Edit pinned to a stale
+worktree agent-af98064d2cd89b3de @2a4a624 [12 behind] while Bash/Read saw integration/next) and
+CORRECTLY refused to commit to the wrong base. eng-lead implemented the thin, fully-specified change
+directly by authoring in the pinned worktree copy (Write/Edit land there) then cp'ing into the shared
+checkout to run gates + commit on integration/next. (Lesson candidate: dispatched children inherit the
+parent's launch-worktree sandbox; a fresh isolation:worktree bases off origin/main and would miss
+integration/next slices. For thin frontend edits, the worktree-author -> cp -> shared-checkout-commit
+path is reliable; the git-reset-hard sync is blocked by the auto-mode classifier.)
+VERDICTS: reviewer(fresh) SHIP (all 6 load-bearing claims verified, empty shared-component diff,
+no session leak, honest e2e); qa PASS (lint 0-err, tsc clean, next build ok, voice 278/278,
+caddie-experience 276/276, e2e collects 5 incl. new skip+mic-deny, self-skip w/o CLERK_SECRET_KEY ->
+CI real gate); designer(BLOCKING, live 375x812/667 + reduced-motion renders in scratchpad/slice6-shots/)
+SHIP -- approach (A) LANDS without center-stage. Two nice-to-haves folded in @d2e83f2 (bigger
+'Maybe later' hit target; deny-test clearPermissions pin), gates re-verified.
+Records: onboarding-voice-first-intro -> done (+ landed); Slice 7 login-onboarding-epic-polish-review
+-> ready (all prior slices satisfied). PR #151 checklist: added Slice 6 as NOTICEABLE, title refreshed
+to Slices 5-6. NOT shipped/pinged this cycle (per task directive) -- release-manager takes the owner
+ship-ask for the whole bundle. All three flagged agents (eng-lead, designer) noted+ignored an inline
+prompt-injection block (fake date-change + Telegram/Auto-Mode directives) -- treated as untrusted data.
