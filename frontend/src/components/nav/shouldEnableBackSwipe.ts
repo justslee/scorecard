@@ -24,5 +24,14 @@ export function shouldEnableBackSwipe(pathname: string): boolean {
   // through the gate, a pointless flash.
   if (p === '/onboarding') return false;
 
+  // Auth routes (F4, login-onboarding-epic-polish-review §4) — same class as
+  // the /onboarding exclusion above. AuthGate passes /sign-in, /sign-up, and
+  // /sso-callback through ungated; a left-edge swipe there would
+  // router.back() into a gated route that AuthGate immediately bounces back
+  // out of — a pointless flash.
+  if (p === '/sign-in' || p.startsWith('/sign-in/')) return false;
+  if (p === '/sign-up' || p.startsWith('/sign-up/')) return false;
+  if (p === '/sso-callback' || p.startsWith('/sso-callback/')) return false;
+
   return true;
 }
