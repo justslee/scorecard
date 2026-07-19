@@ -1102,3 +1102,16 @@ NEXT: builder (implement plan in THIS worktree) -> fresh reviewer (lore path can
 NUMBERS into spoken layer; tactical validators byte-identical) -> qa (full gates + guide suites).
 Records: backlog entry ADDED (in-progress, JSON-validated); PR NOTICEABLE at land. Do NOT ship/ping.
 Nothing uncommitted held across the await.
+
+## AWAITING (2026-07-19, updated) — caddie-guide-local-lore builder
+Fable plan SAVED: specs/caddie-guide-local-lore-plan.md (committed 0491d7a). Plan nails the crux
+(separate validate_lore per-item DROP; validate_guide byte-identical; 3-layer engine-number ban:
+prompt + validate_lore rule 8 [no 100-650 carry-shaped number, even geometry-true; slope%/years
+survive] + validate_strategy_text backstop). Found the frontend types.ts mirror (types.ts:103-147) my
+scope note missed -> additive optional fields. Backfill = read-modify-write (shallow JSONB merge
+replaces whole guide) + NEW lore_attempted_at negative cache; run_lore_backfill() manual-only, NOT
+auto-wired (owner-sanctioned prod op). Cost ~$1.8-2.6/course, ~$22-31 for all 12. NOW awaiting builder
+agent af6826add40cb8b5a on lane/caddie-local-lore. On builder SHIP -> fresh reviewer (attack the
+number-smuggling path + diff-prove frozen functions byte-identical) + qa (gates + guide suites) in
+parallel. On BLOCKING -> re-dispatch builder. Land = rebase lane onto latest integration/next then FF
+onto the bundle PR as NOTICEABLE. Do NOT ship/ping. Nothing uncommitted held across the await.
