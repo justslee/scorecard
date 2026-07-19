@@ -3,7 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, NOTICEABLE) — Plan(fable) dispatched
+## DONE (builder) — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, SILENT — backend-only seam) — @212bc27
+Builder implemented specs/onboarding-bag-caddie-grounding-plan.md in full on `integration/next`
+(head **212bc27**, pushed). `memory.py::get_golfer_bag_clubs` (new) + `start_session` precedence
+ladder (request > stored profile > keep persisted session bag > empty) + `bag_source` response
+key/log line + `SessionStatus.bag_source` (additive, frontend). Honesty fixes: `cross_hazard_line`
+club-label param (no more hardcoded "driver"), PLAYER-block driver-dispersion gate for no-driver
+bags, `format_strategy_ground_truth` empty-bag honest string, `generate_recommendation` P4
+"standard club distances" note. Stateless `_build_voice_prompt` also hydrates from the stored bag
+(own fail-open block — NOT nested in the memories/profile try, since nesting it there broke
+`test_build_voice_prompt_grounds_in_memory_and_profile_handicap` in local dev: a stored-bag DB
+hiccup was wiping out an already-successful memories/profile fetch. Fixed before commit.).
+
+New `tests/integration/test_bag_caddie_grounding.py` — the owner's named multi-user FLIP-TIME
+acceptance gate (specs/login-onboarding-redesign-plan.md §4.5), 6 tests, collects clean with no
+local Postgres (skips; CI's `required-backend` Postgres job runs it for real). Pinned literals:
+160y ask → A (7-iron 170 bag) suggests **8iron**, B (7-iron 150, no-driver bag) suggests **6iron**;
+430y tee shot → A selects **driver** (leave_exact_yards=131), B selects **3wood** (leave_exact_yards
+=210), and B's payload never contains the string "driver". New
+`tests/test_bag_caddie_grounding_unit.py` (12 tests, no DB) covers the honesty-string/label fixes,
+proven correct against the fixed code (ran directly against pre-fix decade_advice/strategy/
+aim_point to confirm behavior before writing assertions).
+
+Gates: frontend lint 0 errors (1 pre-existing unrelated warning) · `tsc --noEmit` clean ·
+voice-tests smoke 278/278 · backend `ruff check .` clean · full backend pytest **3005 passed, 146
+skipped** (0 failed) · new integration file collects 6/6, skips cleanly without DB.
+
+Classified SILENT — backend-only wiring + observability field, no user-visible UI change. Rides
+along in the bundle; does not itself trigger an approval ping. eng-lead: reviewer(fresh) + qa next,
+then fold into the bundle PR.
+
+## AWAITING — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, NOTICEABLE) — Plan(fable) dispatched [SUPERSEDED BY BUILDER DONE ABOVE]
 Base synced: `integration/next` @ `2fc7ea8` (records: bundle #150 shipped annotations + SwiftPM pins)
 off `origin/integration/next` e01b74d; `origin/main` == bundle #150 merge (2a4a6241). Bundle #150
 already SHIPPED — need a FRESH bundle PR (integration/next → main) this cycle.
