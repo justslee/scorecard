@@ -535,3 +535,52 @@ gotcha); SignInScreen owns play-once-per-install via looper.loginHeroDrawSeen + 
 read-in-initializer/burn-in-effect (StrictMode-safe), gated off for reduced-motion. Builder
 building on integration/next @ea0d451. On builder DONE: reviewer(perf-safety) + qa(gates + auth
 Playwright + keyframes) + designer(BLOCKING on rendered sequence). Do NOT ship/ping.
+
+## DONE (builder, 2026-07-18) — login-animation-moment (Slice 3) implemented, awaiting review
+Built exactly to specs/login-animation-moment-plan.md. `HoleIllustration.tsx`: added `playIntro?:
+boolean` (hero-only opt-in, default undefined — interactive path unchanged); module-scope `INTRO`
+(9 hero beats, seconds from mount) + `VARIANTS` (Record<string, Variants>, "hidden"/"drawn");
+hero variant wraps its paint elements in ONE `<motion.g initial={drawIntro?"hidden":false}
+animate="drawn">` orchestrator (interactive renders the same elements unwrapped — motion.*
+primitives are inert without an animating parent, so its DOM is byte-identical, pinned by the new
+unit test's `<g>`/`<path>` counts); NEW solid pen-stroke `<motion.path>` (pathLength 0->1 draw,
+then opacity 0.45->0 crossfade into the existing dashed centerline at beat 9) renders ONLY when
+`drawIntro` is true and is painted AFTER the ribbon (SVG z-order) so the ink stays visible once
+the fairway fill lands — a plan-compatible ordering call, not a deviation. Hero-only inner
+`motion.g` wrappers for tee (scale pop, originX/Y "0px") and flag (y 4->0 spring); hero-only
+`motion.g` wrapper per hazard (opacity stipple, index-computed delay via `custom`+variant
+function). `SignInScreen.tsx`: `HERO_DRAW_SEEN_KEY="looper.loginHeroDrawSeen"` + module-scope
+session latch, read-in-lazy-useState-initializer / burn-in-effect split (StrictMode-safe);
+`playIntro = wantsIntro && !reduceMotion` passed to the hero `HoleIllustration`; 3 `motion.div`
+entrances (header/sheet/wordmark, beats 2/5/10) wrapping the pre-existing static blocks
+(`initial={playIntro?{...}:false}` — off renders the Slice-2 static hero unchanged). New
+`HoleIllustration.test.tsx` (17 assertions total across both files) pins: interactive default
+keeps the reticle set + centerline `strokeDasharray="1.5 1.8"` with exactly 4 `<g>`s / 3 `<path>`s
+(no wrapper added); hero without playIntro renders the full final set with 3 paths (no pen
+stroke); hero+playIntro renders 4 paths (pen stroke present, no dasharray, strokeLinecap round).
+Extended `SignInScreen.test.tsx`'s framer-motion mock (Proxy-based) to cover
+`motion.g/path/rect/circle/text` (the real HoleIllustration now needs them); added a
+`makeLocalStorage()` stub (jsdom here has no real localStorage, same pattern as
+CaddieOrb.test.tsx) via `vi.stubGlobal`, fresh per test; 3 new tests (first-mount burns the flag,
+pre-set flag still renders full screen, throwing storage still renders full screen) using
+`vi.resetModules()` + dynamic import to reset the module latch between cases.
+
+**All gates green:** `npm run lint` (0 errors, 1 pre-existing unrelated warning in
+RoundPageClient.tsx), `tsc --noEmit` clean, `next build` "Compiled successfully", `vitest run`
+150 files / 2802 tests (0 failures, full suite incl. both new/updated files), voice-tests smoke
+278/278. `backend/ruff check .` passes trivially — `git diff -- backend/` is empty, zero backend
+delta as the plan requires. No shared-types changes (`types.ts`/`models.py` untouched).
+
+One deviation from a literal reading of §1.3/§2 (not a scope change, a rendering-order judgment
+call the plan didn't pin): the NEW pen-stroke path is placed AFTER the ribbon in DOM/paint order
+(ribbon beat 6 starts at 0.9s while the pen draws 0.25-1.65s) so the opaque fairway fill doesn't
+occlude the thin ink stroke once it lands — noted for reviewer/designer to confirm intent matches
+the storyboard's visual read.
+
+Commit @<fill after push> on integration/next (worktree-isolated build — this agent's worktree
+was on a stale local branch pre-#149-merge; fast-forwarded to origin/integration/next @b3b8105
+before starting, per the parallel-lanes-use-worktrees pattern). AWAITING: reviewer(perf-safety,
+§4 whitelist/no-loop/interactivity-never-gated/byte-identity) + qa(full gates incl. auth
+Playwright) + designer(BLOCKING keyframe capture 0.2/0.9/1.7/2.6s + reduced-motion + settled-vs-
+static-hero comparison). Do NOT ship/ping — NOTICEABLE item folds into the existing bundle
+(PR #150) once verdicts land.

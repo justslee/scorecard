@@ -25,6 +25,33 @@ import { useAuthFlow, type Intent } from "./useAuthFlow";
 
 const HERO_HOLE_NUMBER = 4; // HOLES[3] — 548yd, par 5, hcp 1, the signature dogleg.
 
+// ── "Play once, on cold arrival only" (specs/login-animation-moment-plan.md
+// §3.1, modeled on CaddieOrb's INTRO_SEEN_KEY pattern) ───────────────────────
+const HERO_DRAW_SEEN_KEY = "looper.loginHeroDrawSeen";
+let heroIntroPlayedThisSession = false; // module-scope latch — blocks a replay within this tab session even if the localStorage write below fails (private mode).
+
+/** Render-time, pure — safe to double-invoke under StrictMode. Any read
+ *  error (private mode, storage disabled, no `window` yet) is treated as
+ *  "seen" → static: the safest default against replay annoyance. A healthy
+ *  first-ever install returns `null` here → plays. */
+function readHeroDrawSeen(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(HERO_DRAW_SEEN_KEY) != null;
+  } catch {
+    return true;
+  }
+}
+
+// SignInScreen-side entrances (beats 2/5/10 of specs/login-animation-moment-
+// plan.md §2) — the hero's own 9 beats live in HoleIllustration's `INTRO`
+// constant; these three numbers are pinned to that same storyboard clock
+// (seconds from hero mount) but live here since they animate SignInScreen's
+// own static blocks, not the SVG.
+const INTRO_HEADER = { delay: 0.2, duration: 0.4 }; // beat 2 — page header
+const INTRO_SHEET = { delay: 0.35, duration: 0.45 }; // beat 5 — sheet composes in
+const INTRO_WORDMARK = { delay: 1.7, duration: 0.5 }; // beat 10 — the signature
+
 // ── Shared step styles (all from yardage/tokens.ts — no new design language) ──
 const pill: CSSProperties = {
   height: 56,
@@ -125,6 +152,31 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
   const heroRef = useRef<HTMLDivElement>(null);
   const [heroSize, setHeroSize] = useState(280);
 
+  // Decision (read-time, render-pure — §3.1): whether THIS mount wants the
+  // draw. Lazy initializer so it only evaluates once per mount, even under
+  // StrictMode's double-invocation — the burn below is split into its own
+  // effect specifically so that double-invocation can't eat the intro (an
+  // initializer that both read AND wrote would see its own write on the
+  // second StrictMode pass and never play in dev).
+  const [wantsIntro] = useState(() => !heroIntroPlayedThisSession && !readHeroDrawSeen());
+
+  // Burn (effect, on mount) — regardless of reduced motion, so "once per
+  // install" stays literal: a reduced-motion user never gets a surprise
+  // animation later just because this mount didn't play it.
+  useEffect(() => {
+    if (!wantsIntro) return;
+    heroIntroPlayedThisSession = true;
+    try {
+      window.localStorage.setItem(HERO_DRAW_SEEN_KEY, "1");
+    } catch {
+      // Private mode / storage disabled — the module latch above already
+      // blocks a replay within this session; a replay on the NEXT cold
+      // private-mode open is accepted (specs/login-animation-moment-plan.md §6.3).
+    }
+  }, [wantsIntro]);
+
+  const playIntro = wantsIntro && !reduceMotion;
+
   // Direct /sign-in or /sign-up visit while already signed in (AuthGate's
   // auth-route branch renders children unconditionally) — bounce home. When
   // mounted inline from AuthGate (signed-out on a non-auth route),
@@ -185,7 +237,10 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
           pointerEvents: "none",
         }}
       >
-        <div
+        <motion.div
+          initial={playIntro ? { opacity: 0, y: 6 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: INTRO_HEADER.delay, duration: INTRO_HEADER.duration, ease: T.ease }}
           style={{
             position: "absolute",
             top: "max(14px, env(safe-area-inset-top))",
@@ -198,7 +253,7 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
           }}
         >
           NO 4 · PAR 5 · 548 YDS · HCP 1
-        </div>
+        </motion.div>
 
         <div
           style={{
@@ -212,13 +267,19 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
           <HoleIllustration
             holeNumber={HERO_HOLE_NUMBER}
             variant="hero"
+            playIntro={playIntro}
             showDetail
             accent={T.accent}
             size={heroSize}
           />
         </div>
 
-        <div style={{ position: "absolute", left: 24, bottom: 24 }}>
+        <motion.div
+          initial={playIntro ? { opacity: 0, y: 6 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: INTRO_WORDMARK.delay, duration: INTRO_WORDMARK.duration, ease: T.ease }}
+          style={{ position: "absolute", left: 24, bottom: 24 }}
+        >
           <div
             style={{
               fontFamily: T.serif,
@@ -243,7 +304,7 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
           >
             Your yardage book
           </div>
-        </div>
+        </motion.div>
       </div>
 
       {/* ── SHEET — bottom ~38%, steps swap inside ── */}
@@ -263,6 +324,11 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
           justifyContent: "center",
         }}
       >
+        <motion.div
+          initial={playIntro ? { opacity: 0, y: 8 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: INTRO_SHEET.delay, duration: INTRO_SHEET.duration, ease: T.ease }}
+        >
         <AnimatePresence mode="wait" initial={false}>
           {state.step === "method" && (
             <motion.div
@@ -474,6 +540,7 @@ export default function SignInScreen({ intent }: { intent: Intent }) {
             </motion.div>
           )}
         </AnimatePresence>
+        </motion.div>
       </div>
 
       {/* Inline styles can't target ::placeholder (no pseudo-element in the

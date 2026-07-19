@@ -1,13 +1,14 @@
 "use client";
 
 import {
+  cloneElement,
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
-import { useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { T } from "./tokens";
 import { shotPointForPath, type PathPoint } from "@/lib/hole-shot-point";
 import { bookTargetDistances, clampToDiagram } from "@/lib/yardage-book-target";
@@ -101,6 +102,89 @@ const HERO_HAZARD_OVERRIDES: Record<number, HoleSpec["hazards"]> = {
   4: [{ t: "bunker", x: 0.62, y: 0.28, r: 0.035 }],
 };
 
+// ── Hero intro storyboard (specs/login-animation-moment-plan.md §2) ──────────
+// Seconds from hero mount. Every animated element declares
+// `variants={VARIANTS.<name>}` and inherits "hidden"/"drawn" from the single
+// `<motion.g>` orchestrator wrapped around the hero paint elements below —
+// this is the one framer pattern the whole intro runs through (plan §1.2).
+// SignInScreen mirrors beats 2/5/10 (page header / sheet / wordmark) locally
+// with a comment pinning them back to this table — those live outside this
+// component, so they are NOT in this object.
+const INTRO = {
+  rough: { delay: 0.0, duration: 0.35 }, // beat 1 — paper first
+  teeDot: { delay: 0.15 }, // beat 3 — round starts at the tee (spring)
+  penStroke: { delay: 0.25, duration: 1.4 }, // beat 4 — the pen draws tee→green
+  ribbon: { delay: 0.9, duration: 0.8 }, // beat 6 — fairway fills behind the pen
+  hazards: { delay: 1.5, stagger: 0.12, duration: 0.4 }, // beat 7 — hazards stipple
+  green: { delay: 1.6, duration: 0.4 }, // beat 8 — green inks
+  penLift: { delay: 1.65, duration: 0.3 }, // beat 9 — pen lifts, dashes remain
+  labels: { delay: 1.9, duration: 0.25 }, // beat 11 — labels annotate
+  flag: { delay: 2.0 }, // beat 12 — flag plants last, settles (spring)
+} as const;
+
+// ONE shared variants object, two states: "hidden" and "drawn". The hero-only
+// `<motion.g>` orchestrator sets `initial`/`animate` to these string keys;
+// every child below just declares which entry it uses. `hazard` is the one
+// index-computed exception (a uniform stagger can't express the differentiated
+// beat table) — its `drawn` value is a function of the per-hazard `custom` index.
+const VARIANTS: Record<string, Variants> = {
+  rough: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 0.25, transition: { delay: INTRO.rough.delay, duration: INTRO.rough.duration, ease: T.ease } },
+  },
+  // The NEW solid pen-stroke overlay — draws via framer `pathLength`, then
+  // crossfades out as the real dashed centerline fades in (plan §6 gotcha:
+  // pathLength drives inline stroke-dasharray, so the dashed line itself
+  // never uses it). Stays mounted at opacity 0, inert, matching the Slice-2
+  // static hero (which never had this element at all).
+  penStroke: {
+    hidden: { pathLength: 0, opacity: 0.45 },
+    drawn: {
+      pathLength: 1,
+      opacity: 0,
+      transition: {
+        pathLength: { delay: INTRO.penStroke.delay, duration: INTRO.penStroke.duration, ease: T.ease },
+        opacity: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.ease },
+      },
+    },
+  },
+  centerline: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 0.3, transition: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.ease } },
+  },
+  ribbon: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 1, transition: { delay: INTRO.ribbon.delay, duration: INTRO.ribbon.duration, ease: T.ease } },
+  },
+  hazard: {
+    hidden: { opacity: 0 },
+    drawn: (i: number) => ({
+      opacity: 1,
+      transition: {
+        delay: INTRO.hazards.delay + i * INTRO.hazards.stagger,
+        duration: INTRO.hazards.duration,
+        ease: T.ease,
+      },
+    }),
+  },
+  green: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 1, transition: { delay: INTRO.green.delay, duration: INTRO.green.duration, ease: T.ease } },
+  },
+  teeDot: {
+    hidden: { scale: 0, opacity: 0 },
+    drawn: { scale: 1, opacity: 1, transition: { ...T.spring, delay: INTRO.teeDot.delay } },
+  },
+  flag: {
+    hidden: { y: 4, opacity: 0 },
+    drawn: { y: 0, opacity: 1, transition: { ...T.spring, delay: INTRO.flag.delay } },
+  },
+  label: {
+    hidden: { opacity: 0 },
+    drawn: { opacity: 1, transition: { delay: INTRO.labels.delay, duration: INTRO.labels.duration, ease: T.ease } },
+  },
+};
+
 export type AimReadout = { fromTee: number; toGreen: number };
 
 /** Imperative escape hatch for the ONE action a parent needs to trigger on
@@ -132,9 +216,15 @@ const HoleIllustration = forwardRef<
      * no tee→green thread line, no invisible drag-hit circle, and the native
      * pointer-listener effect never attaches (no dead listeners). This exact
      * element set (rough texture, fairway ribbon, dashed centerline, hazards,
-     * green + flag, tee dot, TEE/GRN labels) is the shared contract Slice 3
-     * will animate — do not fork a second hero component. */
+     * green + flag, tee dot, TEE/GRN labels) is the shared contract that
+     * `playIntro` (below) animates — a one-time ink-draw on the hero variant
+     * only, never a second hero component. */
     variant?: "interactive" | "hero";
+    /** Hero-only, opt-in: play the one-time ink-draw intro
+     * (specs/login-animation-moment-plan.md). Default undefined — every
+     * existing call site (HoleCard etc.) and the Slice-2 static hero are
+     * unchanged. Ignored unless `variant === "hero"`. */
+    playIntro?: boolean;
   }
 >(function HoleIllustration(
   {
@@ -145,6 +235,7 @@ const HoleIllustration = forwardRef<
     accent = "oklch(0.54 0.18 28)",
     onAimChange,
     variant = "interactive",
+    playIntro,
   },
   ref,
 ) {
@@ -179,6 +270,9 @@ const HoleIllustration = forwardRef<
   const [dragging, setDragging] = useState(false);
   const pointerIdRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
+  // Re-checked here (defense in depth) even though SignInScreen also gates
+  // on `useReducedMotion()` before passing `playIntro` down.
+  const drawIntro = isHero && playIntro === true && !reduceMotion;
 
   // Reset on hole change — adjust state during render (React's documented
   // pattern for "derived from a changed prop"), not in an effect, so there's
@@ -322,6 +416,17 @@ const HoleIllustration = forwardRef<
     onAimChangeRef.current?.(aim ? { fromTee: toTarget, toGreen } : null);
   }, [aim, toTarget, toGreen]);
 
+  // Shared hazard geometry (bunker circle / water rect) — single-sourced from
+  // `hazards`/`scale`. The hero wraps it in a `motion.g` fade wrapper below;
+  // interactive renders it directly (via `cloneElement` for the list key) so
+  // its DOM gets no added node.
+  const hazardShape = (h: HoleSpec["hazards"][number]) =>
+    h.t === "bunker" ? (
+      <circle cx={scale(h.x)} cy={scale(h.y)} r={scale(h.r)} fill="#e8d9a8" stroke="#b8a878" strokeWidth="0.25" />
+    ) : (
+      <rect x={scale(h.x)} y={scale(h.y)} width={scale(h.w)} height={scale(h.h)} rx="1.5" fill="#6ba3c4" opacity="0.7" stroke="#4a7a9a" strokeWidth="0.25" />
+    );
+
   return (
     <svg ref={svgRef} viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
       <defs>
@@ -354,40 +459,104 @@ const HoleIllustration = forwardRef<
       </defs>
 
       {!isHero && <rect x="0" y="0" width={VB} height={VB} fill="#ece7db" />}
-      <rect
-        x="0"
-        y="0"
-        width={VB}
-        height={VB}
-        fill={`url(#rough-${holeNumber})`}
-        opacity={isHero ? 0.25 : 0.3}
-        mask={isHero ? `url(#rough-mask-${holeNumber})` : undefined}
-      />
 
-      <path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" />
-      <path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" />
+      {isHero ? (
+        // Hero-only orchestrator (plan §1.2): `initial={drawIntro ? "hidden"
+        // : false}` is the load-bearing static path — `initial={false}`
+        // renders every child's "drawn" values immediately with zero
+        // animation, so `playIntro` off (or reduced motion, or the
+        // once-per-install replay guard) renders the hero at its final state
+        // on the first client frame. Variant propagation is React-context
+        // based, so it flows straight through the plain <g>s nested below.
+        <motion.g initial={drawIntro ? "hidden" : false} animate="drawn">
+          <motion.rect
+            x="0"
+            y="0"
+            width={VB}
+            height={VB}
+            fill={`url(#rough-${holeNumber})`}
+            opacity={0.25}
+            mask={`url(#rough-mask-${holeNumber})`}
+            variants={VARIANTS.rough}
+          />
 
-      {hazards.map((h, i) => {
-        if (h.t === "bunker") {
-          return <circle key={i} cx={scale(h.x)} cy={scale(h.y)} r={scale(h.r)} fill="#e8d9a8" stroke="#b8a878" strokeWidth="0.25" />;
-        }
-        return <rect key={i} x={scale(h.x)} y={scale(h.y)} width={scale(h.w)} height={scale(h.h)} rx="1.5" fill="#6ba3c4" opacity="0.7" stroke="#4a7a9a" strokeWidth="0.25" />;
-      })}
+          <motion.path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" variants={VARIANTS.ribbon} />
 
-      <circle cx={scale(green[0])} cy={scale(green[1])} r="5" fill={`url(#green-grad-${holeNumber})`} stroke="#4a6a32" strokeWidth="0.3" />
+          {/* Painted AFTER the ribbon (on top, SVG paint order) so the ink
+              line stays visible once the fairway fill lands at beat 6 —
+              otherwise the opaque ribbon fill would occlude the thin stroke
+              underneath it. */}
+          {drawIntro && (
+            <motion.path
+              d={pathD}
+              fill="none"
+              stroke="#1a2a1a"
+              strokeWidth="0.35"
+              strokeLinecap="round"
+              variants={VARIANTS.penStroke}
+            />
+          )}
 
-      <g transform={`translate(${scale(green[0])}, ${scale(green[1])})`}>
-        <line x1="0" y1="0" x2="0" y2="-6" stroke="#1a2a1a" strokeWidth="0.4" strokeLinecap="round" />
-        <path d="M 0 -6 L 3.5 -5.2 L 0 -4.4 Z" fill={accent} />
-      </g>
+          <motion.path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" variants={VARIANTS.centerline} />
 
-      <g transform={`translate(${scale(tee[0])}, ${scale(tee[1])})`}>
-        <circle r="1.4" fill="#1a2a1a" />
-        <circle r="0.6" fill="#f4f1ea" />
-      </g>
+          {hazards.map((h, i) => (
+            <motion.g key={i} custom={i} variants={VARIANTS.hazard}>
+              {hazardShape(h)}
+            </motion.g>
+          ))}
 
-      {!isHero && (
+          <motion.circle cx={scale(green[0])} cy={scale(green[1])} r="5" fill={`url(#green-grad-${holeNumber})`} stroke="#4a6a32" strokeWidth="0.3" variants={VARIANTS.green} />
+
+          <g transform={`translate(${scale(green[0])}, ${scale(green[1])})`}>
+            <motion.g variants={VARIANTS.flag}>
+              <line x1="0" y1="0" x2="0" y2="-6" stroke="#1a2a1a" strokeWidth="0.4" strokeLinecap="round" />
+              <path d="M 0 -6 L 3.5 -5.2 L 0 -4.4 Z" fill={accent} />
+            </motion.g>
+          </g>
+
+          <g transform={`translate(${scale(tee[0])}, ${scale(tee[1])})`}>
+            <motion.g variants={VARIANTS.teeDot} style={{ originX: "0px", originY: "0px" }}>
+              <circle r="1.4" fill="#1a2a1a" />
+              <circle r="0.6" fill="#f4f1ea" />
+            </motion.g>
+          </g>
+
+          {showDetail && (
+            <>
+              <motion.text x={scale(tee[0]) + 3} y={scale(tee[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>TEE</motion.text>
+              <motion.text x={scale(green[0]) + 6} y={scale(green[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>GRN</motion.text>
+            </>
+          )}
+        </motion.g>
+      ) : (
         <>
+          <motion.rect
+            x="0"
+            y="0"
+            width={VB}
+            height={VB}
+            fill={`url(#rough-${holeNumber})`}
+            opacity={0.3}
+            variants={VARIANTS.rough}
+          />
+
+          <motion.path d={ribbonD} fill="#c8d6a8" stroke="#9bb07a" strokeWidth="0.3" variants={VARIANTS.ribbon} />
+          <motion.path d={pathD} fill="none" stroke="#1a2a1a" strokeWidth="0.35" strokeDasharray="1.5 1.8" opacity="0.3" variants={VARIANTS.centerline} />
+
+          {hazards.map((h, i) => cloneElement(hazardShape(h), { key: i }))}
+
+          <motion.circle cx={scale(green[0])} cy={scale(green[1])} r="5" fill={`url(#green-grad-${holeNumber})`} stroke="#4a6a32" strokeWidth="0.3" variants={VARIANTS.green} />
+
+          <g transform={`translate(${scale(green[0])}, ${scale(green[1])})`}>
+            <line x1="0" y1="0" x2="0" y2="-6" stroke="#1a2a1a" strokeWidth="0.4" strokeLinecap="round" />
+            <path d="M 0 -6 L 3.5 -5.2 L 0 -4.4 Z" fill={accent} />
+          </g>
+
+          <g transform={`translate(${scale(tee[0])}, ${scale(tee[1])})`}>
+            <circle r="1.4" fill="#1a2a1a" />
+            <circle r="0.6" fill="#f4f1ea" />
+          </g>
+
           {/* Draggable aim reticle — supersedes the old passive shotPoint pulse
               (never both: two markers would be noise). One dashed thread while
               dragging, echoing the map's "what's left" leg, but restrained —
@@ -456,13 +625,13 @@ const HoleIllustration = forwardRef<
             onClick={(e) => e.stopPropagation()}
             aria-label="Drag aim target"
           />
-        </>
-      )}
 
-      {showDetail && (
-        <>
-          <text x={scale(tee[0]) + 3} y={scale(tee[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558">TEE</text>
-          <text x={scale(green[0]) + 6} y={scale(green[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558">GRN</text>
+          {showDetail && (
+            <>
+              <motion.text x={scale(tee[0]) + 3} y={scale(tee[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>TEE</motion.text>
+              <motion.text x={scale(green[0]) + 6} y={scale(green[1]) + 1} fontFamily='"Geist Mono", monospace' fontSize="2.4" fill="#6b6558" variants={VARIANTS.label}>GRN</motion.text>
+            </>
+          )}
         </>
       )}
     </svg>
