@@ -43,6 +43,10 @@ export const T = {
   spring: { type: "spring" as const, stiffness: 380, damping: 32 },
   springSoft: { type: "spring" as const, stiffness: 260, damping: 30 },
   ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
+  // Symmetric wash for the hero intro's large fill fades — T.ease is
+  // front-loaded and reads pop-y on big fills (Slice-3 designer note).
+  // easeInOutSine.
+  wash: [0.37, 0, 0.63, 1] as [number, number, number, number],
 };
 
 // Paper grain — inline background-image
