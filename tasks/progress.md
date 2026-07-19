@@ -1086,3 +1086,15 @@ cache-prefix stability) -> qa (ruff + offline golden/numbers suites + new regist
 gates likely N/A backend-only). NOTE: eng-lead worktree sandboxed to a stale branch; all git/file
 work runs on MAIN checkout /Users/justinlee/projects/scorecard (integration/next, pushes to origin).
 Nothing uncommitted held across this await.
+
+## AWAITING (2026-07-19) — caddie-orb-persona-consistency BUILD
+Plan SAVED: specs/caddie-orb-persona-consistency-plan.md (@2f0baee). Dispatching builder in an
+ISOLATED WORKTREE (concurrent lane multiuser-p0-authz-flip also on the bundle — avoid shared-tree
+collisions). Builder syncs to origin/integration/next, implements the plan (REGISTER ONLY: one shared
+CADDIE_HOUSE_REGISTER constant adopted in _BASE_BEHAVIOR/_strategy_system/stable_text/WRITER_SYSTEM;
+prune persona brevity restatements; minor DECADE/slope align; thin offline register eval; numbers/
+verdict frozen), runs offline backend gates (ruff + scoping_lint + DB-stubbed pytest subset), pushes
+to origin/integration/next, reports head SHA. NEXT on builder return -> fresh reviewer (diff-prove
+validators/payloads/numbers byte-identical + cache-prefix stability) -> qa (gates + register test) ->
+update bundle PR NOTICEABLE + flip backlog. Do NOT ship/ping. eng-lead runs git/file work on MAIN
+checkout /Users/justinlee/projects/scorecard.
