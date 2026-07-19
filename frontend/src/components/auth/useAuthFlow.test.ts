@@ -12,6 +12,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { authErrorCopy, useAuthFlow } from "./useAuthFlow";
 
+const STALL_COPY = "Still no answer — check your connection and try again.";
+
 type ClerkResult = { error: { code: string } | null };
 const ok: ClerkResult = { error: null };
 const err = (code: string): ClerkResult => ({ error: { code } });
@@ -474,6 +476,96 @@ describe("useAuthFlow — busy re-entrancy guard", () => {
       await firstCall;
     });
     expect(result.current.state.busy).toBe(false);
+  });
+});
+
+describe("useAuthFlow — stall timeout (F1, login-onboarding-epic-polish-review §4)", () => {
+  beforeEach(() => {
+    Object.defineProperty(window.navigator, "onLine", { value: true, configurable: true });
+  });
+
+  it("a hung request times out after 15s, clears busy, and unblocks back()", async () => {
+    vi.useFakeTimers();
+    try {
+      const neverResolves = new Promise<ClerkResult>(() => {});
+      const signIn = makeSignIn({ password: vi.fn(() => neverResolves) });
+      setClerk(signIn, makeSignUp());
+      const { result } = renderHook(() => useAuthFlow("signIn"));
+      act(() => result.current.chooseEmail());
+
+      act(() => {
+        void result.current.submitPassword("a@b.com", "hunter22");
+      });
+      expect(result.current.state.busy).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_001);
+      });
+
+      expect(result.current.state.busy).toBe(false);
+      expect(result.current.state.error).toBe(STALL_COPY);
+
+      // Previously trapped: back() no-ops while busy. Now busy is cleared,
+      // so back() actually moves the step.
+      act(() => result.current.back());
+      expect(result.current.state.step).toBe("method");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a request that resolves BEFORE 15s never stalls", async () => {
+    vi.useFakeTimers();
+    try {
+      const signIn = makeSignIn();
+      setClerk(signIn, makeSignUp());
+      const { result } = renderHook(() => useAuthFlow("signIn"));
+
+      await act(async () => {
+        await result.current.submitPassword("a@b.com", "hunter22");
+      });
+
+      expect(result.current.state.step).toBe("done");
+      expect(result.current.state.error).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("late resolution after a stall is benign — a subsequent late success still lands and replaces the stall copy", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolvePassword!: (v: ClerkResult) => void;
+      const late = new Promise<ClerkResult>((resolve) => {
+        resolvePassword = resolve;
+      });
+      const signIn = makeSignIn({ password: vi.fn(() => late) });
+      setClerk(signIn, makeSignUp());
+      const { result } = renderHook(() => useAuthFlow("signIn"));
+
+      act(() => {
+        void result.current.submitPassword("a@b.com", "hunter22");
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_001);
+      });
+      expect(result.current.state.error).toBe(STALL_COPY);
+      expect(result.current.state.busy).toBe(false);
+
+      await act(async () => {
+        resolvePassword(ok);
+        // Flush the microtask chain inside fn()'s continuation (password ->
+        // finalize -> patch) without relying on real wall-clock time — fake
+        // timers are still active here.
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(result.current.state.step).toBe("done");
+      expect(signIn.finalize).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
