@@ -19,11 +19,18 @@ dependency_overrides, ASGI client (no network).
 
 import json
 
+import pytest
+
 from .conftest import TEST_OWNER_ID, OTHER_OWNER_ID, set_auth
 
 from app.caddie import tools as caddie_tools
 from app.caddie.session import sessions
 from app.caddie.types import HoleIntelligence
+
+# This suite IS the "MULTI-USER FLIP-TIME GATE" (module docstring above) —
+# marking it folds its 6 two-user bag tests into the flip_gate acceptance
+# gate (multiuser-p0-authz-flip §5) without touching any test body.
+pytestmark = pytest.mark.flip_gate
 
 USER_A = TEST_OWNER_ID       # bomber
 USER_B = OTHER_OWNER_ID      # short bag, NO driver (the harder §4.5 variant)

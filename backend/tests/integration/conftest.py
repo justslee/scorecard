@@ -171,7 +171,8 @@ async def _db():
                     " rounds, course_reviews, players, golfer_profiles, tournaments,"
                     " tee_time_bookings, caddie_sessions, caddie_messages, shots,"
                     " player_profiles, caddie_memories, scoring_courses,"
-                    " hole_features, hole_yardages, holes, tee_sets, courses"
+                    " hole_features, hole_yardages, holes, tee_sets, courses,"
+                    " hole_pins, caddie_personas, revoked_users"
                     " RESTART IDENTITY CASCADE"
                 )
             )
