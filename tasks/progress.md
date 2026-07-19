@@ -798,3 +798,23 @@ deadlocked on; the rerun resolved packages instantly and uploaded clean. **v1.1.
 202607191226 uploaded to TestFlight.** Fix permanent. Side effect: the entry was also git's HTTPS
 credential — restored via `gh auth setup-git` (gh token now backs git). Lessons: build-Mac hangs at
 "Resolve Package Graph" = stale keychain entry; investigation scripts live in /tmp only.
+
+## AWAITING (2026-07-19) — onboarding-voice-first-intro (Slice 6, NOTICEABLE)
+Base origin/integration/next @5ce4648 (== HEAD, main already merged). Item picked, seams mapped.
+Replacing Slice-4 placeholder MeetCaddieStep.tsx with the real voice moment.
+KEY SEAMS (verified): completion contract = OnboardingFlow.handleDone (PUT onboardingStep:'done'
+-> publishOnboardingStep -> router.replace('/')), passed to the step as onContinue — PRESERVE.
+Production orb = frontend/src/components/CaddieOrb.tsx (fixed bottom-right, layout-level, OWNER
+CRUX — do not regress); already renders on /onboarding via shouldShowCaddieOrb SHOW_EXACT.
+Production gestures (post-inversion): idle TAP -> openLooper({listening:true,presentation:'docked'})
+= talk immediately; idle HOLD>=350ms -> openLooper({listening:false,presentation:'full'}) = sheet.
+Voice stack: CaddieOrbSheet.tsx + hooks/useLooperDictation.ts. Mic-deny ALREADY handled in
+production (useLooperDictation.ts:134 NotAllowedError -> "Microphone access denied."; sheet:241
+promotes docked->full on mic error) — ZERO new voice paths. INTRO_SEEN_KEY 'moved here' chip is
+DEFERRED off /onboarding (CaddieOrb.tsx:178) to fire on first Home render = the handoff beat.
+CRUX for Plan(fable): the §3.2/§3.3 "orb grows to center then animates to bottom-right on Home"
+vision vs. the fixed layout-level orb (blast radius on the omnipresent-orb crux). Plan chooses +
+justifies; must NOT regress bottom-right behavior anywhere else; reduced-motion + small-screen safe.
+STATE: Plan(fable) dispatched. On resume: if specs/onboarding-voice-first-intro-plan.md exists ->
+builder already briefable; else re-run Plan. Then builder on integration/next, then designer
+(BLOCKING, screenshots) + reviewer + qa. Do NOT ship/ping. Slice 7 stays blocked until this lands.
