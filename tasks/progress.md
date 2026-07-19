@@ -3,6 +3,21 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, NOTICEABLE) — Plan(fable) dispatched
+Base synced: `integration/next` @ `2fc7ea8` (records: bundle #150 shipped annotations + SwiftPM pins)
+off `origin/integration/next` e01b74d; `origin/main` == bundle #150 merge (2a4a6241). Bundle #150
+already SHIPPED — need a FRESH bundle PR (integration/next → main) this cycle.
+
+**Core wiring gap already located (eng-lead pre-scan):** the caddie route
+`backend/app/routes/caddie.py` start_session sets `session.club_distances` ONLY from client-sent
+`request.club_distances` (~line 366); it does NOT server-side hydrate the user's stored bag from
+`golfer_profiles.bag_clubs`. `normalize_club_distances` already maps camelCase profile keys via
+`_PROFILE_KEY_MAP`, so `normalize_club_distances(golfer_profile.bag_clubs)` is a clean hydration.
+This is the seam the owner's DB-backed two-user test must pin.
+
+AWAITING Plan(fable) → specs/onboarding-bag-caddie-grounding-plan.md. On return: dispatch builder
+on integration/next; then reviewer(fresh) + qa. NOTICEABLE → new bundle PR checklist. Do NOT ship/ping.
+
 ## DONE — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1) — verdict CONSTRAINED-GO
 Landed on `integration/next` (bundle PR #150), all three CI gates SUCCESS on head **429dd9c**
 (Frontend + Backend + E2E advisory). Silent rider — dev-flag-gated (`NEXT_PUBLIC_AUTH_SPIKE=1`),
