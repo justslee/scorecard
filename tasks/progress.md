@@ -1311,3 +1311,29 @@ Full cycle complete: Fable plan -> builder -> fresh reviewer -> QA -> reviewer-f
 - CLASSIFICATION: NOTICEABLE per owner directive but DORMANT until owner-sanctioned run_lore_backfill runs
   on prod (~$1.8-2.6/course, ~$22-31/12). Per directive: did NOT ship, did NOT ping owner. Bundle #152
   still accumulating; owner approval pending on the persona register item already in it.
+## DONE (2026-07-19) — caddie-persona-inventory-frontend-backend-mismatch landed on integration/next
+SILENT rider (dead-code removal + a pinning test — no user-visible behavior change; nothing was ever
+reachable via the deleted list). Base origin/integration/next @2a3594f. Read the backlog item + persona
+doc (specs/caddie-orb-persona-consistency-persona.md §3 row 6a: frontend lists explicitly OUT OF SCOPE
+for the register cycle, flagged separately). Verified the actual inventory: frontend/src/lib/caddie/
+personalities.ts (8 entries — the 4 real ids + 4 client-only orphans: veteran-looper, hard-edge,
+course-historian, trash-talker) had ZERO importers anywhere in the repo (grep-confirmed across src/ and
+voice-tests/) — fully dead, superseded by persona.ts's backend-driven BUILTIN_PERSONAS (the live picker
+path on RoundPageClient via useCaddiePersona, already 1:1 with backend/app/caddie/personalities.py's 4
+built-ins, already pinned by persona.test.ts's "mirrors the four backend built-in ids exactly" case).
+Intended user-facing set = classic/strategist/hype/professor. FIX: deleted personalities.ts outright
+(root cause, not a wording tweak) rather than build 4 speculative new backend personas. Anti-drift seam:
+persona.ts already pins parity from the frontend side; added backend/tests/test_caddie_persona_
+inventory.py to pin PERSONALITIES.keys() == {classic,strategist,hype,professor} from the backend side
+(DB-free, mirrors test_caddie_register_consistency.py's pattern) — so a future one-sided add on either
+side now fails a test instead of silently drifting again. NOTE: tokens.ts's CADDIES list (steve/fluff/
+uncle/caddy) is a THIRD, separate cosmetic placeholder used only for a pre-fetch header decoration on
+round/new/page.tsx (not a picker, not user-selectable) — explicitly out of scope for this item, left
+untouched. Gates (worktree /Users/justinlee/projects/scorecard/.claude/worktrees/agent-a089e38bd5336ac24):
+frontend `npm install` (node_modules was missing in this worktree; package-lock.json diff reverted
+after — lockfile-regen-rule respected), lint clean (1 pre-existing unrelated warning in RoundPageClient),
+tsc --noEmit clean, vitest src/lib/caddie 235/235 (persona.test.ts 13/13), voice-tests smoke 278/278;
+backend ruff clean, targeted pytest test_caddie_persona_inventory.py + test_caddie_register_
+consistency.py 13/13 (DB-free, no container spun up). Committed to integration/next; pushed. backlog
+flipped done-on-bundle (targeted edit, JSON-validated, no json.load/dump). Rides PR #152 as silent —
+does not change the bundle's noticeable/silent classification.
