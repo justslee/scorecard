@@ -512,3 +512,16 @@ Backlog: login-screen-visual -> done; login-animation-moment (Slice 3) unblocked
 login-hero-ribbon-joints-polish (cosmetic, designer non-blocking follow-up). PR #150 checklist
 updated (NOTICEABLE). NOT shipped/pinged this cycle (bundle also holds the earlier caddie
 NOTICEABLE; owner approval is a separate release-manager step when directed).
+
+## AWAITING (2026-07-18) — login-animation-moment (Slice 3, NOTICEABLE) — Plan(fable) dispatched
+Base origin/integration/next @e50fdd4 (clean). The signature hole (HOLES[3], 548yd par-5 hcp-1
+dogleg) DRAWS ITSELF in ink on cold arrival at /sign-in: fairway centerline strokes via
+framer-motion pathLength, features (tree/bunker/green/flag) choreographed, wordmark+sheet timed
+after. Reuse HoleIllustration hero variant (do NOT fork). Constraints: <2.5s total, no rest-loop,
+never gate input, transform/opacity/pathLength only, reduced-motion=static complete hero (verify),
+play once-per-install (localStorage) + only on cold mount (NOT step nav method->email->code).
+Plan -> specs/login-animation-moment-plan.md. Then builder on integration/next; designer BLOCKING
+on rendered SEQUENCE (keyframes 0/30/60/100%); reviewer perf-safety; qa full gates + auth Playwright.
+On builder DONE: review/iterate; then backlog flip (login-animation-moment done, onboarding-shell-and-gate
+ready), PR #150 checklist NOTICEABLE, progress. Do NOT ship/ping. Resume: reconcile from
+git log origin/integration/next + child commits; do not re-run finished children.
