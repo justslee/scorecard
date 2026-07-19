@@ -646,3 +646,14 @@ insert NULL -> onboarded. If the column default were 'done', new sign-ups would 
 WRONG. Existing-user safety (owner never onboarded) = reviewer BLOCKING check.
 Note: frontend clubDistances uses camelCase keys (threeWood, sevenIron); backend
 DEFAULT_CLUB_DISTANCES uses short keys (3wood, 7iron) — bag pre-fill needs a short->camel map.
+
+## AWAITING UPDATE (2026-07-18) — Plan(fable) DONE @9d814cb; builder dispatched (worktree)
+specs/onboarding-shell-and-gate-plan.md committed @9d814cb. Builder dispatched in an isolated
+worktree off origin/integration/next@9d814cb to implement it (3-commit shape: lockstep types+migration
+/ identity+gate+nav / onboarding route+components+e2e). On builder completion I merge its branch into
+integration/next (shared checkout) + push, then run reviewer(+/security-review)+qa+designer(BLOCKING
+screenshots). If I die: `git worktree list` + `git branch --list 'work-onboarding*'` to find the
+builder branch; check its commits; merge into integration/next; do NOT re-run the builder.
+MIGRATION FLAG for PR/owner: new alembic rev 016 (0013_016_golfer_profile_onboarding.py) ADD COLUMN
+golfer_profiles.onboarding_step text (NO default) + one-time UPDATE ... SET 'done' WHERE NULL — auto-
+applies at merge via deploy alembic upgrade; owner ship-it approves it explicitly.
