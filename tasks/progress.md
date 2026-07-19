@@ -1147,3 +1147,40 @@ builder (SendMessage a5f0108b2032c69fb) with specifics, rebuild, re-review. Clas
 per caller directive (caddie voice consistency = crux dimension the owner tests by ear), overriding the
 builder's "silent" self-classification. Do NOT ship/ping. Concurrent lane multiuser-p0-authz-flip also
 on bundle (7553238 plan). git/file work on MAIN checkout /Users/justinlee/projects/scorecard.
+
+## AWAITING (2026-07-19) — caddie-guide-local-lore REVIEW
+Builder LANDED at 54a4a23 on lane/caddie-local-lore (worktree agent-a3f58554840632c13), merged from
+origin/integration/next @98c4b90 (persona lane) partway through — parent chain: 0491d7a (plan) ->
+a5b10ca (awaiting builder) -> c277f41 (WIP pre-merge) -> 86194bf (merge 98c4b90) -> 54a4a23 (lore
+impl + 4 test files). Implements specs/caddie-guide-local-lore-plan.md exactly: additive `LoreItem` +
+guide fields (types.py); `LORE_WRITER_SYSTEM`/`research_hole_lore`/`validate_lore` appended to
+guide_writer.py (validate_lore rule 8 = the hard safety rule: any 100-650 carry-shaped number in
+lore text drops the item even when geometry-true; slope%/years survive — pattern can't match them);
+build_strategy_payload re-validates cached lore per-item on every read + drops it whenever the
+verdict gate drops the guide (lore never outlives its guide); format_lore_lines + a labeled
+"RESEARCHED LOCAL KNOWLEDGE" block appended after PRIOR NOTES in format_strategy_ground_truth; ONE
+paragraph appended at the very end of _strategy_system()'s f-string (composed cleanly with the
+persona lane's already-landed CADDIE_HOUSE_REGISTER/shortened output-contract text via merge);
+_precompute_course_lore/run_lore_backfill() in course_guides.py — SEPARATE, manual, env-gated
+(LORE_BACKFILL_COURSES/_MAX_COURSES), NOT wired into _precompute_course_guides or any route;
+read-modify-write against the shallow JSONB merge, gated by a NEW lore_attempted_at marker distinct
+from strategy_guide_attempted_at; frontend types.ts mirror (additive/optional). Builder verified
+byte-identity: `git diff origin/integration/next -- guide_writer.py strategy.py session.py
+routes/caddie.py` shows session.py/routes/caddie.py at ZERO diff and every guide_writer.py/
+strategy.py hunk is either an import-line addition or lands strictly after the last existing
+function/string closes (validate_guide's `return guide`; the shortened output-contract paragraph
+close) — no hunk opens inside a frozen function. Gates GREEN: ruff clean; the 7-file byte-identity
+suite 225/225; the 4 new test_lore_*.py suites 74 passed + 1 skipped (live-key smoke, correctly
+skipped offline); full offline `pytest backend/tests` 3091 passed/147 skipped/0 failed (skips are
+the repo's existing env/DB-gated tests, not new); frontend (types.ts touched) tsc/lint/voice-tests
+smoke all green (278/278). Deviation: skipped the plan's OPTIONAL `scripts/backfill_lore.py`
+wrapper (no precedent exists even for run_guide_backfill — it's invoked ad hoc, not via a script).
+Classification: SILENT (lore activates only via the manual run_lore_backfill() runner; not wired
+into any live route, the tactical precompute, or the realtime caddie yet). NEXT: fresh reviewer
+(diff-prove byte-identity claim itself + attack the number-smuggling path: rule 8's 100-650 band,
+the writer-prompt-only NUMBERS RULE as a soft layer, validate_strategy_text as the final backstop)
++ qa (re-run the gates + import sanity) in parallel. On BOTH PASS -> update bundle PR as SILENT
+(rides along) + flip backlog + progress. On BLOCKING -> re-dispatch builder with specifics. Do NOT
+ship/ping (silent, and no noticeable bundle item is waiting on this alone). Concurrent lanes still
+active: multiuser-p0-authz-flip (PREP). git/file work for this lane stays in worktree
+agent-a3f58554840632c13 — do NOT touch the shared main checkout.
