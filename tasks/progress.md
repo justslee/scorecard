@@ -1086,3 +1086,19 @@ cache-prefix stability) -> qa (ruff + offline golden/numbers suites + new regist
 gates likely N/A backend-only). NOTE: eng-lead worktree sandboxed to a stale branch; all git/file
 work runs on MAIN checkout /Users/justinlee/projects/scorecard (integration/next, pushes to origin).
 Nothing uncommitted held across this await.
+## AWAITING (2026-07-19) — caddie-guide-local-lore [LANE: lane/caddie-local-lore]
+Owner gap report: caddie can't speak Pinehurst-class LORE (false front, turtleback, below-the-hole,
+Open pins) — payload carries only geometry-provable facts. Building an ADDITIVE researched local-lore
+layer. ISOLATION: this lane runs in worktree /Users/justinlee/projects/scorecard/.claude/worktrees/
+agent-a3f58554840632c13 on branch lane/caddie-local-lore (based origin/integration/next @ 2f0baee) —
+NOT the shared main checkout (persona lane owns integration/next there). Land = rebase lane onto latest
+integration/next (disjoint surfaces: mine = guide_writer.py + types.HoleStrategyGuide + strategy.py
+payload; persona = voice_prompts registers; watch strategy._strategy_system overlap) then FF.
+Recon COMPLETE (schema/writer/validator/payload/backfill all mapped). NOW awaiting Fable Plan agent ->
+save specs/caddie-guide-local-lore-plan.md. Crux for the plan: the LORE/GEOMETRY validation split
+(lore adds non-geometric knowledge but a geometry-contradicting lore item is dropped; proper nouns
+confidence-gated + attributed like course_intel_writer; tactical validate_guide stays BYTE-IDENTICAL).
+NEXT: builder (implement plan in THIS worktree) -> fresh reviewer (lore path can't smuggle ungrounded
+NUMBERS into spoken layer; tactical validators byte-identical) -> qa (full gates + guide suites).
+Records: backlog entry ADDED (in-progress, JSON-validated); PR NOTICEABLE at land. Do NOT ship/ping.
+Nothing uncommitted held across the await.
