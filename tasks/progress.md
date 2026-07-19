@@ -1105,3 +1105,16 @@ to origin/integration/next, reports head SHA. NEXT on builder return -> fresh re
 validators/payloads/numbers byte-identical + cache-prefix stability) -> qa (gates + register test) ->
 update bundle PR NOTICEABLE + flip backlog. Do NOT ship/ping. eng-lead runs git/file work on MAIN
 checkout /Users/justinlee/projects/scorecard.
+## AWAITING (2026-07-19) — caddie register-unification REVIEW
+Builder LANDED at 98c4b90 (origin/integration/next); parent 7553238; review range 7553238..98c4b90
+(18 backend files). Builder offline gates GREEN (648/648 targeted + 3017/3017 sanity, ruff+scoping clean).
+Two documented deviations: (1) session.py deferred validate_guide to a runtime-local import to break a
+real circular import (guide_writer->voice_prompts->session->guide_writer); (2) test_caddie_caching
+normalizer regex narrowed to the reworded span. Awaiting fresh reviewer aca3b28301b088833 (prove
+byte-identical grounding/numbers/validators + cache-prefix stability + scrutinize both deviations) +
+qa abe05c69bea791755 (re-run offline gates + import sanity + diff-scope). NEXT: BOTH SHIP/PASS ->
+update bundle PR (open if absent) as NOTICEABLE + flip backlog + progress. BLOCKING -> re-dispatch
+builder (SendMessage a5f0108b2032c69fb) with specifics, rebuild, re-review. Classification: NOTICEABLE
+per caller directive (caddie voice consistency = crux dimension the owner tests by ear), overriding the
+builder's "silent" self-classification. Do NOT ship/ping. Concurrent lane multiuser-p0-authz-flip also
+on bundle (7553238 plan). git/file work on MAIN checkout /Users/justinlee/projects/scorecard.
