@@ -123,6 +123,16 @@
       "depends_on": []
     },
     {
+      "id": "caddie-persona-inventory-frontend-backend-mismatch",
+      "title": "Frontend persona picker lists personas with no backend counterpart (dead selections)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "Flagged by the designer during caddie-orb-persona-consistency (register audit, 2026-07-19). frontend/src/lib/caddie/personalities.ts ships personas (e.g. veteran-looper, hard-edge, and others) that have NO row in backend/app/caddie/personalities.py (only strategist/classic/hype/professor exist there) nor in frontend persona.ts (which lists just the 4). A user could select a client-only persona and get silently remapped (load_personality falls back to 'classic'). This is a data-INVENTORY/integration bug, NOT register wording — deliberately kept out of the register-unification cycle. FIX (a design decision): either build the missing backend personas (new registers TBD) or delete the dead client-only entries. Verify the actual list of orphans first (persona.ts vs personalities.ts vs backend personalities.py vs the caddie_personas DB seed).",
+      "depends_on": []
+    },
+    {
       "id": "caddie-persona-db-voice-audit",
       "title": "Verify prod caddie_personas rows carry no invalid Realtime voice_id (complete the fable fix in prod)",
       "type": "minor",
