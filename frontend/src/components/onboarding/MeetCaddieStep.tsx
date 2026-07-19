@@ -147,7 +147,11 @@ export default function MeetCaddieStep({ busy, error, onContinue }: MeetCaddieSt
               alignSelf: "flex-start",
               background: "transparent",
               border: "none",
-              padding: "6px 2px",
+              // Generous invisible hit padding (≥44px tall) for a one-handed,
+              // possibly-gloved, on-course tap — cancelled by the negative
+              // margin so the visual size/position is unchanged (Northstar).
+              padding: "14px 8px",
+              margin: "-14px -8px",
               fontFamily: T.sans,
               fontSize: 13,
               color: T.pencil,

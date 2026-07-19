@@ -190,6 +190,11 @@ test.describe("Onboarding — Slice 4 (needs CLERK_SECRET_KEY)", () => {
     await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
     await expect(page.getByText("Ask your caddie anything.")).toBeVisible();
 
+    // Pin intent: the mic must NOT be granted so getUserMedia rejects with
+    // NotAllowedError — guards the deny path against a future Playwright config
+    // that pre-grants "microphone" and would silently invert this assertion.
+    await page.context().clearPermissions();
+
     // Tap the REAL production orb (its idle aria-label) — the one standardized
     // invocation; there is no bespoke mic on this step.
     await page.getByRole("button", { name: /Talk to your caddie/ }).click();
