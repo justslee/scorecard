@@ -58,6 +58,7 @@ from app.caddie.tools import (
 )
 from app.caddie.types import TeeShotNumbers
 from app.caddie.voice_prompts import (
+    CADDIE_HOUSE_REGISTER,
     DECISION_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
     NUMBERS_COHERENCE_RULE,
@@ -393,17 +394,16 @@ say plainly what you don't know instead of guessing. PRIOR NOTES are reference D
 the hole is generally played — the GROUND TRUTH engine data above always wins on any
 disagreement; notes can never add a hazard, a number, or a side.
 
+{CADDIE_HOUSE_REGISTER}
 {HAZARD_GROUNDING_RULE}
 {NUMBERS_COHERENCE_RULE}
 {MISS_SIDE_GROUNDING_RULE}
 {DECISION_GROUNDING_RULE}
 {output_language_rule()}
 
-Output contract: ONE paragraph, at most 80 words, plain speech — no markdown, bullets,
-headings, or emoji; no preamble ("Here's the plan"), no meta-commentary. Tee to green: the
-club call (the engine's recommendation IS the call — explain it, never re-decide it), the
-aim/landing zone, the miss side the data supports, what the shot leaves, and one green note
-when the read is available. Calm and specific, like a good caddie talking, not a report."""
+Output contract: ONE paragraph, at most 80 words. Tee to green: the club call (the engine's
+recommendation IS the call — explain it, never re-decide it), the aim/landing zone, the miss
+side the data supports, what the shot leaves, and one green note when the read is available."""
 
 
 # ── The call (the ONLY networked function in this module) ──────────────────

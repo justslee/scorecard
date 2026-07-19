@@ -20,7 +20,6 @@ from app.caddie.types import (
     PlayerStatistics,
     CaddieRecommendation,
 )
-from app.caddie.guide_writer import validate_guide
 from app.db.engine import async_session
 from app.db.models import CaddieSession as CaddieSessionRow, CaddieMessage as CaddieMessageRow
 
@@ -75,6 +74,15 @@ WEATHER_REFRESH_SECONDS = 30 * 60
 
 
 def _row_to_session(row: CaddieSessionRow, messages: list[CaddieMessageRow]) -> RoundSession:
+    # Local import (not module-level): guide_writer now imports
+    # voice_prompts.CADDIE_HOUSE_REGISTER (specs/caddie-orb-persona-
+    # consistency-plan.md §2.5), and voice_prompts imports RoundSession from
+    # THIS module for type hints — a module-level import here would create a
+    # session -> guide_writer -> voice_prompts -> session cycle. Deferred to
+    # call time (this function is only ever invoked at runtime, never during
+    # import) breaks the cycle with zero behavior change.
+    from app.caddie.guide_writer import validate_guide
+
     hole_intel: dict[int, HoleIntelligence] = {}
     for k, v in (row.hole_intel or {}).items():
         try:

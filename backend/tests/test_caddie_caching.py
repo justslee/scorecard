@@ -26,6 +26,7 @@ from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
 from app.caddie.voice_prompts import (
+    CADDIE_HOUSE_REGISTER,
     DECISION_GROUNDING_RULE,
     INPUT_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
@@ -175,8 +176,11 @@ async def test_voice_prompt_stable_before_volatile_ordering(monkeypatch):
 # {decision_rule} — the deliberate additive line from
 # caddie-advice-stability-tee-shot (the club CALL is the engine's decision,
 # not re-decided free at temp each turn; closes the stable block after
-# {miss_side_grounding_rule}) — all referenced via the imported constants so
-# wording edits don't rot this guard. Everything else must stay identical.)
+# {miss_side_grounding_rule}) — and {house_register} — the shared house
+# register swapped in for the old restated brevity/markdown/no-preamble
+# sentences (specs/caddie-orb-persona-consistency-plan.md §2.3/§3.3) — all
+# referenced via the imported constants so wording edits don't rot this
+# guard. Everything else must stay identical.)
 
 
 _OLD_SESSION_TEMPLATE = """{persona}
@@ -186,16 +190,15 @@ _OLD_SESSION_TEMPLATE = """{persona}
 
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
-Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
-more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
-One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
-use the context above to give specific, actionable advice — and when the hole context shows an
-uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
-like 195 with the climb"). Any "Local knowledge" line is written for golfers in general — filter
-it through THIS player's real distances before repeating it: a hazard beyond their reach off the
-tee is irrelevant (don't mention it); talk about what's in play at THEIR landing zone. A 300-yard
-driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
-golf-focused. Never break character.
+Your reply is SPOKEN ALOUD on the course.
+{house_register}
+If they ask about club selection, aim, or strategy, use the context above to give
+specific, actionable advice — and when the hole context shows an uphill/downhill change or a
+plays-like distance, factor it in and SAY it briefly ("plays more like 195 with the climb").
+Any "Local knowledge" line is written for golfers in general — filter it through THIS player's
+real distances before repeating it: a hazard beyond their reach off the tee is irrelevant
+(don't mention it); talk about what's in play at THEIR landing zone. A 300-yard driver doesn't
+care about a bunker at 370. If they're just chatting, be personable but keep it golf-focused.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
 or known tendencies when relevant.
 
@@ -221,16 +224,15 @@ _OLD_STATELESS_TEMPLATE = """{persona}
 
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
-Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
-more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
-One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
-use the context above to give specific, actionable advice — and when the hole context shows an
-uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
-like 195 with the climb"). Any "Local knowledge" line is written for golfers in general — filter
-it through THIS player's real distances before repeating it: a hazard beyond their reach off the
-tee is irrelevant (don't mention it); talk about what's in play at THEIR landing zone. A 300-yard
-driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
-golf-focused. Never break character.
+Your reply is SPOKEN ALOUD on the course.
+{house_register}
+If they ask about club selection, aim, or strategy, use the context above to give
+specific, actionable advice — and when the hole context shows an uphill/downhill change or a
+plays-like distance, factor it in and SAY it briefly ("plays more like 195 with the climb").
+Any "Local knowledge" line is written for golfers in general — filter it through THIS player's
+real distances before repeating it: a hazard beyond their reach off the tee is irrelevant
+(don't mention it); talk about what's in play at THEIR landing zone. A 300-yard driver doesn't
+care about a bunker at 370. If they're just chatting, be personable but keep it golf-focused.
 
 {output_language_rule}
 {hazard_rule}
@@ -249,10 +251,14 @@ golf-focused. Never break character.
 
 def _normalized_line_set(text: str) -> set[str]:
     """Set of non-empty, stripped lines — order-independent content compare,
-    with the ONE meaning-preserving pointer reword normalized away."""
+    with the ONE meaning-preserving pointer reword normalized away. Narrowed
+    to just the reworded words (not the full clause) by
+    caddie-orb-persona-consistency-plan.md §2.3/§3.3 — the INSTRUCTIONS
+    clause now wraps "...to give" / "specific, actionable advice..." across a
+    line break, so a full-clause substring match would silently stop firing."""
     normalized = text.replace(
-        "use the context above to give specific, actionable advice",
-        "use the CURRENT SITUATION section to give specific, actionable advice",
+        "use the context above to give",
+        "use the CURRENT SITUATION section to give",
     )
     return {line.strip() for line in normalized.splitlines() if line.strip()}
 
@@ -275,6 +281,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         # yardage signal on this request → the shared formatter's honest
         # "unknown" branch, never the old bare "Current hole: #4".
         context="Hole 4, Par unknown — yardage unknown. Ask the player or say so; never guess.",
+        house_register=CADDIE_HOUSE_REGISTER,
         output_language_rule=output_language_rule(),
         hazard_rule=HAZARD_GROUNDING_RULE,
         bend_rule=BEND_GROUNDING_RULE,
@@ -310,6 +317,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         # shared yardage-context formatter's provenance-labeled "card" wording,
         # never the old bare "Current hole: #1, Par 4, 400 yards".
         context="Hole 1, Par 4 — 400 yards. Do not quote any other tee's yardage.",
+        house_register=CADDIE_HOUSE_REGISTER,
         output_language_rule=output_language_rule(),
         hazard_rule=HAZARD_GROUNDING_RULE,
         bend_rule=BEND_GROUNDING_RULE,

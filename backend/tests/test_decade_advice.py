@@ -34,8 +34,8 @@ from app.caddie.types import Hazard, HoleIntelligence
 
 
 def _extract_yards(advice: str) -> int:
-    """Pull the integer yardage from an advice string of the form '~Ny direction'."""
-    m = re.search(r"~(\d+)y", advice)
+    """Pull the integer yardage from an advice string of the form 'about N yards direction'."""
+    m = re.search(r"about (\d+) yards", advice)
     return int(m.group(1)) if m else 0
 
 
@@ -310,11 +310,11 @@ class TestDecadeAimAdviceText:
         assert advice.startswith("The percentages favor aiming"), advice
 
     def test_advice_contains_yards_marker(self):
-        """Advice string includes the 'y' unit (e.g. '~6y right')."""
+        """Advice string includes the 'yards' unit (e.g. 'about 6 yards right')."""
         hazards = [_hazard(type="water", side="left", severity="death", distance=5.0)]
         advice = decade_aim_advice(hazards, shot_distance_yds=150.0)
         assert advice is not None
-        assert "y " in advice or advice.endswith("y"), advice
+        assert "yards" in advice, advice
 
     def test_advice_contains_flag_reference(self):
         hazards = [_hazard(type="water", side="left", severity="death", distance=5.0)]

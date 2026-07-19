@@ -83,13 +83,13 @@ def slope_miss_advice(
     rel = (green_slope.direction - approach_bearing_deg) % 360
 
     # Qualifier word scales with severity.
-    qualifier = "hard" if green_slope.severity == "severe" else "moderately"
+    qualifier = "hard " if green_slope.severity == "severe" else ""
 
     if rel <= 45 or rel > 315:
         # Slope drops toward the BACK (away from golfer).
         # Front is high, back is low → "below the hole" side is long/back.
         return (
-            f"Green slopes {qualifier} front-to-back — "
+            f"Green slopes {qualifier}front-to-back — "
             "the back edge is lower; playing to pin depth keeps you below the hole"
         )
     elif rel <= 135:
@@ -97,14 +97,14 @@ def slope_miss_advice(
         # Left side is high, right side is low.
         # framing contract: aim = high side; uphill-putt leave = fall/low side
         return (
-            f"Green tilts {qualifier} left to right — "
+            f"Green tilts {qualifier}left to right — "
             "aim left, the high side; a miss right sits below the hole and leaves the uphill putt"
         )
     elif rel <= 225:
         # Drops toward the FRONT (near side, toward the golfer).
         # Back is high, front is low → "below the hole" side is short/front.
         return (
-            f"Green slopes {qualifier} back-to-front — "
+            f"Green slopes {qualifier}back-to-front — "
             "leave it below the hole; miss short"
         )
     else:
@@ -112,6 +112,6 @@ def slope_miss_advice(
         # Right side is high, left side is low.
         # framing contract: aim = high side; uphill-putt leave = fall/low side
         return (
-            f"Green tilts {qualifier} right to left — "
+            f"Green tilts {qualifier}right to left — "
             "aim right, the high side; a miss left sits below the hole and leaves the uphill putt"
         )
