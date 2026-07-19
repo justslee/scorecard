@@ -525,3 +525,13 @@ on rendered SEQUENCE (keyframes 0/30/60/100%); reviewer perf-safety; qa full gat
 On builder DONE: review/iterate; then backlog flip (login-animation-moment done, onboarding-shell-and-gate
 ready), PR #150 checklist NOTICEABLE, progress. Do NOT ship/ping. Resume: reconcile from
 git log origin/integration/next + child commits; do not re-run finished children.
+
+## UPDATE (2026-07-18) — Plan(fable) DONE @ea0d451, builder dispatched
+specs/login-animation-moment-plan.md landed (fable): extend HoleIllustration with opt-in
+playIntro prop (default off, interactive byte-identical); hero-only <motion.g> orchestrator +
+VARIANTS{hidden,drawn} + 12-beat INTRO storyboard; pen-stroke path draws via framer pathLength,
+crossfades into the existing dashed centerline (dashed line never uses pathLength — the §6
+gotcha); SignInScreen owns play-once-per-install via looper.loginHeroDrawSeen + session latch,
+read-in-initializer/burn-in-effect (StrictMode-safe), gated off for reduced-motion. Builder
+building on integration/next @ea0d451. On builder DONE: reviewer(perf-safety) + qa(gates + auth
+Playwright + keyframes) + designer(BLOCKING on rendered sequence). Do NOT ship/ping.
