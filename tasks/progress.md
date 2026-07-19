@@ -687,3 +687,15 @@ Playwright new-user/existing-bypass/kill-resume), designer (BLOCKING, 375px scre
 vs plan §3, isolated worktree). On results: BLOCKING issues -> re-dispatch builder; all green -> flip
 backlog + unblock Slice 5 + update PR #150 checklist NOTICEABLE + migration flag + progress. If I die:
 reconcile from origin/integration/next@d926576 + the three child reports; do NOT re-run finished children.
+
+## AWAITING UPDATE (2026-07-18) — reviewer SHIP + qa PASS; designer BLOCKING (bag CTA off-screen) -> builder fix
+onboarding-shell-and-gate @d926576 on integration/next. reviewer SHIP (all 6 blocking checks incl.
+existing-user safety BOTH directions; /security-review-equiv clean; 2 cosmetic notes). qa PASS (all
+local gates green: lint/tsc/voice278/vitest2824/build/ruff/pytest2993+migration4-4; E2E+DB-integration
+self-skip locally -> CI verifies). designer BLOCKING: BagStep primary CTAs off-screen, no scroll
+affordance (worst iPhone SE both buttons unreachable) — root cause OnboardingFlow.tsx shell minHeight
+:100dvh without minHeight:0 on the flex column/AnimatePresence chain, so BagStep flex:1 overflowY:auto
+list never clamps. Steps 1/2/4 + shell/ticks/orb-placeholder all SHIP. Screenshots in scratchpad/
+onboarding-shots/. Fix dispatched to builder (fresh branch work-onboarding-bagfix off origin/
+integration/next). On fix: re-designer (BLOCKING re-verify bag scroll) -> if SHIP, records+PR. If I
+die: builder fix branch is work-onboarding-bagfix; merge into integration/next after re-designer green.
