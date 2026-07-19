@@ -31,8 +31,15 @@ Scope (task directive + specs/multi-user-epic-plan.md §3.3/§3.4/§3.6), REFINE
 courses_mapped already carved to require_owner (recon confirmed) — preserve only. Migrations ADDITIVE,
 auto-apply at merge — flag in PR + report; owner ship-it approves them (precedent). Process: fable plan
 -> builder -> reviewer (fresh + /security-review MANDATORY) -> qa (full gates + flip-gate under open).
-Status: recon DONE; dispatching Plan(fable). On resume: reconcile from origin/integration/next log +
-child commits; do NOT re-run finished children.
+Status: recon DONE; Plan(fable) DONE -> specs/multiuser-p0-authz-flip-plan.md. Plan caught 3 material
+corrections: (1) personas gap is REAL not just defense-in-depth — voice.py:100 + realtime.py:87 pass
+client persona_id to load_personality with NO visibility gate (B can bind A's private persona); fix =
+load_personality enforces visibility + pass user_id from all 5 callers. (2) hole_pins test schema broken
+(ORM lacks pin_geom + unique constraint) — needs conftest pin_geom ALTER + HolePin __table_args__.
+(3) stale test name (TestByteIdenticalOwnerMode). 2 migrations: 017 revoked_users, 018 hole_pins user_id;
+personas NO migration. Flip-gate = new test_flip_gate.py (marker flip_gate) under REAL open_mode fixture.
+Dispatching builder to implement the plan on integration/next. On resume: reconcile from
+origin/integration/next log + child commits; do NOT re-run finished children.
 
 ## EPIC CLOSED (2026-07-19) — login-onboarding redesign COMPLETE; Slice 7 verdicts all SHIP @1d13b71
 All three reviews GREEN on the landed Slice-7 delta (07b0f55..1d13b71):
