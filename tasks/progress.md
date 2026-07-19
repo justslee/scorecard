@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-19) — multiuser-p0-authz-flip FLIP-PREP (NOTICEABLE "multi-user: flip-ready") — landed on bundle PR #152
+Closed the 4 DEFERRED authz gaps (clerk_auth.py:143-163) + built THE FLIP GATE suite. NOT flipped/shipped
+(owner-gated separate call). Plan specs/multiuser-p0-authz-flip-plan.md (Fable). Impl commits
+ca76925/55362ac/4bb3251/96cbffc + fix 7b30ce6; proven GREEN vs real Postgres on CI Backend gate @00a0bea
+(all three CI checks SUCCESS; earlier 2 flip-gate reds fixed: asyncpg geom param-type casts in pins.py +
+conftest optional_user_id injection).
+- (1) DURABLE REVOCATION: migration 017 revoked_users + RevokedUser ORM; revocation.revoke_durable
+  write-through to DB + warm_revocation_cache at boot (OPEN-MODE ONLY, main.py startup) -> restart re-warms,
+  ban never silently un-revokes; webhook path byte-compatible (one await swap); owner mode consults nothing.
+- (2) PER-USER HOLE_PINS: migration 018 user_id + unique(course,hole,date,user_id), backfill
+  marked_by_user_id else OWNER (abort if orphans + OWNER unset); pins.py list/upsert/read-back caller-scoped;
+  BOTH scoping_lint pins exemptions removed (lint still clean = structural proof).
+- (3) PERSONA AUTHOR-SCOPING: load_personality enforces built-in|public|author==me, closing a REAL leak
+  (voice.py:/speak + realtime.py:/setup-session were ungated); 5 call sites pass caller identity; no
+  update/delete persona endpoints exist. NO migration.
+- (4) SCOPING LINT clean (107 files) with the exemptions gone.
+- THE FLIP GATE: backend/tests/integration/test_flip_gate.py (marker flip_gate) under a monkeypatch-only
+  open_mode fixture that asserts _assert_boot_config passes; test_bag_caddie_grounding folded in via marker;
+  conftest TRUNCATE + pin_geom DDL extended. Flip runbook = specs/multi-user-epic-plan.md section 8.
+Verdicts: reviewer(Fable /security-review) SHIP (no HIGH/MEDIUM vulns, net security improvement); QA PASS;
+CI all-green @00a0bea. Deviation: §4 stricter load_personality signature needed user_id=None on ~104 test
+fakes in 11 NON-frozen files (no assertion touched; frozen pins test_clerk_auth/test_webhooks_clerk/
+test_authz_isolation byte-unchanged). Backlog multiuser-p0-authz-flip -> flip-ready. Did NOT ship/ping/flip;
+coordinator owns the bundle ship ask. Migrations 017/018 additive, auto-apply at merge (owner ship-it approves).
+
 ## DONE (2026-07-19) — multiuser-p0-authz-flip: 2 CI Backend-gate fixups landed @7b30ce6
 eng-lead flagged CI's Backend gate (real Postgres) failing 2/13 flip_gate tests on the prior
 head (2a3594f, reviewer already SHIP on security). Both fixed, rebased twice onto a moving
