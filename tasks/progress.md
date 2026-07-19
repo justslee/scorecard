@@ -45,10 +45,14 @@ already SHIPPED — need a FRESH bundle PR (integration/next → main) this cycl
 `_PROFILE_KEY_MAP`, so `normalize_club_distances(golfer_profile.bag_clubs)` is a clean hydration.
 This is the seam the owner's DB-backed two-user test must pin.
 
-Plan(fable) DONE @8475367 → specs/onboarding-bag-caddie-grounding-plan.md (server-side hydration
-seam in routes/caddie.py + memory.get_golfer_bag_clubs; DB-backed two-user flip-time test).
-AWAITING builder on integration/next. On return: merge/confirm push, then reviewer(fresh) + qa;
-open FRESH bundle PR (integration/next → main), NOTICEABLE checklist. Do NOT ship/ping.
+Plan(fable) @8475367 + builder DONE @212bc27 (head def98af, pushed origin/integration/next).
+Gates builder-side green (lint 0-err, tsc clean, voice 278/278, ruff clean, backend 3005 passed
+/146 skipped; new flip-time DB test collects 6, skips w/o local PG). Builder caught+fixed a
+fail-open coupling regression (separate try/except for the bag fetch in _build_voice_prompt).
+Pinned: 160y A→8iron B→6iron; 430y tee A→driver(300) B→3wood(200), no "driver" in B payload.
+AWAITING reviewer(fresh, incl /security-review for multi-user isolation) + qa on 2157cad..212bc27.
+On green: open FRESH bundle PR (integration/next → main), NOTICEABLE checklist; backlog flip +
+Slice 6 unblock. BLOCKING → re-dispatch builder. Do NOT ship/ping.
 
 ## DONE — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1) — verdict CONSTRAINED-GO
 Landed on `integration/next` (bundle PR #150), all three CI gates SUCCESS on head **429dd9c**
