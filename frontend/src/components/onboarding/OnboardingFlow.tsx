@@ -295,7 +295,13 @@ export default function OnboardingFlow() {
   return (
     <div
       style={{
-        minHeight: "100dvh",
+        // Bounded (not minHeight) so the Bag step's internal list is the
+        // ONLY thing that scrolls — a growing page (minHeight) let the whole
+        // viewport stretch past the buttons on short screens (designer
+        // BLOCKING finding). Steps 1/2/4 have short content and fit
+        // comfortably within one viewport, so this is a no-op for them.
+        height: "100dvh",
+        overflow: "hidden",
         background: `${PAPER_NOISE}, ${T.paper}`,
         backgroundBlendMode: "multiply",
         display: "flex",
@@ -304,7 +310,16 @@ export default function OnboardingFlow() {
         fontFamily: T.sans,
       }}
     >
-      <div style={{ maxWidth: 340, width: "100%", flex: 1, display: "flex", flexDirection: "column" }}>
+      <div
+        style={{
+          maxWidth: 340,
+          width: "100%",
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         <div
           style={{
             fontFamily: T.mono,
@@ -324,7 +339,7 @@ export default function OnboardingFlow() {
             key={subStep}
             {...motionProps}
             transition={transition}
-            style={{ flex: 1, display: "flex", flexDirection: "column" }}
+            style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
           >
             {subStep === "name" && (
               <NameStep initialValue={profile?.name ?? ""} busy={busy} error={error} onContinue={handleName} />
