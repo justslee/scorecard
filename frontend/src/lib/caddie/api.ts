@@ -185,6 +185,9 @@ export interface SessionStatus {
   last_recommendation?: CaddieRecommendation | null;
   memories?: CaddieMemoryEntry[];
   profile?: CaddieProfile | null;
+  /** Where session.club_distances came from this session/start call — for
+   *  observability/testing only, not consumed by client behavior today. */
+  bag_source?: 'request' | 'profile' | 'session' | 'none';
 }
 
 export async function startSession(params: {
