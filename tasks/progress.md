@@ -707,3 +707,25 @@ vitest2824/build) + visual proof doc==viewport, both CTAs in-view at 375x812 AND
 unchanged. Re-dispatched designer to re-verify the BLOCKING bag-scroll at both heights. On designer
 SHIP: finalize (backlog flip onboarding-shell-and-gate->done + unblock Slice 5 onboarding-bag-caddie-
 grounding->ready; PR #150 checklist NOTICEABLE + migration flag; progress; final report). No ship/ping.
+
+## DONE (2026-07-18) — onboarding-shell-and-gate (Slice 4, NOTICEABLE) landed on integration/next
+The resumable first-run onboarding flow (Name → Handicap → Bag → Meet-your-caddie placeholder) +
+server-persisted onboarding_step + AuthGate 4th state. Landed head @ce74c02 (6154d9c types+migration /
+5040197 identity+gate+nav / f132e9d route+flow / ce74c02 bag-CTA layout fix).
+MIGRATION (owner ship-it covers it): alembic rev 016 backend/migrations/versions/
+0013_016_golfer_profile_onboarding.py, down_revision 015_course_intel. DDL: ADD COLUMN IF NOT EXISTS
+golfer_profiles.onboarding_step text (NO DEFAULT) + one-time UPDATE ... SET 'done' WHERE NULL. Auto-
+applies at merge via deploy alembic upgrade. Existing-user safety proven BOTH directions: backfill →
+every pre-existing row incl. owner = 'done' = never onboarded; no-default → new sign-up row = NULL =
+gated. Encoded in test_onboarding_migration.py (no-DEFAULT+backfill+downgrade) + DB-backed
+test_onboarding_step.py (ensure-PUT -> onboardingStep:null).
+VERDICTS: reviewer SHIP (all 6 blocking checks incl. existing-user safety both directions, security
+pass clean, no test weakening); qa PASS (lint/tsc/voice278/vitest2824/build/ruff/pytest2993+migration
+4-4; E2E+DB-integration self-skip locally -> CI verifies); designer SHIP after one BLOCKING iteration
+(BagStep CTAs off-screen -> OnboardingFlow shell height:100dvh+overflow:hidden+minHeight:0 chain fix;
+re-verified both CTAs in-view + list scrolls internally at 375x812 AND 375x667, steps 1/2/4 unregressed).
+Flow screenshots: scratchpad/onboarding-shots/ (name/handicap/bag/intro + intro-with-orb + bag at both
+heights post-fix). Backlog: onboarding-shell-and-gate -> done; Slice 5 onboarding-bag-caddie-grounding
+-> ready (unblocked). PR #150 checklist: added NOTICEABLE onboarding item + migration flagged prominently.
+NOT shipped/pinged this cycle — bundle #150 now holds 4 NOTICEABLE items (caddie P0 + login static hero
++ login self-draw + onboarding); coordinator takes the ship ask with the migration approval folded in.
