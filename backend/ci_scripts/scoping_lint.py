@@ -63,6 +63,10 @@ SCAN_DIRS = [
 #     course-mapping reference data (PostGIS), authored via require_owner-
 #     carved writes (courses_mapped.py) — not per-owner rows, and accessed
 #     via raw SQL anyway (out of this script's scan surface, see module doc).
+#   - RevokedUser (migration 017, revoked_users): the global ban list for
+#     app.services.revocation — queried without caller scoping BY DESIGN (it
+#     answers "is this user_id revoked", not "give me MY rows"). Do not add
+#     it to TENANT_MODELS; a scoped query here would be a bug, not a fix.
 TENANT_MODELS: dict[str, str] = {
     "Round": "owner_id",
     "Tournament": "owner_id",

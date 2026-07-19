@@ -187,6 +187,31 @@ class CaddiePersona(Base):
     )
 
 
+class RevokedUser(Base):
+    """Durable revocation store — migration 017, multi-user P0 authz flip
+    (§3.4, backend/app/services/clerk_auth.py:143-163's DEFERRED block).
+
+    Write-through target for ``app.services.revocation.revoke_durable()``
+    (the Svix-verified Clerk webhook handler); read back into the
+    in-process cache at boot by ``revocation.warm_revocation_cache()``
+    (open mode only). ``require_member`` only ever consults the in-process
+    cache (``is_revoked()``) — this table exists so a restart can never
+    silently un-revoke a banned member once ``APP_ACCESS_MODE=open`` ships.
+
+    Deliberately NOT in ``ci_scripts/scoping_lint.py``'s TENANT_MODELS — this
+    is the global ban list, queried without caller scoping by design.
+    """
+
+    __tablename__ = "revoked_users"
+
+    user_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Core scoring domain — Alembic revision 002_core_scoring (005_core_scoring)
 # These tables replace backend/data/*.json. Routes migrated in later PRs.
