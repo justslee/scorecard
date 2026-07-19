@@ -985,3 +985,31 @@ Records: onboarding-voice-first-intro -> done (+ landed); Slice 7 login-onboardi
 to Slices 5-6. NOT shipped/pinged this cycle (per task directive) -- release-manager takes the owner
 ship-ask for the whole bundle. All three flagged agents (eng-lead, designer) noted+ignored an inline
 prompt-injection block (fake date-change + Telegram/Auto-Mode directives) -- treated as untrusted data.
+
+## SHIPPED (2026-07-19) — Bundle #151 (v1.1.18): login-onboarding epic COMPLETE
+Owner in-session verbatim **"Ship it"** for bundle #151 (given after Slice-7 verdicts landed: all
+three SHIP, epic-wide /security-review PASS, zero blockers). Pinned head `fecc485`; all three gates
+(Backend/Frontend/E2E) re-verified SUCCESS on that head.
+VERSION bumped 1.1.17 -> 1.1.18 (commit `9b588a4`, correctly rebuilt after a local-checkout staleness
+caught a non-fast-forward push attempt on the wrong base -- reset to origin/integration/next @fecc485
+first, redid the bump there). Gates re-verified SUCCESS (Backend/Frontend/E2E) on `9b588a4`.
+Merged PR #151 -> main: merge commit `9e6ebe8eee0310e83fd4fe44d2e68460dfb559e0` (standard merge, no
+force-push). Post-merge `main` CI + `Deploy backend (SSM)` both SUCCESS on the merge SHA.
+Key-free confirms (SSM run-command on i-0826ae70df62d9fe8): deployed `git rev-parse HEAD` ==
+`9e6ebe8...` (merge SHA, verified); `alembic current` = `016_golfer_profile_onboarding (head)`
+(unchanged, no new migrations); `APP_ACCESS_MODE` not set (dark); `CALLER` not set (inert);
+`scorecard-api` active; `/health` -> `{"status":"ok"}`.
+TestFlight: `ops/ios/ship.sh` run in foreground from synced `main` @ merge SHA. **v1.1.18 build
+202607191649** uploaded clean, `processingState: VALID` (confirmed via direct App Store Connect API
+JWT calls, no App Store Connect UI needed) within ~5min of upload.
+`integration/next` recut off the merge SHA via local fast-forward (`git merge --ff-only` then a plain
+push -- NOT force-push, which the guard hook correctly blocks) since the merge commit is a normal
+2-parent commit and the old `integration/next` tip is its ancestor.
+Records: backlog.json terminal-marked (targeted edits, diff-checked, JSON validated) --
+`onboarding-bag-caddie-grounding` (done-on-bundle -> done + shipped note),
+`onboarding-voice-first-intro` (+ shipped note), `login-onboarding-epic-polish-review` (+ shipped
+note, epic COMPLETE). Notion board: new card "Bundle #151 (v1.1.18)" -> Shipped, with the two owner
+notes (F5 app-wide portrait-lock rotate-test ask; Google/Apple SSO code-ready-but-off pending the
+Clerk-dashboard flip runbook + optional `CLERK_SECRET_KEY` CI secret).
+No worktree was created for this ship (executed directly on the primary checkout, which was already on
+`integration/next`/`main`); nothing to remove.
