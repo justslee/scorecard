@@ -43,8 +43,8 @@
  *    npm run test:e2e
  */
 
-import { setupClerkTestingToken } from "@clerk/testing/playwright";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { signInWithEmailCode } from "./helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,32 +53,6 @@ const hasPublicKey = !!(
   process.env.CLERK_PUBLISHABLE_KEY
 );
 const hasSecretKey = !!process.env.CLERK_SECRET_KEY;
-
-/**
- * The Looper Clerk dev-instance test user.
- * Create (or verify) in the Clerk dashboard → Users → "looper+clerk_test@looperapp.org".
- * Any +clerk_test address auto-accepts OTP 424242 in Clerk dev/test mode.
- */
-const TEST_USER_EMAIL = "looper+clerk_test@looperapp.org";
-
-/**
- * Drives the full custom headless sign-in flow (email/code — the primary
- * method) from the home page's inline AuthGate sign-in screen through to
- * the signed-in home shell. The aria-labels/button names below are the
- * test contract kept in sync with SignInScreen.tsx (login-screen-visual
- * plan §3).
- */
-async function signInWithEmailCode(page: Page) {
-  await setupClerkTestingToken({ page });
-  await page.goto("/");
-  await expect(page.getByText("Your yardage book")).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Continue with email" }).click();
-  await page.getByLabel("Email address").fill(TEST_USER_EMAIL);
-  await page.getByRole("button", { name: "Email me a code" }).click();
-  await page.getByLabel("Six-digit code").fill("424242");
-  await page.getByRole("button", { name: "Verify" }).click();
-  await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
-}
 
 // ─── Tier 1: AuthGate sign-in screen render ───────────────────────────────────
 
@@ -153,6 +127,7 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
     );
 
     await signInWithEmailCode(page);
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
 
     // After sign-in, the AuthGate clears and the home page renders.
     await expect(page.getByText("Your yardage book")).not.toBeVisible();
@@ -165,6 +140,7 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
     );
 
     await signInWithEmailCode(page);
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
 
     // Home shell: "Start a round" CTA must be present.
     // The exact greeting ("Good morning." etc.) varies by time of day, so we
@@ -188,6 +164,7 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
     );
 
     await signInWithEmailCode(page);
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
 
     // Navigate to the new round screen.
     await page.goto("/round/new");
