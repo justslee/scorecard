@@ -99,6 +99,15 @@ async def upsert_pin(
     target_date = pin.pin_date or date_cls.today()
 
     # PostGIS upsert with geography column populated atomically.
+    #
+    # :pin_lat/:pin_lng each appear TWICE in this statement — once as a plain
+    # column value (double precision) and once inside ST_MakePoint (where
+    # PostGIS/asyncpg would otherwise deduce numeric). asyncpg's extended
+    # query protocol refuses to bind one parameter position to two different
+    # deduced PG types (AmbiguousParameterError: "double precision versus
+    # numeric") — only surfaces against real Postgres, not the ORM/ SQLite-
+    # style unit path. Explicit ::double precision casts on every occurrence
+    # make all uses agree, so asyncpg deduces a single unambiguous type.
     async with async_session() as db:
         await db.execute(
             text("""
@@ -107,8 +116,12 @@ async def upsert_pin(
                     source, marked_by_user_id
                 )
                 values (
-                    :course_id, :hole_number, :pin_date, :user_id, :pin_lat, :pin_lng,
-                    ST_SetSRID(ST_MakePoint(:pin_lng, :pin_lat), 4326)::geography,
+                    :course_id, :hole_number, :pin_date, :user_id,
+                    cast(:pin_lat as double precision), cast(:pin_lng as double precision),
+                    ST_SetSRID(
+                        ST_MakePoint(cast(:pin_lng as double precision), cast(:pin_lat as double precision)),
+                        4326
+                    )::geography,
                     'manual', :user_id
                 )
                 on conflict (course_id, hole_number, pin_date, user_id) do update set

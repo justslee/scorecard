@@ -213,17 +213,27 @@ def set_auth(user_id: str | None, gate: bool = False) -> None:
     current_user_id is overridden -> uid; require_member/require_owner are
     left REAL so the actual gate logic (APP_ACCESS_MODE / OWNER_CLERK_USER_ID,
     set via monkeypatch.setenv and read dynamically) is exercised end-to-end.
+
+    optional_user_id is ALWAYS overridden alongside current_user_id (both
+    directions, regardless of gate) — routes that use the "doesn't raise,
+    returns None if absent" dependency (e.g. GET /api/caddie/personalities)
+    must see the SAME injected identity as everything else in a test, not
+    silently fall back to anonymous/None.
     """
     from app.main import app
-    from app.services.clerk_auth import current_user_id, require_member, require_owner
+    from app.services.clerk_auth import (
+        current_user_id, optional_user_id, require_member, require_owner,
+    )
 
     if user_id is None:
         app.dependency_overrides.pop(current_user_id, None)
+        app.dependency_overrides.pop(optional_user_id, None)
         app.dependency_overrides.pop(require_owner, None)
         app.dependency_overrides.pop(require_member, None)
     else:
         uid = user_id  # close over value, not name
         app.dependency_overrides[current_user_id] = lambda: uid
+        app.dependency_overrides[optional_user_id] = lambda: uid
         if gate:
             app.dependency_overrides.pop(require_owner, None)
             app.dependency_overrides.pop(require_member, None)
