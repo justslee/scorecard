@@ -1276,3 +1276,21 @@ item. CI on head kicked off both gates (Frontend + Backend) IN_PROGRESS at open,
 only prompt-wording change has no route/DB/model-shape surface, so the DB-backed Backend gate is
 expected green; RELEASE-MANAGER / next cycle must confirm both gates SUCCESS on the merge head before
 any ship. NOT shipped, owner NOT pinged this cycle (per directive). Bundle keeps accumulating.
+
+## DONE (2026-07-19) — caddie-guide-local-lore LANDED on integration/next @3c33d0c (bundle PR #152)
+Full cycle complete: Fable plan -> builder -> fresh reviewer -> QA -> reviewer-fix -> rebase/merge -> FF-land.
+- Reviewer found ONE BLOCKING: rule-8 hyphenated-range number-ban bypass (_CARRY_NUMBER_PATTERN captures
+  only the first range number, so "95-140" leaked a real 140 carry to the spoken layer). FIXED with a
+  standalone 2-3-digit-token scan (\b(\d{2,3})(?!\d)) that bans both ends; years/slopes still survive;
+  regression test added. Did NOT touch the frozen shared _CARRY_NUMBER_PATTERN.
+- Landed: merged latest origin/integration/next (persona register @2a3594f + flip-prep migrations
+  0014/0015 + flip-gate test — all disjoint from my surface) into lane, clean; FF-pushed 2a3594f..3c33d0c
+  to integration/next (non-force, guard-allowed). session.py/routes/caddie.py ZERO diff; validate_guide +
+  all tactical validators + engine numbers byte-identical.
+- Gates on merged tree: ruff clean; 300 lore+byte-identity-teeth pass (1 live-key skip); earlier full
+  offline 3091 pass/0 fail; frontend tsc/lint/voice-smoke 278/278.
+- Records: backlog flipped done-on-bundle w/ resolution; PR #152 updated (Noticeable item added w/ DORMANT
+  note; silent runner+tests noted); title refreshed.
+- CLASSIFICATION: NOTICEABLE per owner directive but DORMANT until owner-sanctioned run_lore_backfill runs
+  on prod (~$1.8-2.6/course, ~$22-31/12). Per directive: did NOT ship, did NOT ping owner. Bundle #152
+  still accumulating; owner approval pending on the persona register item already in it.
