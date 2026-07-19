@@ -1027,9 +1027,28 @@ unifies the shared/agnostic surfaces + a shared structural style base, extracted
 REGISTER ONLY — no grounding/validation/numbers changes; every numbers/verdict contract stays
 byte-identical (pinned by existing suites). Lands on the fresh bundle as NOTICEABLE. Do NOT ship/ping.
 
+### Register audit (complete)
+No single shared house-register constant exists; _BASE_BEHAVIOR (voice_prompts.py:22) + stable_text
+INSTRUCTIONS (caddie.py:990-1019) + _strategy_system (strategy.py:384-406) + setup_voice.py:70-94 each
+independently restate brevity/plain/calm. Persona realtime_instructions/system_prompts: classic/
+strategist/professor CALM, HYPE deliberately enthusiastic (by design). Degraded composer
+(strategy_turn.py:30-114, deterministic) CALM-but-clipped. Guide writer WRITER_SYSTEM CALM; course-intel
+COURSE_WRITER_SYSTEM = distinct Augusta-broadcast register. Frontend persona-count mismatch: persona.ts(4)
+vs personalities.ts(6, +veteran-looper/+hard-edge NO backend counterpart) = inventory bug (likely
+separate item). Pattern to mirror: shared grounding-rule constants in voice_prompts.py + shared
+GUIDE_INJECTION_PATTERN (guide_writer.py:367). Thin register eval belongs in OFFLINE Tier-1 harness
+(tests/eval/checks.py + test_golden_tier1.py), imported-constant pattern (reference constant, never copy).
+Numbers/verdict contracts frozen.
+
 ## AWAITING (2026-07-19)
-Base: integration/next @ 723f865 (fresh, post-#151). Awaiting: (1) Explore audit agent a743edb95d0ce83a4
-mapping every register surface + verbatim samples. NEXT on its return → dispatch designer for the
-persona doc + audit dispositions (BLOCKING design artifact, reconciled with NORTHSTAR), then Fable
-Plan → builder → fresh reviewer (diff-prove validators/payloads unchanged + prompt-cache stability)
-→ qa (gates + caddie suites + new thin register eval). Nothing uncommitted is held across this await.
+Base: integration/next @ a85a7e5 (fresh post-#151 + 2 progress commits, pushed). Audit DONE. NOW awaiting
+designer aa8aa936918c1614a -> persona doc + dispositions (save to
+specs/caddie-orb-persona-consistency-persona.md). Decisions delegated: fold vs EXEMPT Hype (lean exempt);
+course-intel broadcast keep-distinct; degraded composer warmth (don't over-engineer); persona-count
+mismatch likely separate backlog item. NEXT on return -> save persona doc -> Fable Plan
+(specs/caddie-orb-persona-consistency-plan.md) -> builder (shared house-register constant + align
+outliers + thin register eval; REGISTER ONLY, numbers byte-identical) -> fresh reviewer (diff-prove
+validators/payloads unchanged + prompt-cache prefix stability) -> qa (gates + caddie suites + register
+eval). NOTE: eng-lead worktree is sandboxed to a stale branch; all git/file work runs on the MAIN
+checkout /Users/justinlee/projects/scorecard (on integration/next, pushes to origin). Nothing uncommitted
+held across this await.
