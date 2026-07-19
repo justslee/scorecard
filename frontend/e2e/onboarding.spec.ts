@@ -142,13 +142,70 @@ test.describe("Onboarding — Slice 4 (needs CLERK_SECRET_KEY)", () => {
     const stepWrite = bagPuts.find((p) => p.onboardingStep === "bag");
     expect(stepWrite).toBeTruthy();
 
-    // Meet your caddie (placeholder) -> Home.
-    await expect(page.getByText("Meet your caddie.")).toBeVisible();
-    await page.getByRole("button", { name: "Open your book" }).click();
+    // Meet your caddie — the voice moment. Offline (no live audio session),
+    // the golfer can't actually talk, so the completion affordance is the
+    // always-present "Maybe later" (the "Open your book" finish appears only
+    // after a real 'listening' session — covered by voice-tests + manual/
+    // designer pass). Both go through the same onContinue -> done contract.
+    await expect(page.getByText("Ask your caddie anything.")).toBeVisible();
+    await page.getByRole("button", { name: "Maybe later" }).click();
 
     await expect.poll(() => puts.at(-1)).toMatchObject({ onboardingStep: "done" });
     await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
     await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("voice-intro skip: 'Maybe later' from the intro step writes done and lands Home", async ({
+    page,
+  }) => {
+    test.skip(!hasSecretKey, "CLERK_SECRET_KEY not set.");
+
+    // A server 'bag' step resumes straight to the intro sub-step (initialSubStep).
+    const { puts } = await mockProfileApi(page, "bag");
+
+    await signInWithEmailCode(page);
+    await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+    await expect(page.getByText("Ask your caddie anything.")).toBeVisible();
+
+    // Never a dead end: the quiet escape is present + enabled from first render.
+    const maybeLater = page.getByRole("button", { name: "Maybe later" });
+    await expect(maybeLater).toBeEnabled();
+    await maybeLater.click();
+
+    await expect.poll(() => puts.at(-1)).toMatchObject({ onboardingStep: "done" });
+    await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("voice-intro mic-deny: denied mic is not a dead end — sheet shows the error, skip still completes", async ({
+    page,
+  }) => {
+    test.skip(!hasSecretKey, "CLERK_SECRET_KEY not set.");
+
+    // Resume straight to the intro step (server 'bag'); do NOT grant mic
+    // permission, so the real orb's getUserMedia rejects with NotAllowedError.
+    const { puts } = await mockProfileApi(page, "bag");
+
+    await signInWithEmailCode(page);
+    await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+    await expect(page.getByText("Ask your caddie anything.")).toBeVisible();
+
+    // Tap the REAL production orb (its idle aria-label) — the one standardized
+    // invocation; there is no bespoke mic on this step.
+    await page.getByRole("button", { name: /Talk to your caddie/ }).click();
+
+    // Production deny path: useLooperDictation sets "Microphone access denied."
+    // and CaddieOrbSheet promotes docked -> full so the error is visible.
+    await expect(page.getByText("Microphone access denied.")).toBeVisible({ timeout: 15_000 });
+
+    // Close the full sheet and confirm the step is still completable.
+    await page.getByRole("button", { name: "Close Looper" }).click();
+    const maybeLater = page.getByRole("button", { name: "Maybe later" });
+    await expect(maybeLater).toBeEnabled();
+    await maybeLater.click();
+
+    await expect.poll(() => puts.at(-1)).toMatchObject({ onboardingStep: "done" });
+    await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
   });
 
   test("existing-user zero-onboarding: a 'done' row never sees /onboarding", async ({ page }) => {
