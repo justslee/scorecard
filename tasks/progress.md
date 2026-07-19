@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (2026-07-19) — login-onboarding-epic-polish-review (Slice 7, FINAL, NOTICEABLE) — Plan(fable) dispatched
+Base origin/integration/next @a67eb55 (clean). Bundle PR #151. Closing slice of the login-onboarding epic.
+Working in eng-lead launch worktree agent-a8f7f4ecc57524519 (ff'd to a67eb55); commits push to
+origin/integration/next via `git push origin worktree-agent-a8f7f4ecc57524519:integration/next`.
+Grounding done before planning:
+  - Ribbon-joints cosmetic (login-hero-ribbon-joints-polish): HERO-scoped fairwayRibbon() in
+    frontend/src/components/yardage/HoleIllustration.tsx uses straight perpendicular offsets → mitered
+    joints at dogleg vertices; smooth to quadratic like the centerline (isHero render only).
+  - wash-ease nit (Slice 3): fill fades reuse T.ease (pop-y); optional separate symmetric wash ease.
+  - Dead-code cleanup: SignIn/SignUpClient already headless (SignInScreen); check clerkAppearance
+    (AuthProvider.tsx:17) + AuthButtons.tsx (unused?) as dead prebuilt-widget/appearance config.
+  - E2E CI TRUTH (verified in ci.yml): `advisory-e2e` runs npm run test:e2e (auth.spec+onboarding.spec)
+    but is continue-on-error:true (ADVISORY, not required). Tier-1 (renders) RUNS (public key baked as
+    fallback). Tier-2 (full sign-in) SELF-SKIPS without CLERK_SECRET_KEY repo secret. THE ONE GAP →
+    add repo secret CLERK_SECRET_KEY (name only), create test user looper+clerk_test@looperapp.org,
+    drop continue-on-error, add to required checks.
+Process: Plan(fable) → builder → reviewer(epic-wide /security-review = CORE, fresh adversarial) +
+designer(closing whole-flow pass) + qa(ALL gates + E2E wiring verification). Records: epic COMPLETE
+flip, PR #151 checklist (polish NOTICEABLE, security silent), progress + epic retro note in plan file.
+Do NOT ship/ping (release-manager owns the owner ship-ask). Never touch main/force-push.
+On resume: reconcile from origin/integration/next log + child commits; do not re-run finished children.
+
 ## DONE (builder) — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, SILENT — backend-only seam) — @212bc27
 Builder implemented specs/onboarding-bag-caddie-grounding-plan.md in full on `integration/next`
 (head **212bc27**, pushed). `memory.py::get_golfer_bag_clubs` (new) + `start_session` precedence
