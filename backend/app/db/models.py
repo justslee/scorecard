@@ -252,6 +252,10 @@ class GolferProfile(Base):
     # (caller_voice.py ALLOWED_CALLER_VOICES), or None (falls through to the
     # env/default via caller_voice.resolve_caller_voice()).
     caller_voice: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Added by migration 016 — last COMPLETED onboarding step
+    # (NULL | 'name' | 'handicap' | 'bag' | 'done'); maps to
+    # types.ts GolferProfile.onboardingStep. NULL (no default) on new rows.
+    onboarding_step: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -62,6 +62,7 @@ function profileWithFullBag(): GolferProfile {
       sandWedge: 100,
       lobWedge: 80,
     },
+    onboardingStep: null,
   };
 }
 

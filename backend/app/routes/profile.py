@@ -20,6 +20,7 @@ ORM↔camelCase mapping
   handicap_index     → handicap
   home_course        → homeCourse
   bag_clubs          → clubDistances
+  onboarding_step    → onboardingStep
 """
 
 from datetime import datetime, timezone
@@ -35,6 +36,17 @@ from app.services.clerk_auth import current_user_id
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
+# Closed enum for onboarding_step — keep in sync with
+# frontend/src/components/onboarding/steps.ts SUB_STEP_ORDER and the epic's
+# state machine (specs/login-onboarding-redesign-plan.md §4.1). 'done' is the
+# terminal value; None (omitted) means no change / not-yet-started.
+_ALLOWED_ONBOARDING_STEPS = {"name", "handicap", "bag", "done"}
+
+
+def _validate_onboarding_step(value: str | None) -> None:
+    if value is not None and value not in _ALLOWED_ONBOARDING_STEPS:
+        raise HTTPException(status_code=422, detail="Invalid onboardingStep")
+
 
 def _orm_to_pydantic(row: GolferProfileORM) -> GolferProfile:
     """Map a GolferProfile ORM row to the camelCase response model."""
@@ -44,6 +56,7 @@ def _orm_to_pydantic(row: GolferProfileORM) -> GolferProfile:
         handicap=float(row.handicap_index) if row.handicap_index is not None else None,
         homeCourse=row.home_course,
         clubDistances=row.bag_clubs if row.bag_clubs else {},
+        onboardingStep=row.onboarding_step,
     )
 
 
@@ -81,6 +94,7 @@ async def create_golfer_profile(
     Returns 409 if a profile already exists — use PUT /api/profile/golfer for
     upsert semantics.
     """
+    _validate_onboarding_step(data.onboardingStep)
     async with async_session() as db:
         # Check for existing row
         result = await db.execute(
@@ -98,6 +112,7 @@ async def create_golfer_profile(
             handicap_index=data.handicap,
             home_course=data.homeCourse,
             bag_clubs=data.clubDistances,
+            onboarding_step=data.onboardingStep,
         )
         db.add(row)
         await db.commit()
@@ -117,6 +132,8 @@ async def upsert_golfer_profile(
     does (partial update — None fields are ignored, matching the other domain
     routes).
     """
+    if "onboardingStep" in data.model_fields_set:
+        _validate_onboarding_step(data.onboardingStep)
     async with async_session() as db:
         result = await db.execute(
             select(GolferProfileORM).where(GolferProfileORM.user_id == user_id)
@@ -133,6 +150,7 @@ async def upsert_golfer_profile(
                 handicap_index=data.handicap,
                 home_course=data.homeCourse,
                 bag_clubs=data.clubDistances if data.clubDistances is not None else {},
+                onboarding_step=data.onboardingStep,
             )
             db.add(row)
         else:
@@ -147,6 +165,8 @@ async def upsert_golfer_profile(
                 row.home_course = data.homeCourse
             if "clubDistances" in data.model_fields_set:
                 row.bag_clubs = data.clubDistances if data.clubDistances is not None else {}
+            if "onboardingStep" in data.model_fields_set:
+                row.onboarding_step = data.onboardingStep
             row.updated_at = datetime.now(timezone.utc)
 
         await db.commit()

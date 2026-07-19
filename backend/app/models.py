@@ -23,6 +23,8 @@ class GolferProfile(BaseModel):
     homeCourse: Optional[str] = None
     # Bag distances keyed by club name (maps to golfer_profiles.bag_clubs JSONB).
     clubDistances: dict[str, Any] = {}
+    # Last COMPLETED onboarding step (maps to golfer_profiles.onboarding_step).
+    onboardingStep: Optional[str] = None
 
 
 class GolferProfileCreate(BaseModel):
@@ -32,6 +34,8 @@ class GolferProfileCreate(BaseModel):
     handicap: Optional[float] = None
     homeCourse: Optional[str] = None
     clubDistances: dict[str, Any] = {}
+    # Last COMPLETED onboarding step (maps to golfer_profiles.onboarding_step).
+    onboardingStep: Optional[str] = None
 
 
 class GolferProfileUpdate(BaseModel):
@@ -41,6 +45,8 @@ class GolferProfileUpdate(BaseModel):
     handicap: Optional[float] = None
     homeCourse: Optional[str] = None
     clubDistances: Optional[dict[str, Any]] = None
+    # Last COMPLETED onboarding step (maps to golfer_profiles.onboarding_step).
+    onboardingStep: Optional[str] = None
 
 
 # ============ Players ============
