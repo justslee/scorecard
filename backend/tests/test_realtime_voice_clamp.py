@@ -22,7 +22,7 @@ import app.routes.realtime as realtime_routes  # noqa: E402
 
 
 def _fake_personality_with_voice(voice_id: str):
-    async def fake_load_personality(pid):
+    async def fake_load_personality(pid, user_id=None):
         from app.caddie.types import CaddiePersonality
 
         return CaddiePersonality(

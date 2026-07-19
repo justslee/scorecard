@@ -97,7 +97,7 @@ async def speak(req: SpeakRequest, user_id: str = Depends(caddie_rate_limited_us
     sheet voice always matches the orb voice for a given persona, including
     custom DB personas. Auth required — the OpenAI key stays server-side.
     """
-    persona = await load_personality(req.personality_id)
+    persona = await load_personality(req.personality_id, user_id=user_id)
     audio = await synthesize_speech(req.text, persona.voice_id)
     return Response(content=audio, media_type="audio/mpeg")
 

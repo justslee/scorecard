@@ -355,7 +355,7 @@ async def run_conversation(
     async def _personality_visible_always(persona_id, user_id=None) -> bool:
         return True
 
-    async def _load_personality_classic(persona_id) -> CaddiePersonality:
+    async def _load_personality_classic(persona_id, user_id=None) -> CaddiePersonality:
         return _classic_personality()
 
     async def _no_memories(user_id) -> list:

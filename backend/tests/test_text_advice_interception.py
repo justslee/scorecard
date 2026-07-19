@@ -101,7 +101,7 @@ async def _fake_personality_visible_always(persona_id, user_id=None):
     return True
 
 
-async def _fake_load_personality_classic(persona_id):
+async def _fake_load_personality_classic(persona_id, user_id=None):
     from app.caddie.types import CaddiePersonality
 
     return CaddiePersonality(
