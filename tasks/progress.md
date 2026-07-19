@@ -595,3 +595,16 @@ port race), then dispatched pointing at qa's shots. Outcomes: all SHIP/PASS -> b
 progress. Any BLOCKING -> re-dispatch builder with the specifics, re-review. Do NOT ship/ping.
 Builder deviation to confirm: pen-stroke path placed AFTER ribbon (so opaque fill doesn't occlude
 the drawing stroke) — reviewer+designer to bless against the settled final frame.
+
+## UPDATE (2026-07-18) — reviewer SHIP + qa PASS on login-animation-moment @7d13b4c; designer (BLOCKING) running
+Reviewer: SHIP — all 8 contract focus areas pass (perf whitelist clean: only opacity/transform/pathLength;
+no repeat/loop at rest; interactivity never gated; reduced-motion correct; StrictMode-safe play-once;
+interactive HoleIllustration byte-identical; pen-after-ribbon paint order sound; no test-bending).
+Full /security-review NOT warranted (only new I/O is the looper.loginHeroDrawSeen localStorage boolean).
+QA: PASS — gates 1-6 green (lint 0-err, tsc clean, build ok, voice 278/278, vitest 2802/2802, ruff pass,
+zero backend diff) + keyframes captured (draw plays, reduced-motion=complete static, flag-set=no replay).
+QA FLAG (not blocking THIS slice): auth Playwright self-skipped 0/4 (no Clerk keys in local env) — this
+slice touches ZERO auth logic (reviewer-confirmed), so CI's Clerk job is the source of truth for the auth
+flow at bundle-ship time. Designer BLOCKING on the rendered sequence dispatched (QA keyframes in scratchpad).
+On designer SHIP: backlog flip (login-animation-moment done, onboarding-shell-and-gate ready) + PR #150
+checklist NOTICEABLE + progress. On designer BLOCKING: re-dispatch builder with specifics, re-review.
