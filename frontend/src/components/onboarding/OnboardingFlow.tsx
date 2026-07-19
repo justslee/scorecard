@@ -21,7 +21,7 @@ import { useMe, publishOnboardingStep, getHydratedGolferProfile } from "@/lib/id
 import { updateGolferProfile } from "@/lib/api";
 import { saveGolferBagAsync } from "@/lib/storage-api";
 import type { GolferProfile } from "@/lib/types";
-import { initialSubStep, SUB_STEP_ORDER, type SubStep } from "./steps";
+import { initialSubStep, SUB_STEP_ORDER, withStallTimeout, type SubStep } from "./steps";
 import NameStep from "./NameStep";
 import HandicapStep from "./HandicapStep";
 import BagStep from "./BagStep";
@@ -214,7 +214,7 @@ export default function OnboardingFlow() {
       setBusy(true);
       setError(null);
       try {
-        await updateGolferProfile({ name, onboardingStep: "name" });
+        await withStallTimeout(updateGolferProfile({ name, onboardingStep: "name" }));
         if (userId) publishOnboardingStep(userId, "name");
         advanceTo("handicap");
       } catch {
@@ -231,7 +231,7 @@ export default function OnboardingFlow() {
       setBusy(true);
       setError(null);
       try {
-        await updateGolferProfile({ handicap, onboardingStep: "handicap" });
+        await withStallTimeout(updateGolferProfile({ handicap, onboardingStep: "handicap" }));
         if (userId) publishOnboardingStep(userId, "handicap");
         advanceTo("bag");
       } catch {
@@ -249,9 +249,9 @@ export default function OnboardingFlow() {
       setError(null);
       try {
         if (clubDistances) {
-          await saveGolferBagAsync(clubDistances);
+          await withStallTimeout(saveGolferBagAsync(clubDistances));
         }
-        await updateGolferProfile({ onboardingStep: "bag" });
+        await withStallTimeout(updateGolferProfile({ onboardingStep: "bag" }));
         if (userId) publishOnboardingStep(userId, "bag");
         advanceTo("intro");
       } catch {
@@ -267,7 +267,7 @@ export default function OnboardingFlow() {
     setBusy(true);
     setError(null);
     try {
-      await updateGolferProfile({ onboardingStep: "done" });
+      await withStallTimeout(updateGolferProfile({ onboardingStep: "done" }));
       if (userId) publishOnboardingStep(userId, "done");
       router.replace("/");
     } catch {

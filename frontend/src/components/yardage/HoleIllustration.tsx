@@ -63,7 +63,12 @@ function smoothPath(pts: Array<[number, number]>) {
   return d;
 }
 
-function fairwayRibbon(pts: Array<[number, number]>, widthStart = 0.18, widthEnd = 0.11) {
+function fairwayRibbon(
+  pts: Array<[number, number]>,
+  widthStart = 0.18,
+  widthEnd = 0.11,
+  join: "miter" | "smooth" = "miter",
+) {
   if (pts.length < 2) return "";
   const left: Array<[number, number]> = [];
   const right: Array<[number, number]> = [];
@@ -80,13 +85,42 @@ function fairwayRibbon(pts: Array<[number, number]>, widthStart = 0.18, widthEnd
     left.push([pts[i][0] + px * w, pts[i][1] + py * w]);
     right.push([pts[i][0] - px * w, pts[i][1] - py * w]);
   }
+  if (join === "miter") {
+    return (
+      `M ${left[0][0]} ${left[0][1]} ` +
+      left.slice(1).map((p) => `L ${p[0]} ${p[1]}`).join(" ") +
+      ` L ${right[right.length - 1][0]} ${right[right.length - 1][1]} ` +
+      right.slice(0, -1).reverse().map((p) => `L ${p[0]} ${p[1]}`).join(" ") +
+      " Z"
+    );
+  }
+  // "smooth": join the SAME offset points with the SAME quadratic-through-
+  // midpoints grammar the centerline (smoothPath) uses, so both corridor
+  // edges curve exactly like the ink line between them.
+  const revRight = [...right].reverse();
   return (
-    `M ${left[0][0]} ${left[0][1]} ` +
-    left.slice(1).map((p) => `L ${p[0]} ${p[1]}`).join(" ") +
-    ` L ${right[right.length - 1][0]} ${right[right.length - 1][1]} ` +
-    right.slice(0, -1).reverse().map((p) => `L ${p[0]} ${p[1]}`).join(" ") +
-    " Z"
+    `M ${left[0][0]} ${left[0][1]}` +
+    smoothJoinSegments(left) +
+    ` L ${revRight[0][0]} ${revRight[0][1]}` + // far (green-end) cap — straight, as today
+    smoothJoinSegments(revRight) +
+    " Z" // tee-end cap closes straight, as today
   );
+}
+
+/** Segment commands (no leading M) through pts, using smoothPath's exact
+ *  grammar: Q(control = interior point, end = midpoint of next pair), then
+ *  T to the final point. 2 points → a single straight L (degenerate holes). */
+function smoothJoinSegments(pts: Array<[number, number]>): string {
+  if (pts.length === 2) return ` L ${pts[1][0]} ${pts[1][1]}`;
+  let d = "";
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+    const my = (pts[i][1] + pts[i + 1][1]) / 2;
+    d += ` Q ${pts[i][0]} ${pts[i][1]} ${mx} ${my}`;
+  }
+  const last = pts[pts.length - 1];
+  d += ` T ${last[0]} ${last[1]}`;
+  return d;
 }
 
 // Hero-only hazard override (login-screen-visual designer iteration): the
@@ -130,7 +164,7 @@ const INTRO = {
 const VARIANTS: Record<string, Variants> = {
   rough: {
     hidden: { opacity: 0 },
-    drawn: { opacity: 0.25, transition: { delay: INTRO.rough.delay, duration: INTRO.rough.duration, ease: T.ease } },
+    drawn: { opacity: 0.25, transition: { delay: INTRO.rough.delay, duration: INTRO.rough.duration, ease: T.wash } },
   },
   // The NEW solid pen-stroke overlay — draws via framer `pathLength`, then
   // crossfades out as the real dashed centerline fades in (plan §6 gotcha:
@@ -144,17 +178,20 @@ const VARIANTS: Record<string, Variants> = {
       opacity: 0,
       transition: {
         pathLength: { delay: INTRO.penStroke.delay, duration: INTRO.penStroke.duration, ease: T.ease },
-        opacity: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.ease },
+        // Shares T.wash with `centerline`'s fade-in below — they crossfade
+        // against each other on the same 0.3s window, so the pair must use
+        // one curve or the line visibly dips mid-crossfade (Slice-7 §2).
+        opacity: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.wash },
       },
     },
   },
   centerline: {
     hidden: { opacity: 0 },
-    drawn: { opacity: 0.3, transition: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.ease } },
+    drawn: { opacity: 0.3, transition: { delay: INTRO.penLift.delay, duration: INTRO.penLift.duration, ease: T.wash } },
   },
   ribbon: {
     hidden: { opacity: 0 },
-    drawn: { opacity: 1, transition: { delay: INTRO.ribbon.delay, duration: INTRO.ribbon.duration, ease: T.ease } },
+    drawn: { opacity: 1, transition: { delay: INTRO.ribbon.delay, duration: INTRO.ribbon.duration, ease: T.wash } },
   },
   hazard: {
     hidden: { opacity: 0 },
@@ -163,13 +200,13 @@ const VARIANTS: Record<string, Variants> = {
       transition: {
         delay: INTRO.hazards.delay + i * INTRO.hazards.stagger,
         duration: INTRO.hazards.duration,
-        ease: T.ease,
+        ease: T.wash,
       },
     }),
   },
   green: {
     hidden: { opacity: 0 },
-    drawn: { opacity: 1, transition: { delay: INTRO.green.delay, duration: INTRO.green.duration, ease: T.ease } },
+    drawn: { opacity: 1, transition: { delay: INTRO.green.delay, duration: INTRO.green.duration, ease: T.wash } },
   },
   teeDot: {
     hidden: { scale: 0, opacity: 0 },
@@ -181,7 +218,7 @@ const VARIANTS: Record<string, Variants> = {
   },
   label: {
     hidden: { opacity: 0 },
-    drawn: { opacity: 1, transition: { delay: INTRO.labels.delay, duration: INTRO.labels.duration, ease: T.ease } },
+    drawn: { opacity: 1, transition: { delay: INTRO.labels.delay, duration: INTRO.labels.duration, ease: T.wash } },
   },
 };
 
@@ -253,7 +290,7 @@ const HoleIllustration = forwardRef<
   // The hero is a NEW static surface with no such contract, so it scales the
   // widths to match the viewBox and gets a bold, commanding fairway corridor.
   const ribbonD = isHero
-    ? fairwayRibbon(scaledPath, scale(0.18), scale(0.11))
+    ? fairwayRibbon(scaledPath, scale(0.18), scale(0.11), "smooth")
     : fairwayRibbon(scaledPath);
   const tee = hole.path[0];
   const green = hole.path[hole.path.length - 1];

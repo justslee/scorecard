@@ -57,10 +57,18 @@ export interface UseAuthFlowResult {
 }
 
 const RESEND_COOLDOWN_MS = 30_000;
+// F1 (login-onboarding-epic-polish-review §4) — a hung FAPI request used to
+// leave `busy=true` forever ("One moment…" + `back()` no-op'ing while busy),
+// trapping the user. `guarded` now races `fn()` against this timer.
+const STALL_TIMEOUT_MS = 15_000;
+const STALL_COPY = "Still no answer — check your connection and try again.";
 
 const OFFLINE_COPY = "You're offline — sign-in needs a connection.";
 const GENERIC_COPY = "Something went wrong on our end. Try again.";
 const PASSWORD_MISMATCH_COPY = "That email and password don't match.";
+
+/** Sentinel thrown by `guarded`'s stall timer — never a raw error message. */
+class StallError extends Error {}
 
 /**
  * Enumeration hygiene — error-code → uniform copy (login-screen-visual plan
@@ -130,23 +138,42 @@ export function useAuthFlow(initialIntent: Intent): UseAuthFlowResult {
     setState((s) => ({ ...s, ...p }));
   }, []);
 
-  /** Runs `fn`, guarding re-entrancy + offline + thrown transport errors. */
+  /**
+   * Runs `fn`, guarding re-entrancy + offline + thrown transport errors +
+   * a stalled (hung, never-resolving) request. `fn()` races a 15s timer
+   * (F1): on timeout this patches the stall copy and clears `busy` so the
+   * user is never trapped behind "One moment…" with `back()` no-op'ing.
+   * Late resolution of the still-in-flight `fn()` is benign — a late
+   * `step: "done"` is truthful, and a late error patch simply replaces the
+   * stall copy with the real one.
+   */
   const guarded = useCallback(
     async (fn: () => Promise<void>) => {
       if (busyRef.current) return;
       busyRef.current = true;
       patch({ busy: true, error: null });
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         if (isOffline()) {
           patch({ error: authErrorCopy("offline") });
           return;
         }
-        await fn();
-      } catch {
-        // Thrown transport error (offline / network failure) — never a raw
-        // exception message.
-        patch({ error: authErrorCopy("offline") });
+        await Promise.race([
+          fn(),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new StallError()), STALL_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (e) {
+        if (e instanceof StallError) {
+          patch({ error: STALL_COPY });
+        } else {
+          // Thrown transport error (offline / network failure) — never a raw
+          // exception message.
+          patch({ error: authErrorCopy("offline") });
+        }
       } finally {
+        if (timer !== undefined) clearTimeout(timer);
         busyRef.current = false;
         patch({ busy: false });
       }

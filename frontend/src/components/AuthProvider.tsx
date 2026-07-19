@@ -10,28 +10,6 @@ import { setAuthDiag } from "@/lib/auth-diag";
 import { getNativeToken, setNativeToken } from "@/lib/native-token-store";
 import { IdentityBridge } from "@/lib/identity";
 
-// Yardage-book appearance: warm paper / dark-ink palette to match the rest of
-// the app. Uses Clerk's CSS-variable layer so the built-in widgets (sign-in,
-// sign-up, profile) stay visually consistent without fighting the app's inline
-// styles. Hex values mirror the T.* token constants in yardage/tokens.ts.
-const clerkAppearance = {
-  variables: {
-    colorPrimary: "#1a2a1a",          // T.ink  — buttons, focus rings, links
-    colorBackground: "#f4f1ea",       // T.paper — card / modal background
-    colorText: "#1a2a1a",             // T.ink
-    colorTextSecondary: "#6b6558",    // T.pencil — labels, hints
-    colorInputBackground: "#ece7db",  // T.paperDeep — input fields
-    colorInputText: "#1a2a1a",        // T.ink
-    colorDanger: "#b84a3a",           // T.errorInk
-    borderRadius: "2px",              // crisp, book-like corners
-  },
-  elements: {
-    // Minimal structural overrides; variables drive the colour scheme.
-    card: "shadow-sm",
-    socialButtonsBlockButton: "border",
-  },
-};
-
 // ─── Native session persistence (Capacitor iOS / Android only) ───────────────
 //
 // Problem: in a Capacitor WKWebView, cookies from Clerk's FAPI
@@ -202,11 +180,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // Standard ClerkProvider on EVERY platform: clerk-js loads with its UI
-  // components so <SignIn/> mounts without throwing. Native interception is
-  // layered on via the window globals registered above.
+  // Standard ClerkProvider on EVERY platform, still loading clerk-js with UI
+  // components (no bundled instance — see the v1.0.365 history above). The
+  // only Clerk-rendered element anywhere is the headless
+  // AuthenticateWithRedirectCallback in sso-callback/page.tsx, so there's no
+  // themed prebuilt DOM left to skin — no `appearance` prop needed. Native
+  // interception is layered on via the window globals registered above.
   return (
-    <ClerkProvider publishableKey={publishableKey} appearance={clerkAppearance}>
+    <ClerkProvider publishableKey={publishableKey}>
       {/* Bridge registers useAuth().getToken into the module singleton so
           non-component code (api.ts / deepgram.ts) can fetch JWTs without
           relying on window.Clerk (which doesn't hydrate on capacitor://). */}

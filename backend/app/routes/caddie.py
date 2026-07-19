@@ -363,6 +363,7 @@ async def start_session(
         # this is a cheap all-skip pass with ZERO LLM calls.
         bg.add_task(_precompute_course_guides, course_id)
 
+    bag_source = "none"
     if request.club_distances:
         # Normalize at the bag assignment (owner P0 2026-07-18) — the
         # client/profile bag may carry model shorthand ('7i'/'3w') or
@@ -370,6 +371,23 @@ async def start_session(
         # session.club_distances (e.g. shot_distance_payload) sees the same
         # canonical keys `generate_recommendation`'s own chokepoint produces.
         session.club_distances = normalize_club_distances(request.club_distances)
+        bag_source = "request"
+    else:
+        # Server-side grounding (specs/onboarding-bag-caddie-grounding-plan.md
+        # §2, §4.5) — the STORED bag is the source of truth when the client
+        # sent none (fresh device, empty local cache). Never let an empty/
+        # missing profile bag clobber an already-persisted session bag.
+        stored = await memory_mod.get_golfer_bag_clubs(user_id)
+        normalized = normalize_club_distances(stored) if stored else {}
+        if normalized:
+            session.club_distances = normalized
+            bag_source = "profile"
+        elif session.club_distances:
+            bag_source = "session"  # keep prior bag; NEVER clear it with an empty profile
+    log.info(
+        "session/start: club_distances source=%s clubs=%d",
+        bag_source, len(session.club_distances),
+    )
     if request.handicap is not None:
         session.handicap = request.handicap
 
@@ -402,6 +420,7 @@ async def start_session(
         "has_weather": session.weather is not None,
         "shot_count": len(session.shot_history),
         "conversation_length": len(session.conversation_history),
+        "bag_source": bag_source,
         "memories": [
             {"kind": m.kind, "summary": m.summary, "weight": float(m.weight)}
             for m in memories
@@ -1705,6 +1724,20 @@ async def _build_voice_prompt(
         memories_block = ""
         profile = None
 
+    # The stateless orb has no session bag, only whatever the client sent —
+    # fetch the stored profile bag when it sent none so its off-course
+    # answers bind to the user's clubs too (specs/
+    # onboarding-bag-caddie-grounding-plan.md §1e). Own fail-open block so a
+    # bag-fetch hiccup can never wipe out an already-successful memories/
+    # profile fetch above.
+    stored_bag: dict = {}
+    if not request.club_distances:
+        try:
+            stored_bag = await memory_mod.get_golfer_bag_clubs(user_id)
+        except Exception:
+            log.exception("stored-bag fetch failed; continuing without it")
+            stored_bag = {}
+
     # hole_number None = off-course general chat (the Looper orb outside a
     # round): no hole context line — the caddie must not pretend to be on one.
     context_parts = (
@@ -1731,10 +1764,14 @@ async def _build_voice_prompt(
     if effective_handicap is not None:
         context_parts.append(f"Player handicap: {effective_handicap}")
 
-    if request.club_distances:
+    club_distances_for_prompt = (
+        request.club_distances
+        or (normalize_club_distances(stored_bag) if stored_bag else {})
+    )
+    if club_distances_for_prompt:
         clubs_str = ", ".join(
             f"{CLUB_DISPLAY_NAMES.get(k, k)}: {v}y"
-            for k, v in sorted(request.club_distances.items(), key=lambda x: x[1], reverse=True)
+            for k, v in sorted(club_distances_for_prompt.items(), key=lambda x: x[1], reverse=True)
             if v
         )
         if clubs_str:

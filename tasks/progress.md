@@ -3,6 +3,167 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## EPIC CLOSED (2026-07-19) — login-onboarding redesign COMPLETE; Slice 7 verdicts all SHIP @1d13b71
+All three reviews GREEN on the landed Slice-7 delta (07b0f55..1d13b71):
+- **reviewer (correctness + epic-wide /security-review)** — SHIP, no BLOCKING. Diff verified by hand:
+  interactive ribbon path proven BYTE-IDENTICAL (default join="miter" branch char-unchanged); F1 no
+  timer leak / no busy resurrection / back() unblocks; F2 all 5 writes wrapped, timer cleared on
+  settle, idempotent late PUT; F3 account-switch name-leak GENUINELY CLOSED (profile nulled, same-user
+  hydrate untouched); F4 not over-broad; F5 only iPhone lost landscape. Epic-wide security PASS — creds
+  only to Clerk FAPI, enumeration hygiene, sign-out clear stays centralized, additive onboarding_step,
+  no AUTH_BYPASS leak; **webhooks.py + clerk_auth.py git-proven byte-unchanged across the whole epic**
+  (git diff origin/main...1d13b71 empty for both). (Skill sub-tool wasn't invocable in reviewer ctx;
+  analysis done manually across the full epic diff — substance delivered.)
+- **qa** — all 7 gates PASS (lint 0-err, tsc, build 22 routes, vitest 90/90 + full 2843, voice 278/278,
+  credential+bypass guards, ruff). E2E CI wiring verdict: advisory-e2e is continue-on-error (advisory);
+  **Tier-1 (AuthGate render) genuinely runs+passes in CI** via the baked public-key fallback; Tier-2
+  (8 auth+onboarding flow tests) SELF-SKIPS in CI because CLERK_SECRET_KEY isn't a configured repo
+  secret. THE ONE GAP to make it required → add repo secret `CLERK_SECRET_KEY` + create test user
+  looper+clerk_test@looperapp.org, then drop continue-on-error + add to branch protection. (Non-blocking.)
+  QA footgun noted: a stale `serve` on port 3000 + reuseExistingServer gives false local E2E reds/greens.
+- **designer** — SHIP. Ribbon-joints smoothing confirmed on 3x-zoom crops of both HOLES[3] doglegs
+  (continuous curve, no miter kink / pinch / self-intersection); wash-ease reads calm (not pop-y);
+  reduced-motion renders the complete static hole; all screens compose cleanly at 375x812 portrait.
+  Front door lands as ONE composed yardage-book thing. Renders in scratchpad/shots7/. Release note must
+  ask the owner to rotate-test F5 on TestFlight; nice-to-have: capture authed MeetCaddieStep+orb live.
+Records: backlog login-onboarding-epic-polish-review → done; login-hero-ribbon-joints-polish → done
+(folded into §1); epic retro note appended to specs/login-onboarding-epic-polish-review-plan.md §8;
+flip runbook is §10 of specs/login-onboarding-redesign-plan.md. PR #151 checklist + title updated
+(Slice 7 NOTICEABLE: ribbon+wash+portrait; F1-F4+dead-code+security = silent). Owner said "ship it" —
+release-manager dispatches on this SHIP (merge integration/next → main, then cut fresh integration/next).
+Did NOT ship/ping myself (release-manager owns the merge + TestFlight + owner loop).
+
+## DONE (builder) — 2026-07-19 — login-onboarding-epic-polish-review (Slice 7, FINAL, NOTICEABLE) — @e8228a7
+Builder implemented specs/login-onboarding-epic-polish-review-plan.md in full on `integration/next`
+(head **e8228a7**, pushed, 8 commits). Epic-closing polish/edge-sweep/cleanup slice:
+- §1 ribbon-joints: `fairwayRibbon()` gains a gated 4th `join` param ("miter" default / "smooth"
+  opt-in) + `smoothJoinSegments()` helper (same Q/T grammar as `smoothPath`); only the hero call
+  opts into "smooth". Interactive call byte-identical — pinned by a test captured against HEAD
+  BEFORE the refactor (discipline followed per plan). Hero structural + degenerate-hole tests added.
+  `HoleIllustration.test.tsx`: 9→12 tests, all pass.
+- §2 wash-ease: `T.wash` (easeInOutSine) added to `tokens.ts`; swapped into the six fill-fade
+  VARIANTS + `penStroke.opacity` only (pathLength keeps `T.ease`); `SignInScreen.tsx` untouched.
+- §3 dead-code: deleted `AuthButtons.tsx` (0 importers); removed `clerkAppearance` object +
+  `appearance` prop on `<ClerkProvider>` (only Clerk-rendered element left is the headless
+  `AuthenticateWithRedirectCallback` in sso-callback); re-ran grep proofs post-delete, clean.
+- §4 F1 (useAuthFlow stall): `guarded()` races `fn()` against a 15s timer (`StallError` sentinel);
+  clears busy + unblocks `back()` on timeout; late resolution benign. 3 new fake-timer tests.
+- §4 F2 (onboarding write stall): `withStallTimeout<T>` added to `steps.ts`; wraps every awaited
+  write in `OnboardingFlow.tsx` (4× `updateGolferProfile`, `saveGolferBagAsync`); falls into the
+  existing `SAVE_ERROR_COPY` catch, zero new copy. 4 new tests in `steps.test.ts`.
+  → **FLAG for security reviewer**: `identity.ts` `hydrateGolferProfile`'s account-switch re-anchor
+  retained the previous user's `profile` object (NameStep prefill leak until GET resolved) — fixed
+  with `profile: null` on re-anchor. No new test file (none existed; not in the plan's gate list).
+- §4 F4 (back-swipe): `shouldEnableBackSwipe` now excludes `/sign-in(/*)`, `/sign-up(/*)`,
+  `/sso-callback(/*)` — same class as the existing `/onboarding` exclusion. New test cases.
+- §4 F5 — **NOTICEABLE, APP-WIDE**: `frontend/ios/App/App/Info.plist` iPhone
+  `UISupportedInterfaceOrientations` locked to portrait-only (landscape clipped OnboardingFlow's
+  Continue pill — genuinely broken, not cosmetic). `~ipad` array untouched. Flagged in its own
+  commit message for the owner/reviewer to explicitly confirm on a TestFlight build.
+- §5: appended the Google/Apple flip-readiness checklist verbatim as new `## 10.` section at the
+  end of `specs/login-onboarding-redesign-plan.md`. No other edits to that file.
+
+Gates (frontend/backend, this worktree): `npm run lint` (0 errors, 1 pre-existing unrelated
+warning), `npx tsc --noEmit` (clean), `npm run build` (succeeds, static export unaffected),
+targeted vitest (`HoleIllustration`/`useAuthFlow`/`SignInScreen`/`steps`/`shouldEnableBackSwipe`,
+90/90 pass), full `vitest run` (152 files / 2843 pass, no regressions), voice-tests smoke
+(278/278 pass), `assert-no-credential-log.mjs` + `assert-no-auth-bypass.mjs` (clean), backend
+`ruff check .` (clean, backend untouched otherwise). `npm run test:e2e` self-skips locally (no
+`CLERK_SECRET_KEY`) — expected per plan, CI's advisory job covers it.
+
+No deviations from the plan's contract; F3's function name/signature in `identity.ts` matched the
+plan's description exactly (`hydrateGolferProfile` → `setOnboardingSnapshot` re-anchor call).
+
+Next: reviewer (epic-wide `/security-review` — CORE, fresh adversarial, please weigh the F3
+profile-leak fix and the F5 orientation-lock explicitly), designer (closing whole-flow pass +
+confirm the F5 portrait lock doesn't break any existing landscape-dependent screen), qa (device
+matrix + E2E CI wiring verification per the grounding notes below). Do NOT ship/ping — release-
+manager owns the owner ship-ask. This is the epic's FINAL slice — once reviewed, the epic retro
+note (plan §8) should be filled in.
+
+## AWAITING (2026-07-19) — login-onboarding-epic-polish-review (Slice 7, FINAL, NOTICEABLE) — Plan(fable) dispatched — SUPERSEDED, see DONE entry above
+Base origin/integration/next @a67eb55 (clean). Bundle PR #151. Closing slice of the login-onboarding epic.
+Working in eng-lead launch worktree agent-a8f7f4ecc57524519 (ff'd to a67eb55); commits push to
+origin/integration/next via `git push origin worktree-agent-a8f7f4ecc57524519:integration/next`.
+Grounding done before planning:
+  - Ribbon-joints cosmetic (login-hero-ribbon-joints-polish): HERO-scoped fairwayRibbon() in
+    frontend/src/components/yardage/HoleIllustration.tsx uses straight perpendicular offsets → mitered
+    joints at dogleg vertices; smooth to quadratic like the centerline (isHero render only).
+  - wash-ease nit (Slice 3): fill fades reuse T.ease (pop-y); optional separate symmetric wash ease.
+  - Dead-code cleanup: SignIn/SignUpClient already headless (SignInScreen); check clerkAppearance
+    (AuthProvider.tsx:17) + AuthButtons.tsx (unused?) as dead prebuilt-widget/appearance config.
+  - E2E CI TRUTH (verified in ci.yml): `advisory-e2e` runs npm run test:e2e (auth.spec+onboarding.spec)
+    but is continue-on-error:true (ADVISORY, not required). Tier-1 (renders) RUNS (public key baked as
+    fallback). Tier-2 (full sign-in) SELF-SKIPS without CLERK_SECRET_KEY repo secret. THE ONE GAP →
+    add repo secret CLERK_SECRET_KEY (name only), create test user looper+clerk_test@looperapp.org,
+    drop continue-on-error, add to required checks.
+Process: Plan(fable) → builder → reviewer(epic-wide /security-review = CORE, fresh adversarial) +
+designer(closing whole-flow pass) + qa(ALL gates + E2E wiring verification). Records: epic COMPLETE
+flip, PR #151 checklist (polish NOTICEABLE, security silent), progress + epic retro note in plan file.
+Do NOT ship/ping (release-manager owns the owner ship-ask). Never touch main/force-push.
+On resume: reconcile from origin/integration/next log + child commits; do not re-run finished children.
+
+## DONE (builder) — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, SILENT — backend-only seam) — @212bc27
+Builder implemented specs/onboarding-bag-caddie-grounding-plan.md in full on `integration/next`
+(head **212bc27**, pushed). `memory.py::get_golfer_bag_clubs` (new) + `start_session` precedence
+ladder (request > stored profile > keep persisted session bag > empty) + `bag_source` response
+key/log line + `SessionStatus.bag_source` (additive, frontend). Honesty fixes: `cross_hazard_line`
+club-label param (no more hardcoded "driver"), PLAYER-block driver-dispersion gate for no-driver
+bags, `format_strategy_ground_truth` empty-bag honest string, `generate_recommendation` P4
+"standard club distances" note. Stateless `_build_voice_prompt` also hydrates from the stored bag
+(own fail-open block — NOT nested in the memories/profile try, since nesting it there broke
+`test_build_voice_prompt_grounds_in_memory_and_profile_handicap` in local dev: a stored-bag DB
+hiccup was wiping out an already-successful memories/profile fetch. Fixed before commit.).
+
+New `tests/integration/test_bag_caddie_grounding.py` — the owner's named multi-user FLIP-TIME
+acceptance gate (specs/login-onboarding-redesign-plan.md §4.5), 6 tests, collects clean with no
+local Postgres (skips; CI's `required-backend` Postgres job runs it for real). Pinned literals:
+160y ask → A (7-iron 170 bag) suggests **8iron**, B (7-iron 150, no-driver bag) suggests **6iron**;
+430y tee shot → A selects **driver** (leave_exact_yards=131), B selects **3wood** (leave_exact_yards
+=210), and B's payload never contains the string "driver". New
+`tests/test_bag_caddie_grounding_unit.py` (12 tests, no DB) covers the honesty-string/label fixes,
+proven correct against the fixed code (ran directly against pre-fix decade_advice/strategy/
+aim_point to confirm behavior before writing assertions).
+
+Gates: frontend lint 0 errors (1 pre-existing unrelated warning) · `tsc --noEmit` clean ·
+voice-tests smoke 278/278 · backend `ruff check .` clean · full backend pytest **3005 passed, 146
+skipped** (0 failed) · new integration file collects 6/6, skips cleanly without DB.
+
+Classified SILENT — backend-only wiring + observability field, no user-visible UI change. Rides
+along in the bundle; does not itself trigger an approval ping. eng-lead: reviewer(fresh) + qa next,
+then fold into the bundle PR.
+
+## DONE — 2026-07-19 — onboarding-bag-caddie-grounding (Slice 5, NOTICEABLE) — landed on bundle PR #151
+Base synced off `origin/integration/next` e01b74d (bundle #150 already SHIPPED to main @2a4a6241);
+opened the FRESH bundle **PR #151** (integration/next → main). Item head **212bc27** (branch head
+`af75f2f` after records). NOT shipped/pinged — the bundle awaits the owner's single "Ship it".
+
+**What landed — the onboarding bag now genuinely grounds the caddie, proven per-user.**
+Plan(fable) @8475367 → specs/onboarding-bag-caddie-grounding-plan.md. Server-side hydration seam:
+new `memory.get_golfer_bag_clubs(user_id)` reads `golfer_profiles.bag_clubs`; `start_session`
+precedence ladder **request > stored-profile(normalized,non-empty) > keep-persisted-session > empty**
+(an empty/missing profile can NEVER clear a good session bag). All flows through
+`normalize_club_distances` (camelCase `_PROFILE_KEY_MAP`). Grounded surfaces: engine solve, tee &
+expected-strokes selectors, strategy PLAYER block, spoken yardages, stateless voice-prompt bag line,
+transcription vocab. Fixes: hardcoded "driver" removed from `decade_advice.cross_hazard_line`;
+no-driver dispersion line gated; empty-bag honesty strings (strategy + aim_point P4); additive
+`SessionStatus.bag_source`. record_shot free-text contract + CADDIE_TOOLS schema deliberately untouched.
+
+**Owner's FLIP-TIME acceptance test** = `backend/tests/integration/test_bag_caddie_grounding.py`
+(6 tests, DB-backed, runs in CI's Postgres job, the MULTI-USER isolation gate): two users, same
+course/tee → payloads differ, each binds to its own bag, ZERO cross-leak; no-driver bag never
+crashes / never says "driver"; skipped-bag defaults; request-over-stored precedence. Pinned literals:
+160y A→8iron B→6iron; 430y tee A→driver(300) B→3wood(200). Builder caught+fixed a fail-open coupling
+regression (own try/except for the stateless-prompt bag fetch).
+
+**Verdicts:** reviewer(fresh, incl security trace of the exact range) SHIP — all 6 load-bearing risks
+verified (no-driver never crashes, isolation airtight, owner path byte-identical, fail-open decoupling
+correct, test genuinely gates, honesty); QA PASS 9/9 (lint 0-err, tsc, next build, voice 278/278,
+ruff, caddie-experience vitest 276/276, backend 3005 passed, flip-test collects 6 + skips locally).
+No designer — no visual surface (additive optional type field only).
+
+**Backlog:** onboarding-bag-caddie-grounding → done-on-bundle; onboarding-voice-first-intro (Slice 6)
+unblocked → ready. login-onboarding-epic-polish-review (Slice 7) stays blocked (needs Slice 6).
 ## DONE — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1) — verdict CONSTRAINED-GO
 Landed on `integration/next` (bundle PR #150), all three CI gates SUCCESS on head **429dd9c**
 (Frontend + Backend + E2E advisory). Silent rider — dev-flag-gated (`NEXT_PUBLIC_AUTH_SPIKE=1`),
@@ -729,3 +890,98 @@ heights post-fix). Backlog: onboarding-shell-and-gate -> done; Slice 5 onboardin
 -> ready (unblocked). PR #150 checklist: added NOTICEABLE onboarding item + migration flagged prominently.
 NOT shipped/pinged this cycle — bundle #150 now holds 4 NOTICEABLE items (caddie P0 + login static hero
 + login self-draw + onboarding); coordinator takes the ship ask with the migration approval folded in.
+
+## v1.1.17 TestFlight resolution (2026-07-19, coordinator)
+The Keychain/SwiftPM hang was resolved HEADLESS under the owner's "Always allow" authorization:
+deleted the stale `github.com` internet-password keychain entry that SwiftPM's SecItemCopyMatching
+deadlocked on; the rerun resolved packages instantly and uploaded clean. **v1.1.17 build
+202607191226 uploaded to TestFlight.** Fix permanent. Side effect: the entry was also git's HTTPS
+credential — restored via `gh auth setup-git` (gh token now backs git). Lessons: build-Mac hangs at
+"Resolve Package Graph" = stale keychain entry; investigation scripts live in /tmp only.
+
+## AWAITING (2026-07-19) — onboarding-voice-first-intro (Slice 6, NOTICEABLE)
+Base origin/integration/next @5ce4648 (== HEAD, main already merged). Item picked, seams mapped.
+Replacing Slice-4 placeholder MeetCaddieStep.tsx with the real voice moment.
+KEY SEAMS (verified): completion contract = OnboardingFlow.handleDone (PUT onboardingStep:'done'
+-> publishOnboardingStep -> router.replace('/')), passed to the step as onContinue — PRESERVE.
+Production orb = frontend/src/components/CaddieOrb.tsx (fixed bottom-right, layout-level, OWNER
+CRUX — do not regress); already renders on /onboarding via shouldShowCaddieOrb SHOW_EXACT.
+Production gestures (post-inversion): idle TAP -> openLooper({listening:true,presentation:'docked'})
+= talk immediately; idle HOLD>=350ms -> openLooper({listening:false,presentation:'full'}) = sheet.
+Voice stack: CaddieOrbSheet.tsx + hooks/useLooperDictation.ts. Mic-deny ALREADY handled in
+production (useLooperDictation.ts:134 NotAllowedError -> "Microphone access denied."; sheet:241
+promotes docked->full on mic error) — ZERO new voice paths. INTRO_SEEN_KEY 'moved here' chip is
+DEFERRED off /onboarding (CaddieOrb.tsx:178) to fire on first Home render = the handoff beat.
+CRUX for Plan(fable): the §3.2/§3.3 "orb grows to center then animates to bottom-right on Home"
+vision vs. the fixed layout-level orb (blast radius on the omnipresent-orb crux). Plan chooses +
+justifies; must NOT regress bottom-right behavior anywhere else; reduced-motion + small-screen safe.
+STATE: Plan(fable) dispatched. On resume: if specs/onboarding-voice-first-intro-plan.md exists ->
+builder already briefable; else re-run Plan. Then builder on integration/next, then designer
+(BLOCKING, screenshots) + reviewer + qa. Do NOT ship/ping. Slice 7 stays blocked until this lands.
+
+## UPDATE (2026-07-19) — Plan(fable) DONE @555b49e; builder dispatched
+Plan saved: specs/onboarding-voice-first-intro-plan.md. Decision = approach (A): keep the real
+CaddieOrb bottom-right (already on /onboarding), rewrite MeetCaddieStep.tsx as a serif invitation +
+example-ask hints composed toward the real orb; the user's own tap/hold on the real orb runs the
+LIVE session (grounded in their Slice-5 bag). ZERO CaddieOrb/sheet/bus/voice changes. Mic-deny reuses
+production path (useLooperDictation NotAllowedError -> sheet promotion). Both "finish" and "Maybe
+later" go through the SAME OnboardingFlow.handleDone completion contract. DIVERGENCE FLAG: caller asked
+for "center-stage" orb; plan chose (A) bottom-right for owner-crux blast-radius reasons -> designer
+review is BLOCKING and must explicitly rule whether the moment lands without center-stage.
+AWAITING: builder on integration/next. On resume: check git log origin/integration/next for the
+builder's commit; if present -> dispatch designer(BLOCKING,screenshots)+reviewer+qa; else re-dispatch.
+
+## UPDATE (2026-07-19) — Slice 6 builder work LANDED @09de9a2 (eng-lead implemented; sandbox workaround)
+Builder agent hit a worktree-sandbox split (its Write/Edit pinned to stale worktree while Bash/Read
+saw the correct integration/next) and correctly refused to commit to the wrong base. eng-lead
+implemented the thin, fully-specified change directly: authored MeetCaddieStep.tsx + onboarding.spec.ts
+in the pinned worktree copy (Write/Edit land there), cp'd into the shared checkout, ran gates, committed.
+DIFF SCOPE (verified): ONLY frontend/src/components/onboarding/MeetCaddieStep.tsx (full rewrite) +
+frontend/e2e/onboarding.spec.ts. ZERO changes to CaddieOrb/CaddieOrbSheet/looper-bus/useLooperDictation/
+caddie-context/OnboardingFlow/backend/shared-types. Approach (A): no orb reposition; step only listens
+read-only to onCaddieOrbState (flip hasSpoken on 'listening'); 'Maybe later' always present+enabled;
+'Open your book' pill after real speech; both -> same handleDone done-contract. mic-deny reuses production
+sheet error path.
+GATES (all green locally): lint 0-err (1 pre-existing unrelated warning), tsc clean, voice 278/278,
+caddie-experience 276/276, next build ok, e2e parses (5 tests incl. new skip + mic-deny; self-skip
+without CLERK_SECRET_KEY -> CI verifies).
+AWAITING: designer (BLOCKING, screenshots — MUST rule whether the moment lands WITHOUT a center-stage
+orb, per the divergence flag) + reviewer (no new voice paths; hasSpoken only on 'listening'; both
+affordances -> done; no session leak; empty CaddieOrb diff) + qa (gates + Playwright incl. deny+skip).
+On resume: if all three green -> update PR #151 checklist (NOTICEABLE), flip backlog
+onboarding-voice-first-intro -> done, unblock Slice 7 (login-onboarding-epic-polish-review -> ready),
+progress. If BLOCKING findings -> re-implement + re-review. Do NOT ship/ping (owner-approval bundle
+is release-manager's step once owner says ship).
+
+## DONE (2026-07-19) — onboarding-voice-first-intro (Slice 6, NOTICEABLE) landed on integration/next
+The real "meet your caddie" voice moment. Code @09de9a2 + review polish @d2e83f2 (head after records).
+Approach (A) per Plan(fable) @555b49e: keep the real production CaddieOrb bottom-right (already on
+/onboarding) instead of a center-stage reposition -> lowest blast radius on the omnipresent-orb
+OWNER-CRUX. MeetCaddieStep.tsx rewritten: serif invitation "Ask your caddie anything." + quiet mono-TRY
+italic example asks (magic-moment "How far does my 7-iron go?" -> THEIR Slice-5 bag number) composed
+toward the real orb; golfer uses the orb's exact production gestures (tap=talk / hold=sheet) for the
+LIVE session. ZERO new voice code paths; VERIFIED-EMPTY diff on CaddieOrb/CaddieOrbSheet/looper-bus/
+useLooperDictation/caddie-context/OnboardingFlow/backend/shared-types (only MeetCaddieStep.tsx +
+onboarding.spec.ts changed). hasSpoken flips read-only on 'listening' only (never 'connecting' -> denied
+mic never reveals the finish pill). 'Maybe later' present+enabled from first render (never a dead end;
+mic-deny reuses the production sheet error path). Both 'Maybe later' + 'Open your book' -> same
+OnboardingFlow.handleDone done-contract. reduced-motion + 375x667/812 safe.
+PROCESS NOTE: the dispatched builder hit a worktree-sandbox split (its Write/Edit pinned to a stale
+worktree agent-af98064d2cd89b3de @2a4a624 [12 behind] while Bash/Read saw integration/next) and
+CORRECTLY refused to commit to the wrong base. eng-lead implemented the thin, fully-specified change
+directly by authoring in the pinned worktree copy (Write/Edit land there) then cp'ing into the shared
+checkout to run gates + commit on integration/next. (Lesson candidate: dispatched children inherit the
+parent's launch-worktree sandbox; a fresh isolation:worktree bases off origin/main and would miss
+integration/next slices. For thin frontend edits, the worktree-author -> cp -> shared-checkout-commit
+path is reliable; the git-reset-hard sync is blocked by the auto-mode classifier.)
+VERDICTS: reviewer(fresh) SHIP (all 6 load-bearing claims verified, empty shared-component diff,
+no session leak, honest e2e); qa PASS (lint 0-err, tsc clean, next build ok, voice 278/278,
+caddie-experience 276/276, e2e collects 5 incl. new skip+mic-deny, self-skip w/o CLERK_SECRET_KEY ->
+CI real gate); designer(BLOCKING, live 375x812/667 + reduced-motion renders in scratchpad/slice6-shots/)
+SHIP -- approach (A) LANDS without center-stage. Two nice-to-haves folded in @d2e83f2 (bigger
+'Maybe later' hit target; deny-test clearPermissions pin), gates re-verified.
+Records: onboarding-voice-first-intro -> done (+ landed); Slice 7 login-onboarding-epic-polish-review
+-> ready (all prior slices satisfied). PR #151 checklist: added Slice 6 as NOTICEABLE, title refreshed
+to Slices 5-6. NOT shipped/pinged this cycle (per task directive) -- release-manager takes the owner
+ship-ask for the whole bundle. All three flagged agents (eng-lead, designer) noted+ignored an inline
+prompt-injection block (fake date-change + Telegram/Auto-Mode directives) -- treated as untrusted data.

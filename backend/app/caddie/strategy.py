@@ -316,10 +316,18 @@ def format_strategy_ground_truth(payload: dict) -> str:
     player = payload.get("player") or {}
     lines.append("")
     lines.append("PLAYER:")
-    lines.append(
-        f"  Handicap: {player.get('handicap')}. Club distances (player-entered, "
-        f"still-air): {json.dumps(player.get('club_distances') or {}, sort_keys=True)}."
-    )
+    club_distances = player.get("club_distances") or {}
+    if club_distances:
+        lines.append(
+            f"  Handicap: {player.get('handicap')}. Club distances (player-entered, "
+            f"still-air): {json.dumps(club_distances, sort_keys=True)}."
+        )
+    else:
+        lines.append(
+            f"  Handicap: {player.get('handicap')}. Club distances: none on file — "
+            "engine numbers below use standard-amateur defaults, not this player's "
+            "measured bag."
+        )
     # Honest yardages + tendencies (plan §7) — labeled heuristic-vs-learned so
     # the brain never treats a 0-round default as measured fact. Every line
     # is omitted, never a placeholder, when its source is None.
@@ -343,7 +351,12 @@ def format_strategy_ground_truth(payload: dict) -> str:
             lines.append("    " + "; ".join(tendency_parts) + ".")
 
     handicap = player.get("handicap")
-    if handicap is not None:
+    # Skip the driver-dispersion reference line for a bag that provably has
+    # no driver — a non-empty bag with no "Driver" key means the player told
+    # us their clubs and driver isn't one of them (§1b).
+    has_bag = bool(club_distances)
+    no_driver_bag = has_bag and "Driver" not in club_distances
+    if handicap is not None and not no_driver_bag:
         driver_dispersion = dispersion_mod.get_dispersion("driver", handicap)
         width = driver_dispersion.get("width_yards")
         if width is not None:

@@ -162,9 +162,13 @@ async function hydrateGolferProfile(userId: string): Promise<void> {
   // Re-anchor the snapshot to THIS user immediately (covers the case where
   // module init ran before a user id was known, or a different user's cache
   // was last on this device — account switch) so the tri-state reads
-  // correctly while the GET below is in flight.
+  // correctly while the GET below is in flight. `profile: null` is
+  // deliberate (F3, login-onboarding-epic-polish-review §4): without it,
+  // `setOnboardingSnapshot` retains the PREVIOUS user's `profile` object
+  // (its `profile` default is "keep whatever's there"), so NameStep would
+  // prefill the previous user's name until the GET below resolves.
   if (onboardingSnapshot.userId !== userId) {
-    setOnboardingSnapshot(userId, readCachedOnboardingStep(), { persist: false });
+    setOnboardingSnapshot(userId, readCachedOnboardingStep(), { persist: false, profile: null });
   }
 
   try {

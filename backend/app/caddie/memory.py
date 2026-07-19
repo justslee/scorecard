@@ -14,7 +14,7 @@ import anthropic
 from sqlalchemy import select
 
 from app.db.engine import async_session
-from app.db.models import CaddieMemory, PlayerProfile
+from app.db.models import CaddieMemory, GolferProfile, PlayerProfile
 from app.caddie.session import RoundSession
 
 
@@ -41,6 +41,20 @@ async def get_top_memories(user_id: str, limit: int = _MEMORY_DEFAULT_LIMIT) -> 
 async def get_player_profile(user_id: str) -> Optional[PlayerProfile]:
     async with async_session() as db:
         return await db.get(PlayerProfile, user_id)
+
+
+async def get_golfer_bag_clubs(user_id: str) -> dict:
+    """The user's stored bag (golfer_profiles.bag_clubs — camelCase GolferProfile
+    keys, written by onboarding Slice 4 / the /profile editor). {} when no row
+    or no bag. Raw keys — callers normalize through the ONE chokepoint
+    (club_selection.normalize_club_distances)."""
+    async with async_session() as db:
+        row = (
+            await db.execute(
+                select(GolferProfile.bag_clubs).where(GolferProfile.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+    return dict(row or {})
 
 
 def render_memories_for_prompt(memories: list[CaddieMemory]) -> str:

@@ -1192,7 +1192,7 @@ def generate_recommendation(
         # P1 — driving-zone DECADE landing advice + any dead-ahead cross hazard.
         if landing_advice:
             _r.append((1, landing_advice))
-        cross_line = cross_hazard_line(zone, float(club_dist))
+        cross_line = cross_hazard_line(zone, float(club_dist), CLUB_DISPLAY_NAMES.get(club, club))
         if cross_line:
             _r.append((1, cross_line))
         # P2 — fairway-bend-in-window line (honest reuse of HoleBend; omitted
@@ -1279,6 +1279,11 @@ def generate_recommendation(
             ))
     else:
         exp_score = expected_strokes(distance_yards, "fairway", handicap)
+
+    # P4 — honesty note when the player has no stored bag at all (§4.2): every
+    # number above came from DEFAULT_CLUB_DISTANCES, not this player's clubs.
+    if not clubs:
+        _r.append((4, "Using standard club distances — set up your bag in Profile for your own numbers"))
 
     # Apply priority sort + cap → final reasoning list (calm, voice-readable)
     reasoning = prioritize_reasoning(_r)

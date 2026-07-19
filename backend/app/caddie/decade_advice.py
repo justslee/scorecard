@@ -580,13 +580,20 @@ def decade_landing_advice(
     return f"Favor the {aim_direction} half of the fairway — {dangerous_side} is the tighter side."
 
 
-def cross_hazard_line(zone: list[Hazard], expected_advance_yds: float) -> Optional[str]:
+def cross_hazard_line(
+    zone: list[Hazard], expected_advance_yds: float, club_display: str = "driver",
+) -> Optional[str]:
     """Advisory-only line for a hazard crossing the fairway dead ahead in the
     driving zone (`line_side == "center"`), independent of the lateral aim
     advice. Severe/death only, and only within a tight carry window around
     the expected advance — club change stays out of scope (matches the
     repo's additive-advice tradition; `decade_aim_advice` never changes club
     either).
+
+    `club_display` names the club actually being played on this tee shot
+    (the caller passes the selected club's display name) — a no-driver bag
+    must never be told "driver brings it in play" (specs/
+    onboarding-bag-caddie-grounding-plan.md §1b).
     """
     candidates = [
         h for h in zone
@@ -599,4 +606,4 @@ def cross_hazard_line(zone: list[Hazard], expected_advance_yds: float) -> Option
     worst = max(candidates, key=lambda h: _SEVERITY_ORDER.get(h.penalty_severity, 0))
     name = _friendly_hazard_name(worst)
     name = name[0].upper() + name[1:]
-    return f"{name} crosses at ~{int(round(worst.carry_yards))} — driver brings it in play."
+    return f"{name} crosses at ~{int(round(worst.carry_yards))} — {club_display} brings it in play."
