@@ -3,6 +3,23 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-19) — multiuser-p0-authz-flip: 2 CI Backend-gate fixups landed @7b30ce6
+eng-lead flagged CI's Backend gate (real Postgres) failing 2/13 flip_gate tests on the prior
+head (2a3594f, reviewer already SHIP on security). Both fixed, rebased twice onto a moving
+integration/next (persona-copy + caddie-local-lore lanes), all local gates green, pushed clean.
+  FIX1 (real bug, `backend/app/routes/pins.py` upsert_pin raw SQL): `:pin_lat`/`:pin_lng` each
+    used twice (plain column + inside ST_MakePoint) → asyncpg AmbiguousParameterError ("double
+    precision versus numeric") against real Postgres only. Added explicit
+    `cast(:pin_lat as double precision)` (and :pin_lng) on every occurrence. No wire-shape change.
+  FIX2 (harness gap, `backend/tests/integration/conftest.py` set_auth): didn't override
+    `optional_user_id`, so `GET /api/caddie/personalities` saw no injected identity in-test →
+    test_route_level_read_isolation failed (A's own persona missing from A's own list). set_auth
+    now overrides optional_user_id alongside current_user_id (both set/clear paths).
+Gates: ruff clean, scoping_lint clean, alembic heads single 018, full local pytest 3092 passed /
+154 skipped / 0 failed (integration DB tests skip locally, no local Postgres). Head 7b30ce6 on
+origin/integration/next — CI's real-Postgres Backend gate is the first actual proof point for
+FIX1/FIX2; reported back to eng-lead to re-run it.
+
 ## AWAITING (2026-07-19) — multiuser-p0-authz-flip PREP (flip-ready; NOTICEABLE "multi-user: flip-ready")
 Owner-greenlit epic step: close the four DEFERRED gaps (clerk_auth.py:143-163) + build THE FLIP GATE
 suite. Base origin/integration/next @4f51fb5 (worktree agent-a79505c53b74b3a7c). A persona-consistency
