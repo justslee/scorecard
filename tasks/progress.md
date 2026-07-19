@@ -1013,3 +1013,23 @@ notes (F5 app-wide portrait-lock rotate-test ask; Google/Apple SSO code-ready-bu
 Clerk-dashboard flip runbook + optional `CLERK_SECRET_KEY` CI secret).
 No worktree was created for this ship (executed directly on the primary checkout, which was already on
 `integration/next`/`main`); nothing to remove.
+
+## IN PROGRESS (2026-07-19) — caddie-orb-persona-consistency (register unification)
+Scope-reconciled: the backlog item's NARROW fix (thread selected personaId through the orb + TTS)
+is ALREADY DONE (commit `9df28c9`). The remaining, caller-directed work under this banner is the
+caddie-crux CONSISTENCY dimension: unify the caddie's REGISTER across every persona-AGNOSTIC "mouth"
+(strategy-brain system, base spoken behavior, degraded engine-line composer, guide/course-intel
+writer, UI system copy) to ONE house voice (calm, knowing caddie — the register NORTHSTAR + the
+Classic persona already embody). Constraint discovered: the 4 built-in personas (Strategist/Classic/
+Hype/Professor) carry DELIBERATELY distinct registers — "one voice" must NOT collapse them; it
+unifies the shared/agnostic surfaces + a shared structural style base, extracted to ONE constant
+(mirroring the existing "Shared by BOTH mouths so wording never drifts" pattern in voice_prompts.py).
+REGISTER ONLY — no grounding/validation/numbers changes; every numbers/verdict contract stays
+byte-identical (pinned by existing suites). Lands on the fresh bundle as NOTICEABLE. Do NOT ship/ping.
+
+## AWAITING (2026-07-19)
+Base: integration/next @ 723f865 (fresh, post-#151). Awaiting: (1) Explore audit agent a743edb95d0ce83a4
+mapping every register surface + verbatim samples. NEXT on its return → dispatch designer for the
+persona doc + audit dispositions (BLOCKING design artifact, reconciled with NORTHSTAR), then Fable
+Plan → builder → fresh reviewer (diff-prove validators/payloads unchanged + prompt-cache stability)
+→ qa (gates + caddie suites + new thin register eval). Nothing uncommitted is held across this await.
