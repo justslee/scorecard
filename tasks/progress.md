@@ -15,8 +15,10 @@ already SHIPPED — need a FRESH bundle PR (integration/next → main) this cycl
 `_PROFILE_KEY_MAP`, so `normalize_club_distances(golfer_profile.bag_clubs)` is a clean hydration.
 This is the seam the owner's DB-backed two-user test must pin.
 
-AWAITING Plan(fable) → specs/onboarding-bag-caddie-grounding-plan.md. On return: dispatch builder
-on integration/next; then reviewer(fresh) + qa. NOTICEABLE → new bundle PR checklist. Do NOT ship/ping.
+Plan(fable) DONE @8475367 → specs/onboarding-bag-caddie-grounding-plan.md (server-side hydration
+seam in routes/caddie.py + memory.get_golfer_bag_clubs; DB-backed two-user flip-time test).
+AWAITING builder on integration/next. On return: merge/confirm push, then reviewer(fresh) + qa;
+open FRESH bundle PR (integration/next → main), NOTICEABLE checklist. Do NOT ship/ping.
 
 ## DONE — 2026-07-18 — auth-headless-spike (SILENT, dev-flag only; login-onboarding epic Slice 1) — verdict CONSTRAINED-GO
 Landed on `integration/next` (bundle PR #150), all three CI gates SUCCESS on head **429dd9c**
