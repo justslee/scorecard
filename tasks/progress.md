@@ -1398,3 +1398,19 @@ authorization), executed via SSM — config backed up (`~/.env.preflip.bak`), au
 set, service restarted healthy, open mode confirmed in the live process, revocation cache warmed
 from `revoked_users` (0). Looper is MULTI-USER. Owner follow-ups: Clerk dashboard webhook
 (Svix secret + user.deleted/user.banned/session.revoked) + confirm signups open.
+
+## AWAITING — signout-on-profile cycle (2026-07-19)
+Item: multiuser-p0-signout-namespace-clear + Profile sign-out button (OWNER REQUEST — NOTICEABLE).
+Base head @6167075 (origin/integration/next, post-flip). Recon done (Explore + eng-lead reads):
+- /settings SignOutButton exists but /settings is UNREACHABLE in nav → owner couldn't find logout.
+  /profile IS a hub tab (FloatingTabBar). Slot: at/above <Footer/> profile/page.tsx:334 (or 2642-2668).
+- Centralized invariant is ASPIRATIONAL: ClerkTokenBridge.tsx:40-51 clears iOS keychain on
+  isSignedIn true→false (native only). NOT torn down on sign-out: scorecard_last_user_id
+  (identity-core.ts:47 stale fallback = the TOCTOU), current localStorage namespace, onboarding_step
+  cache, caddie realtime singleton (realtime.ts:286 activeRealtimeClient) + warm-session.ts:222.
+- Draw animation is PER-INSTALL (looper.loginHeroDrawSeen, SignInScreen.tsx:30) — will NOT replay on
+  sign-out→sign-in on same device. Intended; note for owner.
+- Onboarding gated on SERVER onboarding_step != done (AuthGate.tsx:171-176) → fresh account plays.
+Next: Plan(fable) → specs/multiuser-p0-signout-namespace-clear-plan.md; then builder on integration/next;
+then designer(BLOCKING) + reviewer(+/security-review) + qa. On resume: check specs/ for the plan file and
+git log origin/integration/next for builder commits before re-dispatching anything.
