@@ -1,7 +1,12 @@
 """Offline acceptance suite for the LOCAL-LORE layer, Pinehurst No. 2 hole
 1-shaped (specs/caddie-guide-local-lore-plan.md §8D): a tactical guide plus
-three high-confidence, attributed lore items against a hole with ONE real
-greenside bunker RIGHT — the whole read/consume path, end to end, offline.
+attributed lore items (high AND sourced-medium confidence) against a hole
+with ONE real greenside bunker RIGHT — the whole read/consume path, end to
+end, offline.
+
+Includes a fixture drawn from the 2026-07-20 backfill-halt incident: a
+sourced-`medium`-confidence false-front item that rule 5 used to throw away
+alongside genuinely uncertain lore (see `guide_writer._LORE_CONFIDENCE_KEEP`).
 
 No network, no database.
 """
@@ -49,11 +54,23 @@ _BUNKER_LEFT_FLIP = LoreItem(
     source="Golf Digest course guide",
     confidence="high",
 )
-_MEDIUM_CONFIDENCE = LoreItem(
+# A real dropped-item shape from the 2026-07-20 halted backfill: a
+# false-front claim the writer honestly self-reported as `medium` (single
+# course-guide source, not independently verified) rather than inflating it
+# to `high`. Sourced -> now survives rule 5.
+_SOURCED_MEDIUM_FALSE_FRONT = LoreItem(
+    text="Course guides describe a false front here, though accounts differ on how severe it is.",
+    category="green_character",
+    source="Golf Digest course guide",
+    confidence="medium",
+)
+# A genuinely uncertain claim — sourced, but the writer self-reported `low`.
+# Still drops: the fix widens the bar to sourced-medium, not everything.
+_LOW_CONFIDENCE = LoreItem(
     text="Some say the green was originally flatter before a 1930s redesign.",
     category="history",
     source="Golf Digest course guide",
-    confidence="medium",
+    confidence="low",
 )
 _UNATTRIBUTED = LoreItem(
     text="The green complex has hosted more playoff finishes than any other.",
@@ -63,14 +80,14 @@ _UNATTRIBUTED = LoreItem(
 )
 
 
-def test_validate_lore_keeps_all_three_good_items_drops_the_three_bad():
+def test_validate_lore_keeps_all_four_good_items_drops_the_three_bad():
     items = [
-        _TURTLEBACK, _OPEN_HISTORY, _SHORT_IS_DEAD,
-        _BUNKER_LEFT_FLIP, _MEDIUM_CONFIDENCE, _UNATTRIBUTED,
+        _TURTLEBACK, _OPEN_HISTORY, _SHORT_IS_DEAD, _SOURCED_MEDIUM_FALSE_FRONT,
+        _BUNKER_LEFT_FLIP, _LOW_CONFIDENCE, _UNATTRIBUTED,
     ]
     survivors = validate_lore(items, _HAZARDS)
 
-    assert survivors == [_TURTLEBACK, _OPEN_HISTORY, _SHORT_IS_DEAD]
+    assert survivors == [_TURTLEBACK, _OPEN_HISTORY, _SHORT_IS_DEAD, _SOURCED_MEDIUM_FALSE_FRONT]
 
 
 def test_validate_lore_bunker_left_flip_dropped_bunker_is_real_but_right():
@@ -80,8 +97,16 @@ def test_validate_lore_bunker_left_flip_dropped_bunker_is_real_but_right():
     assert validate_lore([_BUNKER_LEFT_FLIP], _HAZARDS) == []
 
 
-def test_validate_lore_medium_confidence_dropped():
-    assert validate_lore([_MEDIUM_CONFIDENCE], _HAZARDS) == []
+def test_validate_lore_sourced_medium_confidence_survives():
+    """2026-07-20 backfill-halt fix: rule 5 no longer discards an honest,
+    sourced `medium` self-report — only `high` and sourced `medium` survive."""
+    assert validate_lore([_SOURCED_MEDIUM_FALSE_FRONT], _HAZARDS) == [_SOURCED_MEDIUM_FALSE_FRONT]
+
+
+def test_validate_lore_low_confidence_dropped_even_when_sourced():
+    """The fix widens the bar to sourced-medium, not everything — a sourced
+    but genuinely uncertain (`low`) item still drops."""
+    assert validate_lore([_LOW_CONFIDENCE], _HAZARDS) == []
 
 
 def test_validate_lore_unattributed_dropped():
@@ -176,5 +201,5 @@ async def test_live_research_hole_lore_shape_smoke():
     # this is a shape smoke test only: the call completes, stamps
     # provenance, and every survivor still passes the deterministic gate.
     for item in survivors:
-        assert item.confidence == "high"
+        assert item.confidence in ("high", "medium")
         assert item.source

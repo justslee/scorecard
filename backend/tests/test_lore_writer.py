@@ -12,10 +12,14 @@ No network, no database. All tests here are OFFLINE:
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
+from pydantic import ValidationError
 
 from app.caddie.guide_writer import (
     LORE_WRITER_SYSTEM,
+    _LORE_CATEGORIES,
     _MAX_LORE_ITEMS,
     LoreResearchResult,
     research_hole_lore,
@@ -96,8 +100,28 @@ def test_rule1_structural_markdown_marker_dropped():
     assert validate_lore([item], []) == []
 
 
-def test_rule2_invalid_category_dropped():
-    item = LoreItem(
+def test_rule2_invalid_category_now_impossible_via_schema():
+    """2026-07-20 backfill-halt fix: `LoreItem.category` is a `Literal` of the
+    four allowed tokens, so a prose/invalid category (the incident's actual
+    failure mode — the model emitted things like "Green Character" instead of
+    `green_character`) can no longer even be CONSTRUCTED, let alone survive
+    to be dropped at validate_lore time. Structured output (`messages.parse`)
+    enforces the same enum in the JSON schema at generation time."""
+    with pytest.raises(ValidationError):
+        LoreItem(
+            text="The green sheds everything short.",
+            category="trivia",
+            source="Golf Digest course guide",
+            confidence="high",
+        )
+
+
+def test_rule2_still_drops_a_bad_category_that_bypasses_pydantic_validation():
+    """Defense-in-depth: `validate_lore`'s rule 2 still checks membership in
+    `_LORE_CATEGORIES` for an item built via `model_construct` (skips field
+    validation) — the one path that could still carry a bad category, e.g. a
+    hand-edited/legacy JSONB blob."""
+    item = LoreItem.model_construct(
         text="The green sheds everything short.",
         category="trivia",
         source="Golf Digest course guide",
@@ -112,6 +136,15 @@ def test_rule2_invalid_category_dropped():
 def test_rule2_every_allowed_category_passes(category):
     item = _item(category=category)
     assert validate_lore([item], []) == [item]
+
+
+def test_lore_categories_constant_matches_the_literal_type():
+    """Anti-drift teeth: `validate_lore`'s `_LORE_CATEGORIES` set and
+    `LoreItem.category`'s `Literal` type must name the EXACT same four
+    tokens — the incident this fix addresses was the writer prompt, the type,
+    and the validator drifting out of sync with each other."""
+    literal_tokens = set(get_args(LoreItem.model_fields["category"].annotation))
+    assert _LORE_CATEGORIES == literal_tokens
 
 
 def test_rule3_injection_in_text_dropped():
@@ -142,10 +175,19 @@ def test_rule4_source_at_the_cap_passes():
     assert validate_lore([item], []) == [item]
 
 
-@pytest.mark.parametrize("confidence", ["medium", "low", "unknown", "High", ""])
-def test_rule5_non_exact_high_confidence_dropped(confidence):
+@pytest.mark.parametrize("confidence", ["low", "unknown", "High", ""])
+def test_rule5_non_high_or_medium_confidence_dropped(confidence):
     item = _item(confidence=confidence)
     assert validate_lore([item], []) == []
+
+
+def test_rule5_medium_confidence_survives_when_sourced():
+    """2026-07-20 backfill-halt fix: rule 5 used to keep ONLY exact "high",
+    discarding honest, sourced "medium" self-reports (8/18 dropped items on
+    the halted run). Rule 4 already guarantees every item reaching rule 5 is
+    attributed, so a surviving "medium" here is always a sourced medium."""
+    item = _item(confidence="medium")
+    assert validate_lore([item], []) == [item]
 
 
 def test_rule6_geometry_type_contradiction_dropped():
@@ -252,6 +294,22 @@ def test_lore_writer_system_embeds_hazard_grounding_rule_and_untrusted_framing()
 
 def test_lore_writer_system_states_the_numbers_rule():
     assert "never state a yardage, carry, or club" in LORE_WRITER_SYSTEM.lower()
+
+
+def test_lore_writer_system_states_the_exact_category_tokens():
+    """2026-07-20 backfill-halt fix: the prompt used to describe the four
+    category buckets only in prose ("Green-complex character", "Famous or
+    named features..."), never the exact snake_case tokens the schema
+    expects — the model emitted prose categories that validate_lore's rule 2
+    correctly, but wastefully, dropped. The prompt must now name every
+    literal token verbatim."""
+    for token in sorted(_LORE_CATEGORIES):
+        assert f"`{token}`" in LORE_WRITER_SYSTEM
+
+
+def test_lore_writer_system_states_confidence_calibration():
+    assert "high" in LORE_WRITER_SYSTEM.lower() and "medium" in LORE_WRITER_SYSTEM.lower()
+    assert "single source" in LORE_WRITER_SYSTEM.lower() or "single-source" in LORE_WRITER_SYSTEM.lower()
 
 
 # ── research_hole_lore — failure-honesty + SDK mechanics ────────────────────

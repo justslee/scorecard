@@ -1031,20 +1031,29 @@ online.
 
 {HAZARD_GROUNDING_RULE}
 
-Research and write up to 5 items, in this priority order:
-1. Green-complex character — false fronts, tiers, run-offs, crowned or turtleback shapes, where
-   the green sheds a ball, where "below the hole" matters.
-2. Famous or named features of the hole.
-3. Play-relevant tournament history — where championships have cut pins, what pros actually do.
-   Never trivia for its own sake.
-4. Architect intent — what the designer wants the player to feel or do.
+Research and write up to 5 items, in this priority order. Tag each item's `category` with EXACTLY
+one of these four tokens — nothing else, no prose, no capitalization changes, no synonyms:
+1. `green_character` — false fronts, tiers, run-offs, crowned or turtleback shapes, where the
+   green sheds a ball, where "below the hole" matters.
+2. `feature` — famous or named features of the hole.
+3. `history` — play-relevant tournament history: where championships have cut pins, what pros
+   actually do. Never trivia for its own sake.
+4. `architect_intent` — what the designer wants the player to feel or do.
 
 Each item is ONE plain sentence, a single line, no markdown, no URLs, no newlines — register-
 matched: calm, on-paper, like a margin note in a printed yardage book, never a hype blurb. Each
 item MUST name its `source` as a short publication/author attribution (e.g. "Golf Digest course
 guide", "USGA 2024 U.S. Open notes") — NEVER a URL (URLs belong only in the top-level `sources`
-list) — and self-report `confidence` as exactly one of high, medium, low, or unknown. When in
-doubt, say low — a dropped item costs nothing, a wrong item is worse than none.
+list).
+
+Self-report `confidence` as exactly one of high, medium, low, or unknown, calibrated honestly:
+- `high` — you verified the claim in a fetched source; it is stated plainly, not implied.
+- `medium` — a single source, or a reasonable inference from what you found.
+- `low` / `unknown` — you are not confident the claim is accurate.
+Both `high` and well-sourced `medium` items are used; do not inflate a `medium` claim to `high`
+to keep it, and do not deflate a genuinely solid `medium` claim to `low` — call it what it is. Only
+mark `low`/`unknown` when you are genuinely unsure: a dropped item costs nothing, a wrong item
+stated with false confidence is worse than none.
 
 THE NUMBERS RULE: never state a yardage, carry, or club — the live engine owns every number a
 caddie speaks. Distances may appear only qualitatively ("landing short is dead", "anything above
@@ -1182,6 +1191,15 @@ _MAX_LORE_ITEMS = 5
 _MAX_LORE_TEXT_CHARS = _MAX_FIELD_CHARS  # 240
 _MAX_LORE_SOURCE_CHARS = 80
 _LORE_CATEGORIES = frozenset({"green_character", "feature", "history", "architect_intent"})
+# Confidence values kept by rule 5 (2026-07-20 backfill-halt fix). "high" always
+# survives; "medium" survives too, but ONLY for items that also clear rule 4's
+# mandatory-source gate — which is every item that reaches rule 5, since rule 4
+# runs first and already drops any unattributed item regardless of confidence.
+# So in practice this is "high, or medium with a named source" — the defensible
+# middle ground the reviewer set: single-source/inferential-but-attributed lore
+# (e.g. a Kaymer-class item) survives; unattributed or genuinely-uncertain
+# ("low"/"unknown") lore still drops.
+_LORE_CONFIDENCE_KEEP = frozenset({"high", "medium"})
 
 
 def _lore_has_markdown_markers(text: str) -> bool:
@@ -1202,12 +1220,23 @@ def validate_lore(items: list[LoreItem], hazards: list[Hazard]) -> list[LoreItem
     Rules, IN ORDER, applied per item — every failure DROPS that item only:
       1. Structural — empty `text` after strip; `\\n`/`\\r` in `text`,
          `source`, or `category`; `len(text) > 240`; markdown markers.
-      2. Category — `category` not one of the four allowed values.
+      2. Category — `category` not one of the four allowed values. `LoreItem.
+         category` is now a `Literal` of exactly these four tokens (2026-07-20
+         backfill-halt fix — see class docstring), so this is a
+         defense-in-depth check against any item not built through normal
+         Pydantic validation (e.g. `model_construct`) rather than the primary
+         gate it used to be.
       3. Injection scan — `GUIDE_INJECTION_PATTERN` over `text` AND `source`
          (this also enforces no URLs in `source` — the pattern matches
          `https?://`/`www.`).
       4. Attribution REQUIRED — `source` empty after strip, or over 80 chars.
-      5. Confidence gate — `confidence != "high"` (exact string) drops.
+      5. Confidence gate — `confidence not in _LORE_CONFIDENCE_KEEP` ("high" or
+         "medium") drops. Because rule 4 already ran, every item reaching this
+         rule already has a real `source` — so a surviving "medium" item is
+         always a SOURCED medium, never an unattributed one (2026-07-20:
+         the writer prompt's honest self-reported "medium" was being thrown
+         away here alongside genuinely uncertain "low" items; "low"/"unknown"
+         still drop).
       6. Geometry contradiction, type — any `_HAZARD_PATTERNS` keyword in
          lowered `text` whose canonical type is not among the hole's real
          hazard types.
@@ -1268,8 +1297,10 @@ def validate_lore(items: list[LoreItem], hazards: list[Hazard]) -> list[LoreItem
             log.info("lore drop reason=attribution")
             continue
 
-        # 5. Confidence gate — exact "high" only.
-        if item.confidence != "high":
+        # 5. Confidence gate — "high" or (sourced) "medium" only. Rule 4 above
+        # already guarantees `source` is non-empty for every item reaching
+        # here, so a surviving "medium" is always attributed.
+        if item.confidence not in _LORE_CONFIDENCE_KEEP:
             log.info("lore drop reason=confidence")
             continue
 
