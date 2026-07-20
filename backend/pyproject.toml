@@ -33,6 +33,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "flip_gate: multi-user open-mode acceptance gate — runs under REAL APP_ACCESS_MODE=open boot config",
+]
 # Use one shared event loop for the entire test session (both fixtures and tests).
 # This prevents "Future attached to a different loop" errors from the module-level
 # asyncpg engine in app.db.engine: with function-scoped loops (the old default),

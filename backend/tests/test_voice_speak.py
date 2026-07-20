@@ -149,7 +149,7 @@ def _make_client() -> TestClient:
 def test_speak_resolves_persona_voice_id_and_returns_audio_mpeg(monkeypatch):
     captured: dict = {}
 
-    async def _fake_load_personality(personality_id: str) -> CaddiePersonality:
+    async def _fake_load_personality(personality_id: str, user_id=None) -> CaddiePersonality:
         captured["personality_id"] = personality_id
         return CaddiePersonality(
             id=personality_id,
@@ -182,7 +182,7 @@ def test_speak_resolves_persona_voice_id_and_returns_audio_mpeg(monkeypatch):
 def test_speak_defaults_to_classic_personality(monkeypatch):
     captured: dict = {}
 
-    async def _fake_load_personality(personality_id: str) -> CaddiePersonality:
+    async def _fake_load_personality(personality_id: str, user_id=None) -> CaddiePersonality:
         captured["personality_id"] = personality_id
         return CaddiePersonality(
             id="classic", name="The Classic Caddie", description="", avatar="🏌️",

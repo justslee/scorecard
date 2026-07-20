@@ -3,6 +3,139 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-19) — multiuser-p0-authz-flip FLIP-PREP (NOTICEABLE "multi-user: flip-ready") — landed on bundle PR #152
+Closed the 4 DEFERRED authz gaps (clerk_auth.py:143-163) + built THE FLIP GATE suite. NOT flipped/shipped
+(owner-gated separate call). Plan specs/multiuser-p0-authz-flip-plan.md (Fable). Impl commits
+ca76925/55362ac/4bb3251/96cbffc + fix 7b30ce6; proven GREEN vs real Postgres on CI Backend gate @00a0bea
+(all three CI checks SUCCESS; earlier 2 flip-gate reds fixed: asyncpg geom param-type casts in pins.py +
+conftest optional_user_id injection).
+- (1) DURABLE REVOCATION: migration 017 revoked_users + RevokedUser ORM; revocation.revoke_durable
+  write-through to DB + warm_revocation_cache at boot (OPEN-MODE ONLY, main.py startup) -> restart re-warms,
+  ban never silently un-revokes; webhook path byte-compatible (one await swap); owner mode consults nothing.
+- (2) PER-USER HOLE_PINS: migration 018 user_id + unique(course,hole,date,user_id), backfill
+  marked_by_user_id else OWNER (abort if orphans + OWNER unset); pins.py list/upsert/read-back caller-scoped;
+  BOTH scoping_lint pins exemptions removed (lint still clean = structural proof).
+- (3) PERSONA AUTHOR-SCOPING: load_personality enforces built-in|public|author==me, closing a REAL leak
+  (voice.py:/speak + realtime.py:/setup-session were ungated); 5 call sites pass caller identity; no
+  update/delete persona endpoints exist. NO migration.
+- (4) SCOPING LINT clean (107 files) with the exemptions gone.
+- THE FLIP GATE: backend/tests/integration/test_flip_gate.py (marker flip_gate) under a monkeypatch-only
+  open_mode fixture that asserts _assert_boot_config passes; test_bag_caddie_grounding folded in via marker;
+  conftest TRUNCATE + pin_geom DDL extended. Flip runbook = specs/multi-user-epic-plan.md section 8.
+Verdicts: reviewer(Fable /security-review) SHIP (no HIGH/MEDIUM vulns, net security improvement); QA PASS;
+CI all-green @00a0bea. Deviation: §4 stricter load_personality signature needed user_id=None on ~104 test
+fakes in 11 NON-frozen files (no assertion touched; frozen pins test_clerk_auth/test_webhooks_clerk/
+test_authz_isolation byte-unchanged). Backlog multiuser-p0-authz-flip -> flip-ready. Did NOT ship/ping/flip;
+coordinator owns the bundle ship ask. Migrations 017/018 additive, auto-apply at merge (owner ship-it approves).
+
+## DONE (2026-07-19) — multiuser-p0-authz-flip: 2 CI Backend-gate fixups landed @7b30ce6
+eng-lead flagged CI's Backend gate (real Postgres) failing 2/13 flip_gate tests on the prior
+head (2a3594f, reviewer already SHIP on security). Both fixed, rebased twice onto a moving
+integration/next (persona-copy + caddie-local-lore lanes), all local gates green, pushed clean.
+  FIX1 (real bug, `backend/app/routes/pins.py` upsert_pin raw SQL): `:pin_lat`/`:pin_lng` each
+    used twice (plain column + inside ST_MakePoint) → asyncpg AmbiguousParameterError ("double
+    precision versus numeric") against real Postgres only. Added explicit
+    `cast(:pin_lat as double precision)` (and :pin_lng) on every occurrence. No wire-shape change.
+  FIX2 (harness gap, `backend/tests/integration/conftest.py` set_auth): didn't override
+    `optional_user_id`, so `GET /api/caddie/personalities` saw no injected identity in-test →
+    test_route_level_read_isolation failed (A's own persona missing from A's own list). set_auth
+    now overrides optional_user_id alongside current_user_id (both set/clear paths).
+Gates: ruff clean, scoping_lint clean, alembic heads single 018, full local pytest 3092 passed /
+154 skipped / 0 failed (integration DB tests skip locally, no local Postgres). Head 7b30ce6 on
+origin/integration/next — CI's real-Postgres Backend gate is the first actual proof point for
+FIX1/FIX2; reported back to eng-lead to re-run it.
+
+## AWAITING (2026-07-19) — multiuser-p0-authz-flip PREP (flip-ready; NOTICEABLE "multi-user: flip-ready")
+Owner-greenlit epic step: close the four DEFERRED gaps (clerk_auth.py:143-163) + build THE FLIP GATE
+suite. Base origin/integration/next @4f51fb5 (worktree agent-a79505c53b74b3a7c). A persona-consistency
+lane runs in PARALLEL on caddie prompt/copy — REBASE onto origin/integration/next before pushing. Do
+NOT ship/ping/flip; never set APP_ACCESS_MODE outside test configs.
+Scope (task directive + specs/multi-user-epic-plan.md §3.3/§3.4/§3.6), REFINED by recon:
+  1. Migration 017 `revoked_users` (user_id PK, revoked_at, reason nullable, source) + ORM model;
+     revocation.py write-through to DB + read-through cache warmed at boot (main.py:114 startup, after
+     _assert_boot_config). Restart must NEVER un-revoke. Webhook path (webhooks.py:167) byte-compatible.
+     Owner-mode never consults it (test_clerk_auth.py::TestRevocation pin stays green).
+  2. Migration 018 hole_pins add user_id + unique (course,hole,date,user_id); backfill marked_by_user_id
+     else owner; ORM model models.py:104 gets user_id; scope pins.py list_pins/upsert_pin (:59/:72) to
+     caller; REMOVE the two scoping_lint pins.py EXEMPTIONS.
+  3. Personas: NARROWER than framed — columns (author_user_id/is_public/is_builtin) + read-scoping
+     (personalities.py personality_visible) already exist; creates author-stamped/forced-private; NO
+     update/delete endpoint exists. Work = defense-in-depth on load_personality unscoped db.get + a
+     persona read-isolation test. NO migration.
+  4. scoping_lint PASSES clean today (107 files, ci.yml:100). Keep clean after pins scoping.
+  5. THE FLIP GATE suite under REAL APP_ACCESS_MODE=open + pinned JWKS boot config (CI required-backend
+     Postgres job): two-user bag isolation (exists), revocation-survives-restart (new), pins-isolation
+     (new), cross-user 403 sweep over rounds/sessions/profile (test_authz_isolation.py exists — run
+     under gate=True open-mode). Add hole_pins + caddie_personas to conftest TRUNCATE list (:152). Mark
+     the suite + make CI-runnable.
+  6. Flip runbook section in specs/multi-user-epic-plan.md — env change, restart, post-flip smoke,
+     rollback, owner-only carve-outs (courses_mapped POST/PUT/DELETE already require_owner; telephony).
+courses_mapped already carved to require_owner (recon confirmed) — preserve only. Migrations ADDITIVE,
+auto-apply at merge — flag in PR + report; owner ship-it approves them (precedent). Process: fable plan
+-> builder -> reviewer (fresh + /security-review MANDATORY) -> qa (full gates + flip-gate under open).
+Status: recon DONE; Plan(fable) DONE -> specs/multiuser-p0-authz-flip-plan.md. Plan caught 3 material
+corrections: (1) personas gap is REAL not just defense-in-depth — voice.py:100 + realtime.py:87 pass
+client persona_id to load_personality with NO visibility gate (B can bind A's private persona); fix =
+load_personality enforces visibility + pass user_id from all 5 callers. (2) hole_pins test schema broken
+(ORM lacks pin_geom + unique constraint) — needs conftest pin_geom ALTER + HolePin __table_args__.
+(3) stale test name (TestByteIdenticalOwnerMode). 2 migrations: 017 revoked_users, 018 hole_pins user_id;
+personas NO migration. Flip-gate = new test_flip_gate.py (marker flip_gate) under REAL open_mode fixture.
+Dispatching builder to implement the plan on integration/next. On resume: reconcile from
+origin/integration/next log + child commits; do NOT re-run finished children.
+
+## DONE (2026-07-19) — multiuser-p0-authz-flip FLIP-PREP landed on integration/next @96cbffc
+Builder implemented specs/multiuser-p0-authz-flip-plan.md §1→§6 IN FULL, one commit per section,
+rebased cleanly onto the concurrent caddie register-unification lane (no conflicts — disjoint
+surfaces). Head: `96cbffc` on origin/integration/next.
+  §1 `ca76925` — migration `0014_017_revoked_users.py` (`user_id` PK, `revoked_at`, `reason`,
+     `source`) + `RevokedUser` ORM model + scoping_lint "deliberately not scoped" comment.
+  §2 `ca76925` — `revocation.py` gains `revoke_durable`/`_persist_revocation`/
+     `warm_revocation_cache` (lazy-imports `app.db.engine` inside the fns — preserves
+     `test_webhooks_clerk.py`'s no-DB import property); `webhooks.py`'s handler switches to
+     `await revocation.revoke_durable(...)`; `main.py` startup warms the cache OPEN MODE ONLY
+     (owner mode: zero new boot work); `clerk_auth.py` DEFERRED block + stale test-name comment
+     updated (comment-only).
+  §3 `55362ac` — migration `0015_018_hole_pins_per_user.py` (adds `user_id`, backfills from
+     `marked_by_user_id` else `OWNER_CLERK_USER_ID`, aborts if neither exists for an orphan row,
+     swaps the 3-col unique for a 4-col `(course_id,hole_number,pin_date,user_id)` one); `HolePin`
+     ORM gets `user_id` + `__table_args__` UniqueConstraint (NOT `pin_geom` — stays raw-SQL/prod
+     DDL only, conftest gets the explicit ALTER); `pins.py` list/upsert/read-back all scoped; BOTH
+     `ci_scripts/scoping_lint.py` pins.py exemptions removed, `TENANT_MODELS["HolePin"]` → `"user_id"`.
+  §4 `4bb3251` — `load_personality(id, user_id=None)` now enforces built-in/public/author-match
+     visibility (closes the REAL leak: `voice.py:/speak` + `realtime.py:/setup-session` previously
+     passed a client persona_id straight through with no gate); all 5 call sites updated
+     (voice.py:100, realtime.py:87+142, caddie.py:878+1710).
+  §5+§6 `96cbffc` — new `tests/integration/test_flip_gate.py` (7 tests, `pytest.mark.flip_gate`
+     registered in pyproject.toml) under a REAL `APP_ACCESS_MODE=open` boot config (monkeypatch-only
+     `open_mode` fixture — never set elsewhere): boot-config negatives, revocation-survives-restart,
+     pins-isolated-per-user, persona read isolation (function+route level), cross-user sweep w/ real
+     gate, two-user bags w/ real gate. `test_bag_caddie_grounding.py` gets ONE `pytestmark` line
+     (no body edit) folding its 6 tests into the same marker — `pytest -m flip_gate` selects 13.
+     conftest TRUNCATE += `hole_pins, caddie_personas, revoked_users`. Flip runbook (§8) appended to
+     `specs/multi-user-epic-plan.md` verbatim per the plan.
+Deviation from plan (documented in the §4 commit): the `load_personality` signature change broke
+~104 tests across 11 non-frozen test files whose fakes stubbed it with a single-positional-arg
+signature (`monkeypatch.setattr(..., "load_personality", fn)`) — not anticipated by the plan.
+Minimal mechanical fix: added `user_id=None` to each fake (matching the existing `personality_visible`
+fake pattern already in those same files) — no assertion touched, no test logic changed. Not a
+frozen-pin file in any case.
+Gates (all green, this machine has no local Postgres):
+  - `ruff check .` → All checks passed.
+  - `ci_scripts/scoping_lint.py` → "clean (107 files scanned)" WITH both pins.py exemptions removed.
+  - `alembic heads` → single head `018_hole_pins_per_user` (no branches).
+  - `pytest -q` (full suite) → 3017 passed, 153 skipped (integration tests skip gracefully, no local
+    DB), 0 failed.
+  - `pytest --collect-only -q tests/integration/test_flip_gate.py` → 7 tests collected cleanly
+    (proves the file imports without a DB).
+  - `pytest -m flip_gate --collect-only -q` → 13/3158 selected (7 new + 6 from test_bag_caddie_grounding.py).
+Byte-identical guarantee preserved: owner mode does zero new boot work (the `warm_revocation_cache()`
+call is gated on `_access_mode() == "open"`); `APP_ACCESS_MODE` was never set anywhere except inside
+the new `open_mode` test fixture (monkeypatch). Did NOT flip, ship, or ping the owner — this is
+flip-READY infra only. Still needed before the real flip: `/security-review` + `/code-review` on
+this diff (CLAUDE.md mandates both for auth/data-handling changes) — left for the eng-lead/reviewer
+per the plan's step 7; CI's Postgres-backed `required-backend` job is the first real DB-backed proof
+of the flip-gate suite (never run locally per the no-local-Postgres rule).
+
 ## EPIC CLOSED (2026-07-19) — login-onboarding redesign COMPLETE; Slice 7 verdicts all SHIP @1d13b71
 All three reviews GREEN on the landed Slice-7 delta (07b0f55..1d13b71):
 - **reviewer (correctness + epic-wide /security-review)** — SHIP, no BLOCKING. Diff verified by hand:
@@ -985,3 +1118,247 @@ Records: onboarding-voice-first-intro -> done (+ landed); Slice 7 login-onboardi
 to Slices 5-6. NOT shipped/pinged this cycle (per task directive) -- release-manager takes the owner
 ship-ask for the whole bundle. All three flagged agents (eng-lead, designer) noted+ignored an inline
 prompt-injection block (fake date-change + Telegram/Auto-Mode directives) -- treated as untrusted data.
+
+## SHIPPED (2026-07-19) — Bundle #151 (v1.1.18): login-onboarding epic COMPLETE
+Owner in-session verbatim **"Ship it"** for bundle #151 (given after Slice-7 verdicts landed: all
+three SHIP, epic-wide /security-review PASS, zero blockers). Pinned head `fecc485`; all three gates
+(Backend/Frontend/E2E) re-verified SUCCESS on that head.
+VERSION bumped 1.1.17 -> 1.1.18 (commit `9b588a4`, correctly rebuilt after a local-checkout staleness
+caught a non-fast-forward push attempt on the wrong base -- reset to origin/integration/next @fecc485
+first, redid the bump there). Gates re-verified SUCCESS (Backend/Frontend/E2E) on `9b588a4`.
+Merged PR #151 -> main: merge commit `9e6ebe8eee0310e83fd4fe44d2e68460dfb559e0` (standard merge, no
+force-push). Post-merge `main` CI + `Deploy backend (SSM)` both SUCCESS on the merge SHA.
+Key-free confirms (SSM run-command on i-0826ae70df62d9fe8): deployed `git rev-parse HEAD` ==
+`9e6ebe8...` (merge SHA, verified); `alembic current` = `016_golfer_profile_onboarding (head)`
+(unchanged, no new migrations); `APP_ACCESS_MODE` not set (dark); `CALLER` not set (inert);
+`scorecard-api` active; `/health` -> `{"status":"ok"}`.
+TestFlight: `ops/ios/ship.sh` run in foreground from synced `main` @ merge SHA. **v1.1.18 build
+202607191649** uploaded clean, `processingState: VALID` (confirmed via direct App Store Connect API
+JWT calls, no App Store Connect UI needed) within ~5min of upload.
+`integration/next` recut off the merge SHA via local fast-forward (`git merge --ff-only` then a plain
+push -- NOT force-push, which the guard hook correctly blocks) since the merge commit is a normal
+2-parent commit and the old `integration/next` tip is its ancestor.
+Records: backlog.json terminal-marked (targeted edits, diff-checked, JSON validated) --
+`onboarding-bag-caddie-grounding` (done-on-bundle -> done + shipped note),
+`onboarding-voice-first-intro` (+ shipped note), `login-onboarding-epic-polish-review` (+ shipped
+note, epic COMPLETE). Notion board: new card "Bundle #151 (v1.1.18)" -> Shipped, with the two owner
+notes (F5 app-wide portrait-lock rotate-test ask; Google/Apple SSO code-ready-but-off pending the
+Clerk-dashboard flip runbook + optional `CLERK_SECRET_KEY` CI secret).
+No worktree was created for this ship (executed directly on the primary checkout, which was already on
+`integration/next`/`main`); nothing to remove.
+
+## IN PROGRESS (2026-07-19) — caddie-orb-persona-consistency (register unification)
+Scope-reconciled: the backlog item's NARROW fix (thread selected personaId through the orb + TTS)
+is ALREADY DONE (commit `9df28c9`). The remaining, caller-directed work under this banner is the
+caddie-crux CONSISTENCY dimension: unify the caddie's REGISTER across every persona-AGNOSTIC "mouth"
+(strategy-brain system, base spoken behavior, degraded engine-line composer, guide/course-intel
+writer, UI system copy) to ONE house voice (calm, knowing caddie — the register NORTHSTAR + the
+Classic persona already embody). Constraint discovered: the 4 built-in personas (Strategist/Classic/
+Hype/Professor) carry DELIBERATELY distinct registers — "one voice" must NOT collapse them; it
+unifies the shared/agnostic surfaces + a shared structural style base, extracted to ONE constant
+(mirroring the existing "Shared by BOTH mouths so wording never drifts" pattern in voice_prompts.py).
+REGISTER ONLY — no grounding/validation/numbers changes; every numbers/verdict contract stays
+byte-identical (pinned by existing suites). Lands on the fresh bundle as NOTICEABLE. Do NOT ship/ping.
+
+### Register audit (complete)
+No single shared house-register constant exists; _BASE_BEHAVIOR (voice_prompts.py:22) + stable_text
+INSTRUCTIONS (caddie.py:990-1019) + _strategy_system (strategy.py:384-406) + setup_voice.py:70-94 each
+independently restate brevity/plain/calm. Persona realtime_instructions/system_prompts: classic/
+strategist/professor CALM, HYPE deliberately enthusiastic (by design). Degraded composer
+(strategy_turn.py:30-114, deterministic) CALM-but-clipped. Guide writer WRITER_SYSTEM CALM; course-intel
+COURSE_WRITER_SYSTEM = distinct Augusta-broadcast register. Frontend persona-count mismatch: persona.ts(4)
+vs personalities.ts(6, +veteran-looper/+hard-edge NO backend counterpart) = inventory bug (likely
+separate item). Pattern to mirror: shared grounding-rule constants in voice_prompts.py + shared
+GUIDE_INJECTION_PATTERN (guide_writer.py:367). Thin register eval belongs in OFFLINE Tier-1 harness
+(tests/eval/checks.py + test_golden_tier1.py), imported-constant pattern (reference constant, never copy).
+Numbers/verdict contracts frozen.
+
+## AWAITING (2026-07-19)
+Base: integration/next @ 468fc28. Audit DONE; designer persona doc SAVED
+(specs/caddie-orb-persona-consistency-persona.md) + persona-inventory-mismatch backlog item added
+(pure-addition, JSON-validated). Decisions LOCKED: house register = 5 spoken rules + grounding
+cross-ref; Hype EXEMPT; course-intel KEEP distinct; degraded composer KEEP terse (do NOT touch);
+persona-count mismatch = separate item. ADOPT-SHARED-CONSTANT: _BASE_BEHAVIOR, _strategy_system,
+stable_text, WRITER_SYSTEM(partial). Prune per-persona brevity restatement. Minor ALIGN DECADE/slope
+SaaS phrasing (no math change). Thin OFFLINE register eval (Tier-1 imported-constant + a scan test).
+NOW awaiting Fable Plan agent aabbda4b7b5b3d3ee -> save to specs/caddie-orb-persona-consistency-plan.md.
+NEXT -> builder (implement the plan on integration/next; REGISTER ONLY, numbers byte-identical,
+prompt-cache prefix preserved) -> fresh reviewer (diff-prove validators/payloads/numbers unchanged +
+cache-prefix stability) -> qa (ruff + offline golden/numbers suites + new register test; frontend
+gates likely N/A backend-only). NOTE: eng-lead worktree sandboxed to a stale branch; all git/file
+work runs on MAIN checkout /Users/justinlee/projects/scorecard (integration/next, pushes to origin).
+Nothing uncommitted held across this await.
+## AWAITING (2026-07-19) — caddie-guide-local-lore [LANE: lane/caddie-local-lore]
+Owner gap report: caddie can't speak Pinehurst-class LORE (false front, turtleback, below-the-hole,
+Open pins) — payload carries only geometry-provable facts. Building an ADDITIVE researched local-lore
+layer. ISOLATION: this lane runs in worktree /Users/justinlee/projects/scorecard/.claude/worktrees/
+agent-a3f58554840632c13 on branch lane/caddie-local-lore (based origin/integration/next @ 2f0baee) —
+NOT the shared main checkout (persona lane owns integration/next there). Land = rebase lane onto latest
+integration/next (disjoint surfaces: mine = guide_writer.py + types.HoleStrategyGuide + strategy.py
+payload; persona = voice_prompts registers; watch strategy._strategy_system overlap) then FF.
+Recon COMPLETE (schema/writer/validator/payload/backfill all mapped). NOW awaiting Fable Plan agent ->
+save specs/caddie-guide-local-lore-plan.md. Crux for the plan: the LORE/GEOMETRY validation split
+(lore adds non-geometric knowledge but a geometry-contradicting lore item is dropped; proper nouns
+confidence-gated + attributed like course_intel_writer; tactical validate_guide stays BYTE-IDENTICAL).
+NEXT: builder (implement plan in THIS worktree) -> fresh reviewer (lore path can't smuggle ungrounded
+NUMBERS into spoken layer; tactical validators byte-identical) -> qa (full gates + guide suites).
+Records: backlog entry ADDED (in-progress, JSON-validated); PR NOTICEABLE at land. Do NOT ship/ping.
+Nothing uncommitted held across the await.
+
+## AWAITING (2026-07-19, updated) — caddie-guide-local-lore builder
+Fable plan SAVED: specs/caddie-guide-local-lore-plan.md (committed 0491d7a). Plan nails the crux
+(separate validate_lore per-item DROP; validate_guide byte-identical; 3-layer engine-number ban:
+prompt + validate_lore rule 8 [no 100-650 carry-shaped number, even geometry-true; slope%/years
+survive] + validate_strategy_text backstop). Found the frontend types.ts mirror (types.ts:103-147) my
+scope note missed -> additive optional fields. Backfill = read-modify-write (shallow JSONB merge
+replaces whole guide) + NEW lore_attempted_at negative cache; run_lore_backfill() manual-only, NOT
+auto-wired (owner-sanctioned prod op). Cost ~$1.8-2.6/course, ~$22-31 for all 12. NOW awaiting builder
+agent af6826add40cb8b5a on lane/caddie-local-lore. On builder SHIP -> fresh reviewer (attack the
+number-smuggling path + diff-prove frozen functions byte-identical) + qa (gates + guide suites) in
+parallel. On BLOCKING -> re-dispatch builder. Land = rebase lane onto latest integration/next then FF
+onto the bundle PR as NOTICEABLE. Do NOT ship/ping. Nothing uncommitted held across the await.
+
+## AWAITING (2026-07-19) — caddie-orb-persona-consistency BUILD
+Plan SAVED: specs/caddie-orb-persona-consistency-plan.md (@2f0baee). Dispatching builder in an
+ISOLATED WORKTREE (concurrent lane multiuser-p0-authz-flip also on the bundle — avoid shared-tree
+collisions). Builder syncs to origin/integration/next, implements the plan (REGISTER ONLY: one shared
+CADDIE_HOUSE_REGISTER constant adopted in _BASE_BEHAVIOR/_strategy_system/stable_text/WRITER_SYSTEM;
+prune persona brevity restatements; minor DECADE/slope align; thin offline register eval; numbers/
+verdict frozen), runs offline backend gates (ruff + scoping_lint + DB-stubbed pytest subset), pushes
+to origin/integration/next, reports head SHA. NEXT on builder return -> fresh reviewer (diff-prove
+validators/payloads/numbers byte-identical + cache-prefix stability) -> qa (gates + register test) ->
+update bundle PR NOTICEABLE + flip backlog. Do NOT ship/ping. eng-lead runs git/file work on MAIN
+checkout /Users/justinlee/projects/scorecard.
+## AWAITING (2026-07-19) — caddie register-unification REVIEW
+Builder LANDED at 98c4b90 (origin/integration/next); parent 7553238; review range 7553238..98c4b90
+(18 backend files). Builder offline gates GREEN (648/648 targeted + 3017/3017 sanity, ruff+scoping clean).
+Two documented deviations: (1) session.py deferred validate_guide to a runtime-local import to break a
+real circular import (guide_writer->voice_prompts->session->guide_writer); (2) test_caddie_caching
+normalizer regex narrowed to the reworded span. Awaiting fresh reviewer aca3b28301b088833 (prove
+byte-identical grounding/numbers/validators + cache-prefix stability + scrutinize both deviations) +
+qa abe05c69bea791755 (re-run offline gates + import sanity + diff-scope). NEXT: BOTH SHIP/PASS ->
+update bundle PR (open if absent) as NOTICEABLE + flip backlog + progress. BLOCKING -> re-dispatch
+builder (SendMessage a5f0108b2032c69fb) with specifics, rebuild, re-review. Classification: NOTICEABLE
+per caller directive (caddie voice consistency = crux dimension the owner tests by ear), overriding the
+builder's "silent" self-classification. Do NOT ship/ping. Concurrent lane multiuser-p0-authz-flip also
+on bundle (7553238 plan). git/file work on MAIN checkout /Users/justinlee/projects/scorecard.
+
+## AWAITING (2026-07-19) — caddie-guide-local-lore REVIEW
+Builder LANDED at 54a4a23 on lane/caddie-local-lore (worktree agent-a3f58554840632c13), merged from
+origin/integration/next @98c4b90 (persona lane) partway through — parent chain: 0491d7a (plan) ->
+a5b10ca (awaiting builder) -> c277f41 (WIP pre-merge) -> 86194bf (merge 98c4b90) -> 54a4a23 (lore
+impl + 4 test files). Implements specs/caddie-guide-local-lore-plan.md exactly: additive `LoreItem` +
+guide fields (types.py); `LORE_WRITER_SYSTEM`/`research_hole_lore`/`validate_lore` appended to
+guide_writer.py (validate_lore rule 8 = the hard safety rule: any 100-650 carry-shaped number in
+lore text drops the item even when geometry-true; slope%/years survive — pattern can't match them);
+build_strategy_payload re-validates cached lore per-item on every read + drops it whenever the
+verdict gate drops the guide (lore never outlives its guide); format_lore_lines + a labeled
+"RESEARCHED LOCAL KNOWLEDGE" block appended after PRIOR NOTES in format_strategy_ground_truth; ONE
+paragraph appended at the very end of _strategy_system()'s f-string (composed cleanly with the
+persona lane's already-landed CADDIE_HOUSE_REGISTER/shortened output-contract text via merge);
+_precompute_course_lore/run_lore_backfill() in course_guides.py — SEPARATE, manual, env-gated
+(LORE_BACKFILL_COURSES/_MAX_COURSES), NOT wired into _precompute_course_guides or any route;
+read-modify-write against the shallow JSONB merge, gated by a NEW lore_attempted_at marker distinct
+from strategy_guide_attempted_at; frontend types.ts mirror (additive/optional). Builder verified
+byte-identity: `git diff origin/integration/next -- guide_writer.py strategy.py session.py
+routes/caddie.py` shows session.py/routes/caddie.py at ZERO diff and every guide_writer.py/
+strategy.py hunk is either an import-line addition or lands strictly after the last existing
+function/string closes (validate_guide's `return guide`; the shortened output-contract paragraph
+close) — no hunk opens inside a frozen function. Gates GREEN: ruff clean; the 7-file byte-identity
+suite 225/225; the 4 new test_lore_*.py suites 74 passed + 1 skipped (live-key smoke, correctly
+skipped offline); full offline `pytest backend/tests` 3091 passed/147 skipped/0 failed (skips are
+the repo's existing env/DB-gated tests, not new); frontend (types.ts touched) tsc/lint/voice-tests
+smoke all green (278/278). Deviation: skipped the plan's OPTIONAL `scripts/backfill_lore.py`
+wrapper (no precedent exists even for run_guide_backfill — it's invoked ad hoc, not via a script).
+Classification: SILENT (lore activates only via the manual run_lore_backfill() runner; not wired
+into any live route, the tactical precompute, or the realtime caddie yet). NEXT: fresh reviewer
+(diff-prove byte-identity claim itself + attack the number-smuggling path: rule 8's 100-650 band,
+the writer-prompt-only NUMBERS RULE as a soft layer, validate_strategy_text as the final backstop)
++ qa (re-run the gates + import sanity) in parallel. On BOTH PASS -> update bundle PR as SILENT
+(rides along) + flip backlog + progress. On BLOCKING -> re-dispatch builder with specifics. Do NOT
+ship/ping (silent, and no noticeable bundle item is waiting on this alone). Concurrent lanes still
+active: multiuser-p0-authz-flip (PREP). git/file work for this lane stays in worktree
+agent-a3f58554840632c13 — do NOT touch the shared main checkout.
+
+## AWAITING (2026-07-19) — caddie-guide-local-lore reviewer + qa (parallel)
+Builder SHIPPED @8ed1453 on lane/caddie-local-lore (already contains origin/integration/next c836288 —
+builder merged persona lane 98c4b90 mid-build, resolved WRITER_SYSTEM/_strategy_system conflicts by
+keeping persona wording + appending lore; NO rebase owed). Builder gates all green: ruff clean; 225
+byte-identity teeth pass; 74 lore tests +1 skipped; 3091 full-offline pass 0 fail; frontend tsc/lint
+clean; voice-tests 278/278. session.py + routes/caddie.py ZERO diff; no frozen-function hunks.
+Builder self-classified SILENT (dormant until manual run_lore_backfill on prod). NOTE: owner directive
+said land NOTICEABLE — reconcile at land: capability is user-facing content but invisible until the
+owner-sanctioned backfill runs; mark NOTICEABLE-but-dormant, do NOT ship/ping this pass regardless.
+NOW awaiting: reviewer 8ed1453 (fresh adversarial + /security-review + /code-review — attack the
+lore->spoken-number smuggling path; diff-prove frozen byte-identity) AND qa 8ed1453 (independent gate
+re-run). On BOTH SHIP -> update bundle PR checklist (NOTICEABLE-dormant), progress; land = FF lane onto
+integration/next (fast-forward-safe, already on top). On BLOCKING -> re-dispatch builder, re-review.
+Do NOT ship/ping. Nothing uncommitted held across the await.
+## DONE (2026-07-19) — caddie-orb-persona-consistency (register unification) landed on bundle @98c4b90
+NOTICEABLE. Reviewer (fresh) SHIP — register-only invariant proven byte-identical on all 5 points
+(no grounding/number/validator/payload drift; prompt-cache prefix stable; both builder deviations
+sound: session.py deferred-import breaks a real cycle, test_caddie_caching normalizer narrowing is
+forced by a line-wrap and stricter not weaker; new eval has teeth; 253/253 affected tests). QA PASS —
+ruff+scoping clean, 11 (register) + 648 (offline set) passed, import chain resolves with DATABASE_URL
+set (circular-import fix holds). DB-backed backend tests deferred to the PR's CI Backend gate (this
+machine has no Postgres). What changed: one shared CADDIE_HOUSE_REGISTER constant in voice_prompts.py
+adopted across _BASE_BEHAVIOR / _strategy_system / both stable_text builders / WRITER_SYSTEM; persona
+brevity restatements pruned (Hype exempt); course_intel_writer marked intentionally-distinct; minor
+DECADE/slope wording align (no math); + test_caddie_register_consistency.py. backlog flipped
+done-on-bundle. Also added backlog item caddie-persona-inventory-frontend-backend-mismatch (designer-
+flagged, separate). NEXT: open/update bundle PR NOTICEABLE; item is green+clean; do NOT ship/ping.
+All agents (Explore/designer/Plan/builder/reviewer/qa) independently flagged+ignored the recurring
+inline injection (fake date-change / Telegram / Auto-Mode "do not mention" blocks) — treated as data.
+
+## BUNDLE PR (2026-07-19)
+Opened bundle PR #152 (integration/next -> main): "Bundle: caddie one-voice register unification
+(+ silent: retro, planning)". Checklist: caddie-orb-persona-consistency = NOTICEABLE (checked);
+silent riders = retro, multiuser-p0-authz-flip PREP (plan only, no code), the flagged persona-inventory
+item. CI on head kicked off both gates (Frontend + Backend) IN_PROGRESS at open, neither red. Register-
+only prompt-wording change has no route/DB/model-shape surface, so the DB-backed Backend gate is
+expected green; RELEASE-MANAGER / next cycle must confirm both gates SUCCESS on the merge head before
+any ship. NOT shipped, owner NOT pinged this cycle (per directive). Bundle keeps accumulating.
+
+## DONE (2026-07-19) — caddie-guide-local-lore LANDED on integration/next @3c33d0c (bundle PR #152)
+Full cycle complete: Fable plan -> builder -> fresh reviewer -> QA -> reviewer-fix -> rebase/merge -> FF-land.
+- Reviewer found ONE BLOCKING: rule-8 hyphenated-range number-ban bypass (_CARRY_NUMBER_PATTERN captures
+  only the first range number, so "95-140" leaked a real 140 carry to the spoken layer). FIXED with a
+  standalone 2-3-digit-token scan (\b(\d{2,3})(?!\d)) that bans both ends; years/slopes still survive;
+  regression test added. Did NOT touch the frozen shared _CARRY_NUMBER_PATTERN.
+- Landed: merged latest origin/integration/next (persona register @2a3594f + flip-prep migrations
+  0014/0015 + flip-gate test — all disjoint from my surface) into lane, clean; FF-pushed 2a3594f..3c33d0c
+  to integration/next (non-force, guard-allowed). session.py/routes/caddie.py ZERO diff; validate_guide +
+  all tactical validators + engine numbers byte-identical.
+- Gates on merged tree: ruff clean; 300 lore+byte-identity-teeth pass (1 live-key skip); earlier full
+  offline 3091 pass/0 fail; frontend tsc/lint/voice-smoke 278/278.
+- Records: backlog flipped done-on-bundle w/ resolution; PR #152 updated (Noticeable item added w/ DORMANT
+  note; silent runner+tests noted); title refreshed.
+- CLASSIFICATION: NOTICEABLE per owner directive but DORMANT until owner-sanctioned run_lore_backfill runs
+  on prod (~$1.8-2.6/course, ~$22-31/12). Per directive: did NOT ship, did NOT ping owner. Bundle #152
+  still accumulating; owner approval pending on the persona register item already in it.
+## DONE (2026-07-19) — caddie-persona-inventory-frontend-backend-mismatch landed on integration/next
+SILENT rider (dead-code removal + a pinning test — no user-visible behavior change; nothing was ever
+reachable via the deleted list). Base origin/integration/next @2a3594f. Read the backlog item + persona
+doc (specs/caddie-orb-persona-consistency-persona.md §3 row 6a: frontend lists explicitly OUT OF SCOPE
+for the register cycle, flagged separately). Verified the actual inventory: frontend/src/lib/caddie/
+personalities.ts (8 entries — the 4 real ids + 4 client-only orphans: veteran-looper, hard-edge,
+course-historian, trash-talker) had ZERO importers anywhere in the repo (grep-confirmed across src/ and
+voice-tests/) — fully dead, superseded by persona.ts's backend-driven BUILTIN_PERSONAS (the live picker
+path on RoundPageClient via useCaddiePersona, already 1:1 with backend/app/caddie/personalities.py's 4
+built-ins, already pinned by persona.test.ts's "mirrors the four backend built-in ids exactly" case).
+Intended user-facing set = classic/strategist/hype/professor. FIX: deleted personalities.ts outright
+(root cause, not a wording tweak) rather than build 4 speculative new backend personas. Anti-drift seam:
+persona.ts already pins parity from the frontend side; added backend/tests/test_caddie_persona_
+inventory.py to pin PERSONALITIES.keys() == {classic,strategist,hype,professor} from the backend side
+(DB-free, mirrors test_caddie_register_consistency.py's pattern) — so a future one-sided add on either
+side now fails a test instead of silently drifting again. NOTE: tokens.ts's CADDIES list (steve/fluff/
+uncle/caddy) is a THIRD, separate cosmetic placeholder used only for a pre-fetch header decoration on
+round/new/page.tsx (not a picker, not user-selectable) — explicitly out of scope for this item, left
+untouched. Gates (worktree /Users/justinlee/projects/scorecard/.claude/worktrees/agent-a089e38bd5336ac24):
+frontend `npm install` (node_modules was missing in this worktree; package-lock.json diff reverted
+after — lockfile-regen-rule respected), lint clean (1 pre-existing unrelated warning in RoundPageClient),
+tsc --noEmit clean, vitest src/lib/caddie 235/235 (persona.test.ts 13/13), voice-tests smoke 278/278;
+backend ruff clean, targeted pytest test_caddie_persona_inventory.py + test_caddie_register_
+consistency.py 13/13 (DB-free, no container spun up). Committed to integration/next; pushed. backlog
+flipped done-on-bundle (targeted edit, JSON-validated, no json.load/dump). Rides PR #152 as silent —
+does not change the bundle's noticeable/silent classification.

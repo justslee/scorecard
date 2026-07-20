@@ -32,6 +32,7 @@ from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
 from app.caddie.session import RoundSession  # noqa: E402
 from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, WeatherConditions  # noqa: E402
 from app.caddie.voice_prompts import (  # noqa: E402
+    CADDIE_HOUSE_REGISTER,
     DECISION_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
     NUMBERS_COHERENCE_RULE,
@@ -178,7 +179,7 @@ def test_strategy_system_contains_the_grounding_rule_constants():
 def test_strategy_system_states_the_output_contract():
     system = strategy_mod._strategy_system()
     assert "80 words" in system
-    assert "no markdown" in system.lower()
+    assert CADDIE_HOUSE_REGISTER in system
 
 
 # ── Routing-text pins ────────────────────────────────────────────────────

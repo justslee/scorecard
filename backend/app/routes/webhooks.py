@@ -1,8 +1,9 @@
 """Clerk webhook receiver — ``POST /api/webhooks/clerk``.
 
 Multi-user P0 slice 3 (specs/multi-user-epic-plan.md §3.4). Verifies Clerk's
-Svix-signed webhook deliveries and marks a user revoked in the in-process
-revocation store (``app/services/revocation.py``) on ``user.deleted`` /
+Svix-signed webhook deliveries and marks a user revoked in the durable
+revocation store (Postgres ``revoked_users``, write-through to the
+in-process cache — ``app/services/revocation.py``) on ``user.deleted`` /
 ``user.banned`` / ``session.revoked``. Unhandled event types are 200-acked
 without action (Clerk retries on anything but 2xx).
 
@@ -164,7 +165,7 @@ async def clerk_webhook(
 
     revoked_user_id = _extract_revoked_user_id(event_type, data)
     if revoked_user_id is not None:
-        revocation.revoke(revoked_user_id, reason=event_type, source="clerk_webhook")
+        await revocation.revoke_durable(revoked_user_id, reason=event_type, source="clerk_webhook")
         log.info("clerk_webhook: revoked user (event=%s)", event_type)
     else:
         log.info("clerk_webhook: ignoring unhandled event type=%r", event_type)

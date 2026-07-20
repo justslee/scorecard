@@ -144,22 +144,30 @@ def _owner_id() -> Optional[str]:
 # DEFERRED — must close before APP_ACCESS_MODE=open ships to prod (P0 multi-user
 # epic, specs/multi-user-epic-plan.md). require_member's own gate is complete
 # in this slice; these are separate, already-known gaps in OTHER code that stay
-# safe only because the flag defaults OFF. Do not consider any of these closed
-# by this slice:
-#   - hole_pins → per-user (§3.3.1) — needs a schema migration (banned this
-#     slice); today pins are effectively global/shared.
+# safe only because the flag defaults OFF.
+#
+# CLOSED by specs/multiuser-p0-authz-flip-plan.md (the FLIP-PREP slice):
+#   - revocation durability — now a durable Postgres table (`revoked_users`,
+#     migration 017), write-through from the Svix-verified webhook
+#     (`revocation.revoke_durable`) and warmed into the in-process cache at
+#     boot (`revocation.warm_revocation_cache`, open mode only, main.py). A
+#     restart can no longer silently un-revoke a banned member.
+#   - hole_pins → per-user (§3.3.1) — migration 018 adds `user_id` +
+#     a (course_id, hole_number, pin_date, user_id) unique key; pins.py is
+#     scoped end to end (list/upsert/read-back).
+#   - caddie_personas author-scoping (§3.3.4) — `load_personality` itself now
+#     enforces visibility (built-in/public/author-match else silent fallback
+#     to default), closing the two call sites (voice.py /speak,
+#     realtime.py /setup-session) that previously passed a client-supplied
+#     persona id straight through with no gate.
+#
+# Still deferred — do not consider these closed by this slice:
 #   - availability/OCR async job stamp-and-match (§3.3.2) — request_availability_
 #     call is owner-only in this slice (see the carve-out below), so no
 #     non-owner jobs exist yet; must close before genericizing past the owner.
-#   - caddie_personas author-scoping (§3.3.4) — persona authoring is not yet
-#     scoped per-author.
 #   - user_session(user_id) centralization — the RLS seam; a large mechanical
 #     refactor, its own future slice. ci_scripts/scoping_lint.py is the interim
 #     structural guard against new unscoped tenant queries.
-#   - revocation is now wired (P0 slice 3, below) but backed by an IN-PROCESS
-#     store (app/services/revocation.py) — the durable `revoked_users` Postgres
-#     table is REQUIRED before APP_ACCESS_MODE=open ships (a restart must never
-#     silently un-revoke a banned member once real strangers exist).
 # ─────────────────────────────────────────────────────────────────────────────
 async def require_member(user_id: str = Depends(current_user_id)) -> str:
     """FastAPI dependency: the multi-user authz gate (P0 slices 1 + 3).
@@ -171,7 +179,7 @@ async def require_member(user_id: str = Depends(current_user_id)) -> str:
     returns BEFORE the revocation check below runs — owner mode never
     consults the revocation store, by design (see
     app/services/revocation.py's module docstring; proven by
-    TestRequireMemberOwnerModeUntouched in test_clerk_auth.py).
+    TestByteIdenticalOwnerMode in test_clerk_auth.py).
 
     mode="open": any verified Clerk `sub` passes UNLESS it has been revoked
     (banned/deleted via the Clerk webhook — app/routes/webhooks.py, checked

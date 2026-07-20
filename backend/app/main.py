@@ -126,6 +126,22 @@ async def startup():
     # at import time — see _assert_boot_config's docstring.
     _assert_boot_config()
 
+    # Warm the in-process revocation cache from the durable revoked_users
+    # table — OPEN MODE ONLY. Owner mode never consults the revocation store
+    # (require_member short-circuits before it), so owner-mode boot does
+    # ZERO new work here (byte-identical guarantee). A DB failure here
+    # propagates and refuses to boot — fail-closed, matching
+    # _assert_boot_config's philosophy: booting open-mode without the ban
+    # list would silently un-revoke banned members.
+    from app.services import revocation
+    from app.services.clerk_auth import _access_mode
+
+    if _access_mode() == "open":
+        revoked_count = await revocation.warm_revocation_cache()
+        logging.getLogger("looper.main").info(
+            "revocation cache warmed: %d revoked user(s)", revoked_count
+        )
+
     # Periodic cleanup of expired round sessions (every 30 min)
     async def cleanup_loop():
         while True:

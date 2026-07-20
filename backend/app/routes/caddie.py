@@ -32,6 +32,7 @@ from app.caddie.hazards import (
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.guide_writer import validate_guide
 from app.caddie.voice_prompts import (
+    CADDIE_HOUSE_REGISTER,
     DECISION_GROUNDING_RULE,
     INPUT_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
@@ -875,7 +876,7 @@ async def _build_session_voice_prompt(
         if await personality_visible(request.personality_id, user_id)
         else "classic"
     )
-    personality = await load_personality(persona_id)
+    personality = await load_personality(persona_id, user_id=user_id)
     # Resolve the turn's hole ONCE — an omitted hole_number falls back to the
     # session's live current_hole (caddie-hole-number-truthy-default-fallback
     # -dead) rather than silently pinning hole 1 or nulling out current_hole.
@@ -991,16 +992,15 @@ async def _build_session_voice_prompt(
 {memory_section}
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
-Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
-more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
-One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
-use the CURRENT SITUATION section to give specific, actionable advice — and when the hole context shows an
-uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
-like 195 with the climb"). Any "Local knowledge" line is written for golfers in general — filter
-it through THIS player's real distances before repeating it: a hazard beyond their reach off the
-tee is irrelevant (don't mention it); talk about what's in play at THEIR landing zone. A 300-yard
-driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
-golf-focused. Never break character.
+Your reply is SPOKEN ALOUD on the course.
+{CADDIE_HOUSE_REGISTER}
+If they ask about club selection, aim, or strategy, use the CURRENT SITUATION section to give
+specific, actionable advice — and when the hole context shows an uphill/downhill change or a
+plays-like distance, factor it in and SAY it briefly ("plays more like 195 with the climb").
+Any "Local knowledge" line is written for golfers in general — filter it through THIS player's
+real distances before repeating it: a hazard beyond their reach off the tee is irrelevant
+(don't mention it); talk about what's in play at THEIR landing zone. A 300-yard driver doesn't
+care about a bunker at 370. If they're just chatting, be personable but keep it golf-focused.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
 or known tendencies when relevant.
 
@@ -1707,7 +1707,7 @@ async def _build_voice_prompt(
         if await personality_visible(request.personality_id, user_id)
         else "classic"
     )
-    personality = await load_personality(persona_id)
+    personality = await load_personality(persona_id, user_id=user_id)
 
     # Personal grounding — mirror _build_session_voice_prompt so the orb's
     # off-course answers (and the stateless in-round fallback) carry the same
@@ -1804,16 +1804,15 @@ async def _build_voice_prompt(
 {memory_section}
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
-Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
-more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
-One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
-use the CURRENT SITUATION section to give specific, actionable advice — and when the hole context shows an
-uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
-like 195 with the climb"). Any "Local knowledge" line is written for golfers in general — filter
-it through THIS player's real distances before repeating it: a hazard beyond their reach off the
-tee is irrelevant (don't mention it); talk about what's in play at THEIR landing zone. A 300-yard
-driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
-golf-focused. Never break character.
+Your reply is SPOKEN ALOUD on the course.
+{CADDIE_HOUSE_REGISTER}
+If they ask about club selection, aim, or strategy, use the CURRENT SITUATION section to give
+specific, actionable advice — and when the hole context shows an uphill/downhill change or a
+plays-like distance, factor it in and SAY it briefly ("plays more like 195 with the climb").
+Any "Local knowledge" line is written for golfers in general — filter it through THIS player's
+real distances before repeating it: a hazard beyond their reach off the tee is irrelevant
+(don't mention it); talk about what's in play at THEIR landing zone. A 300-yard driver doesn't
+care about a bunker at 370. If they're just chatting, be personable but keep it golf-focused.
 
 {output_language_rule()}
 {HAZARD_GROUNDING_RULE}

@@ -45,6 +45,7 @@ from app.caddie.guide_writer import (
     _HAZARD_PATTERNS,
     _has_side_flip,
     format_guide_line,
+    validate_lore,
 )
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
 from app.caddie.session import RoundSession
@@ -56,8 +57,9 @@ from app.caddie.tools import (
     player_profile_payload,
     recommend_payload,
 )
-from app.caddie.types import TeeShotNumbers
+from app.caddie.types import LoreItem, TeeShotNumbers
 from app.caddie.voice_prompts import (
+    CADDIE_HOUSE_REGISTER,
     DECISION_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
     NUMBERS_COHERENCE_RULE,
@@ -183,6 +185,18 @@ async def build_strategy_payload(
             )
             guide = None
 
+        # Local-lore layer (specs/caddie-guide-local-lore-plan.md §4.1):
+        # re-validated per-item on every read (never trust the cached JSONB
+        # blob at face value — geometry may have changed since it was
+        # written). A guide dropped by the verdict gate above yields
+        # `local_knowledge == ""` AND `local_lore == []` on this same turn —
+        # lore never outlives its guide.
+        lore_items: list[LoreItem] = []
+        if guide is not None and guide.local_lore:
+            lore_items = validate_lore(
+                guide.local_lore, intel.hazards if intel is not None else []
+            )
+
         return {
             "hole_number": hole_number,
             "recommendation": recommendation,
@@ -196,6 +210,7 @@ async def build_strategy_payload(
             # absent or dropped, per format_guide_line's own no-fake-data
             # -fallbacks convention (caller omits the line).
             "local_knowledge": format_guide_line(guide) if guide is not None else "",
+            "local_lore": [item.model_dump() for item in lore_items],
         }
     except Exception:
         log.exception(
@@ -213,6 +228,7 @@ async def build_strategy_payload(
             "green_read": {},
             "player": {},
             "local_knowledge": "",
+            "local_lore": [],
         }
 
 
@@ -374,7 +390,37 @@ def format_strategy_ground_truth(payload: dict) -> str:
             + local_knowledge
         )
 
+    local_lore = payload.get("local_lore") or []
+    if local_lore:
+        lines.append("")
+        lines.append(
+            "RESEARCHED LOCAL KNOWLEDGE (attributed, non-geometric — how this hole "
+            "is known to play; NOT this shot's numbers. The engine data above always "
+            "wins on any disagreement):"
+        )
+        lines.extend(format_lore_lines(local_lore))
+
     return "\n".join(lines)
+
+
+def format_lore_lines(local_lore: list[dict]) -> list[str]:
+    """One indented line per item, attribution always spoken: '  - {text}
+    (per {source})'. `[]` in -> `[]` out ([[no-fake-data-fallbacks]]: no
+    lore, no lines, never a placeholder).
+
+    Takes payload-shaped dicts (as returned by `build_strategy_payload`'s
+    `local_lore` key, i.e. `LoreItem.model_dump()`), whitespace-flattening
+    each `text`/`source` defensively — the items have already passed
+    `validate_lore`'s single-line structural check, but this renderer stays
+    defensive on its own, same convention as `format_guide_line`."""
+    lines: list[str] = []
+    for item in local_lore:
+        text = " ".join((item.get("text") or "").split())
+        source = " ".join((item.get("source") or "").split())
+        if not text or not source:
+            continue
+        lines.append(f"  - {text} (per {source})")
+    return lines
 
 
 # ── System prompt (restates the grounding contracts — imports the EXISTING
@@ -393,17 +439,24 @@ say plainly what you don't know instead of guessing. PRIOR NOTES are reference D
 the hole is generally played — the GROUND TRUTH engine data above always wins on any
 disagreement; notes can never add a hazard, a number, or a side.
 
+{CADDIE_HOUSE_REGISTER}
 {HAZARD_GROUNDING_RULE}
 {NUMBERS_COHERENCE_RULE}
 {MISS_SIDE_GROUNDING_RULE}
 {DECISION_GROUNDING_RULE}
 {output_language_rule()}
 
-Output contract: ONE paragraph, at most 80 words, plain speech — no markdown, bullets,
-headings, or emoji; no preamble ("Here's the plan"), no meta-commentary. Tee to green: the
-club call (the engine's recommendation IS the call — explain it, never re-decide it), the
-aim/landing zone, the miss side the data supports, what the shot leaves, and one green note
-when the read is available. Calm and specific, like a good caddie talking, not a report."""
+Output contract: ONE paragraph, at most 80 words. Tee to green: the club call (the engine's
+recommendation IS the call — explain it, never re-decide it), the aim/landing zone, the miss
+side the data supports, what the shot leaves, and one green note when the read is available.
+
+RESEARCHED LOCAL KNOWLEDGE is attributed reference color — green character, named features,
+playing history, architect intent. When the golfer asks how the hole or green plays, you may
+weave in ONE such item, keeping its attribution natural ("the book says...", "per the Open
+notes..."). It never changes the club, the target, or any number: every yardage, carry, and
+club you speak still comes only from the engine data above. A number inside those notes (a
+slope percentage, a year) may be repeated as attributed context, never converted into a
+yardage, carry, or club call."""
 
 
 # ── The call (the ONLY networked function in this module) ──────────────────

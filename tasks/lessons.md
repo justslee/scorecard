@@ -201,3 +201,55 @@ phantom-clarifier → numbers-coherence → corridor-width. The durable lessons:
   lane gets its own worktree** — a main-checkout lane's `git reset --hard` wiped a live builder's
   uncommitted edit (reflog-recovered). The main checkout is NOT safe just because the *other* lane
   is isolated. [[parallel-lanes-use-worktrees]].
+
+## Session lessons (2026-07-17→19 — retro; 8 ships v1.1.11→v1.1.18, bundles #144–#151)
+The burst's spine was the two-tier caddie router + the login/onboarding epic. New, durable lessons:
+
+- **Measurement-FIRST: get independent ground truth before you accept a math-bug hypothesis —
+  the defect is often downstream of the math.** The Bethpage-Red tree-distance P0 looked like bad
+  geometry math; instead of patching the calc, we measured the trees two independent ways (geodesic
+  ground truth ±5y, incl. an 83y dogleg) and PROVED the base math correct — the real defect was
+  `format_hazards_line` collapsing the carry gap on the way to the mouth (fix 6feb8a4, a
+  gap-preserving formatter). Same shape as the log-observability bug (numbers passed via `extra=`
+  vanished because `logging.basicConfig`'s default formatter only renders `getMessage()`). RULE:
+  when a number looks wrong, establish an independent measurement of the true value FIRST; only then
+  decide whether the bug is in the computation or in the formatter/display/logging between the engine
+  and the surface. A wrong fix to correct math is pure waste. (Reinforces the 2026-07-15 Verify-FIRST
+  lesson — extend it from "falsify the premise" to "measure the value.")
+
+- **Derived LLM content must be regenerated or gated when its grounding engine changes — cached
+  guides silently outlive the geometry they were written against.** The 10th-recurrence wrong-side
+  advice bug traced to poisoned per-hole guides: LLM-written strategy text cached in the DB kept
+  feeding both caddie mouths stale hazard-side/bend/green-slope claims after the engine that grounds
+  them had been fixed. The two-tier router fix (v1.1.13) strips guide/hazard/bend/green-slope detail
+  from both mouths' BAKED context and adds a read-time, verdict-pinned validity gate (Red-1
+  poisoned-guide acceptance 2/2). RULE: any cached/derived artifact (LLM guides, course-intel
+  descriptions, precomputed selections) needs an invalidation or read-time re-validation tied to the
+  version of the engine/geometry that produced it — never trust stored derived data as ground truth.
+  Treat a fabricated/stale spoken claim as a P0 ([[no-fake-data-fallbacks]], [[caddie-numbers-coherence]]).
+
+- **On-box investigation writes to `/tmp` ONLY — never leave an untracked file in the deploy tree.**
+  During the tee-selector all-courses audit the re-run was done from an isolated `/tmp` copy (md5-
+  verified identical, never touching the deployed app/service); the discipline exists because an
+  untracked file in the repo/deploy path can collide with a deploy (git pull / clean). RULE: any
+  probe/audit/repro script or scratch data on the build Mac or EC2 lives under `/tmp`, not in the
+  working tree — verified this cycle, keep it standing. (Same file lists the keychain fix: a build-Mac
+  hang at "Resolve Package Graph" = a stale `github.com` keychain internet-password entry SwiftPM
+  deadlocks on; delete it headless, then `gh auth setup-git` to restore git's HTTPS cred.)
+
+- **Run the ship sequence INLINE/foreground — a backgrounded gate-monitor or ship child dies
+  silently and orphans the release.** Across this burst's ships, backgrounded waits/monitors
+  repeatedly terminated without completing the ship; every clean ship (through v1.1.18) ran
+  `ops/ios/ship.sh` in the FOREGROUND from synced `main` @ the merge SHA, with the gate check done
+  inline (`state:SUCCESS` per head SHA) right before the bump→merge→deploy→TestFlight steps. RULE
+  (codified in `.claude/agents/release-manager.md`): once every required gate is SUCCESS on the head
+  SHA, execute the ship steps inline in the current run — never dispatch a child to babysit a monitor
+  and never background the ship. (Reinforces the 2026-07-15 monitor-inline lesson.)
+
+- **The designer's LIVE-render BLOCKING pass keeps catching real, shipping-grade bugs that lint /
+  tsc / review are blind to — it is mandatory, not ceremony.** The login/onboarding epic's designer
+  iterations caught (and BLOCKED on) genuine defects on the live build: a React-19 dispatch-abort
+  where a co-located `onPointerDownCapture{stopPropagation}` SILENTLY KILLED the aim-target drag, and
+  onboarding Bag-step CTAs pushed off-screen. These render fine to a code read and pass every
+  automated gate. RULE: every orb/CTA/copy/layout/gesture change gets a designer live-render review
+  before it rides a bundle to the owner; a pending designer pass is BLOCKING, not a fast-follow.

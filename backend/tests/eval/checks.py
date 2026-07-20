@@ -40,6 +40,7 @@ from app.caddie.session import RoundSession, VoiceCaddieMessage
 from app.caddie.tools import carries_payload, shot_distance_payload
 from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, HoleStrategyGuide, WeatherConditions
 from app.caddie.voice_prompts import (
+    CADDIE_HOUSE_REGISTER,
     DECISION_GROUNDING_RULE,
     INPUT_GROUNDING_RULE,
     MISS_SIDE_GROUNDING_RULE,
@@ -221,6 +222,7 @@ def build_tier1_context(
 # ── Tier-1 check implementations ─────────────────────────────────────────────
 
 _RULE_TEXT: dict[str, str] = {
+    "CADDIE_HOUSE_REGISTER": CADDIE_HOUSE_REGISTER,
     "HAZARD_GROUNDING_RULE": HAZARD_GROUNDING_RULE,
     "OBSERVED_REALITY_RULE": OBSERVED_REALITY_RULE,
     "PHYSICS_GROUNDING_RULE": PHYSICS_GROUNDING_RULE,

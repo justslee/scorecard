@@ -90,6 +90,22 @@ class HolePlayerHistory(BaseModel):
     bogey_rate: float = 0.0
 
 
+class LoreItem(BaseModel):
+    """One researched, attributed piece of local knowledge about a hole
+    (specs/caddie-guide-local-lore-plan.md). Content-only — it doubles as the
+    lore writer's structured-output item schema (like guide_writer._WriterOutput,
+    provenance is stamped at the GUIDE level by research_hole_lore, never asked
+    of the model). ALL fields defaulted so an older cached strategy_guide JSONB
+    blob (no lore) and a partial item both still validate; validate_lore is the
+    gate that decides what survives, per-item ([[no-fake-data-fallbacks]])."""
+
+    text: str = ""          # ONE plain sentence, register-matched (calm, on-paper)
+    category: str = "feature"  # green_character | feature | history | architect_intent
+    source: str = ""        # short spoken attribution ("USGA championship notes") — NEVER a URL;
+                            # empty = unattributed -> validate_lore drops the item
+    confidence: str = "unknown"  # high | medium | low | unknown (self-reported; kept iff exactly "high")
+
+
 class HoleStrategyGuide(BaseModel):
     """Compact per-hole strategy guide, researched offline (see guide_writer.py)
     and cached FOREVER in the green feature's JSONB `properties.strategy_guide`
@@ -105,6 +121,16 @@ class HoleStrategyGuide(BaseModel):
     generated_at: str = ""  # ISO 8601 timestamp of the write
     model: str = ""  # model id that wrote it (e.g. "claude-sonnet-5")
     schema_version: int = 1  # bump on shape change -> staleness re-research trigger
+    # Researched LOCAL-LORE layer (specs/caddie-guide-local-lore-plan.md) —
+    # additive + defaulted so every pre-lore cached JSONB blob still validates.
+    # [] = no lore researched/surviving yet (honest omission, never a placeholder).
+    local_lore: list[LoreItem] = Field(default_factory=list)
+    # Guide-level lore provenance (ONE research call produces the whole batch —
+    # per-item stamps would only bloat the JSONB and the prompt; the per-item
+    # `source` field is the user-facing attribution, these are ops provenance).
+    lore_generated_at: str = ""   # ISO 8601, stamped by research_hole_lore
+    lore_model: str = ""          # model id that wrote the lore batch
+    lore_sources: list[str] = Field(default_factory=list)  # audit URLs actually used — NEVER rendered into any prompt
 
 
 class HoleBend(BaseModel):

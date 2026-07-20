@@ -19,6 +19,13 @@ green AND is worth a ping: (a) ≥1 **TestFlight-noticeable** change, or (b) a *
 or major backend change the owner can test** (e.g. a deployed API/data-layer change). For a
 TestFlight-noticeable bundle, build the app; for a backend-only testable change, skip the
 build and point him at how to test (staging). Then:
+0. **Run the ship sequence INLINE / foreground — never backgrounded, never via a child that
+   babysits a monitor.** Backgrounded gate-waits and ship children die silently and orphan the
+   release (recurring across the v1.1.11→v1.1.18 burst). Once every REQUIRED gate is `state:SUCCESS`
+   on the exact head SHA (verify inline, structured fields — never scraped/`head`-ed output), run the
+   bump→build→merge→deploy→TestFlight steps directly in this run. Prelude every shell step with the
+   absolute `cd /Users/justinlee/projects/scorecard`, un-piped, `set -euo pipefail`. `ship.sh` runs in
+   the FOREGROUND from synced `main` @ the merge SHA.
 1. **Build TestFlight from `integration/next`:** run `bash ops/ios/ship.sh` on this Mac
    (Xcode + the ASC API key at `~/.appstoreconnect/private_keys/` build, sign, and upload to
    **TestFlight Internal** — private to the owner's Apple ID, never public). One-command; no

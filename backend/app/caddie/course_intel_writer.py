@@ -165,6 +165,13 @@ def build_course_ground_truth_block(course: dict) -> str:
 
 # ── The writer prompt (§3a) — two fixed few-shot anchors, VERBATIM ─────────
 
+# INTENTIONALLY DISTINCT register (specs/caddie-orb-persona-consistency-
+# persona.md §3 row 4b / §5): this is WRITTEN scene-setting prose in the
+# Augusta-broadcast voice, not a live spoken turn — it does NOT fold
+# voice_prompts.CADDIE_HOUSE_REGISTER, and must not. It still owes rules
+# 5/6 (never robotic, never invent) — pinned by
+# tests/test_caddie_register_consistency.py's banned-literal scan and its
+# register-absence assertion.
 COURSE_WRITER_SYSTEM = """You are a WRITER, not a knower. Your job is to write a short, evocative
 passage about a golf course, using ONLY two things:
 
