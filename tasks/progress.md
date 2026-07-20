@@ -1391,3 +1391,10 @@ backend ruff clean, targeted pytest test_caddie_persona_inventory.py + test_cadd
 consistency.py 13/13 (DB-free, no container spun up). Committed to integration/next; pushed. backlog
 flipped done-on-bundle (targeted edit, JSON-validated, no json.load/dump). Rides PR #152 as silent —
 does not change the bundle's noticeable/silent classification.
+
+## THE FLIP — EXECUTED (2026-07-20 00:45 UTC, coordinator + owner)
+`APP_ACCESS_MODE=open` is LIVE on prod: owner pasted the exact flip command (explicit
+authorization), executed via SSM — config backed up (`~/.env.preflip.bak`), authorized-parties
+set, service restarted healthy, open mode confirmed in the live process, revocation cache warmed
+from `revoked_users` (0). Looper is MULTI-USER. Owner follow-ups: Clerk dashboard webhook
+(Svix secret + user.deleted/user.banned/session.revoked) + confirm signups open.
