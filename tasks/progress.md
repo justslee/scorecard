@@ -1449,3 +1449,14 @@ Then: builder implements on this lane → push origin/integration/next; reviewer
 NOTICEABLE "multi-user: flip fixed + canary" checklist item. Do NOT ship/ping/flip.
 On resume: check specs/ for the fix plan + `git log origin/integration/next` for builder commits
 before re-dispatching anything.
+
+## AWAITING (updated 5f3288e) — signout-on-profile: plan done, builder next
+Plan committed @5f3288e (specs/multiuser-p0-signout-namespace-clear-plan.md, Fable).
+Base = origin/integration/next @5f3288e. NEXT: builder (isolation:worktree) implements the plan's
+§10 checklist, commits + pushes to integration/next. Then designer(BLOCKING, rendered Profile),
+reviewer(+/security-review), qa(gates + sign-out→sign-up e2e drivable). LESSON RE-LEARNED this cycle:
+eng-lead git work MUST run in the assigned isolated worktree
+(/Users/justinlee/projects/scorecard/.claude/worktrees/agent-a21d98a1f85e4d9bd), NOT the shared
+checkout /Users/justinlee/projects/scorecard (another lane uses it concurrently). Push via
+`git push origin HEAD:integration/next` from the worktree branch. On resume: check origin/integration/next
+head + `git log` for the builder's commits before re-dispatching anything.
