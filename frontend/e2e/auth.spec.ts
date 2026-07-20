@@ -182,4 +182,30 @@ test.describe("Tier 2 — Full auth flow (needs CLERK_SECRET_KEY)", () => {
     // Critically: no error boundary / blank page.
     await expect(page.locator("body")).not.toBeEmpty();
   });
+
+  test("sign out from Profile clears the namespace pointer and returns to sign-in", async ({
+    page,
+  }) => {
+    test.skip(
+      !hasSecretKey,
+      "CLERK_SECRET_KEY not set — skipping sign-out journey.",
+    );
+
+    await signInWithEmailCode(page);
+    await expect(page.getByText("Recent rounds")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("link", { name: "Open your profile" }).click();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("button", { name: "Yes, sign out" }).click();
+
+    await expect(page.getByText("Your yardage book")).toBeVisible({ timeout: 15_000 });
+
+    // Centralized sign-out teardown (specs/multiuser-p0-signout-namespace-
+    // clear-plan.md §1): the namespace pointer must be gone so nothing
+    // resolves to this account for the next user on this device.
+    const lastUserId = await page.evaluate(() =>
+      window.localStorage.getItem("scorecard_last_user_id"),
+    );
+    expect(lastUserId).toBeNull();
+  });
 });

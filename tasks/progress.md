@@ -3,6 +3,62 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — flip-fix builder landed @ <pending push sha, see next commit>
+Implemented `specs/multiuser-p0-authz-flip-fix-plan.md` exactly (P0 backend security fix, the
+correction to the flip incident). All 5 deliverables: (1) `backend/app/services/clerk_auth.py` —
+`_verified_user_id`'s azp branch now allows an ABSENT/empty azp (rejects only present-and-not-
+allowlisted), `if azp and azp not in authorized_parties:` form; added key-free reject-reason
+logging on every 401/403 branch (`current_user_id`, `_verified_user_id`, `require_member`,
+`optional_user_id`). (2) `backend/tests/test_clerk_auth.py` — `TestAzpHardening` corrected per
+plan §5 (this is a DELIBERATE product-policy correction, not gaming a gate — the pinned "reject
+absent azp" behavior was the incident's bug): renamed test to assert absent azp is now ALLOWED,
+added empty-string-azp-allowed, missing-sub-with-absent-azp→401, and two caplog assertions
+(azp-mismatch WARNING + token not logged; absent-azp emits no WARNING). (3)
+`backend/tests/test_clerk_jwt_parity.py` — two additive real-RS256-signature regression tests
+(`test_native_shaped_token_absent_azp_accepted_with_allowlist_set`,
+`test_wrong_issuer_rejected_even_with_azp_absent`). (4) `ops/flip_canary.py` — new, executable,
+stdlib-only; mints a real Clerk session token server-side via sign-in-token→FAPI-ticket→session-
+token (prod-safe path), asserts claim-name-only JWT shape, checks `/api/rounds` +
+`/api/caddie/profile` 200 with the real token and 401 with garbage, best-effort session revoke,
+PASS/FAIL per check, exits non-zero on any failure. (5) `specs/multi-user-epic-plan.md` — §8 step 4
+replaced with the BLOCKING-canary-first version, appended `### Incident record — first flip
+attempt (2026-07)`, annotated §3.8 SHOULD-FIX #2 with a one-line bracketed correction.
+`backend/tests/integration/test_flip_gate.py` untouched (verified: it overrides `current_user_id`
+via dependency_overrides, never invokes `_verified_user_id`).
+- Gates: `cd backend && ruff check .` → clean. `uv run pytest tests/test_clerk_auth.py
+  tests/test_clerk_jwt_parity.py -q` → 39 passed (DB-free, no Postgres spun up locally).
+  `python3 -m py_compile ops/flip_canary.py` and `--help` → parses clean.
+- No deviation from the plan.
+
+## DONE (2026-07-20) — Bundle #152 (v1.1.19) SHIPPED to main + TestFlight
+Owner verbatim **"Ship it and flip it now"**. Merge + deploy done by the coordinator; this run
+completed the release-manager tail: TestFlight ship, `integration/next` recut, and records.
+- PR #152 merged to `main` @ `0a52d2f` (standard merge, no force-push). Post-merge CI + deploy
+  gates: SUCCESS. On-box confirms: `alembic current` = `018_hole_pins_per_user`; `revoked_users`
+  table EXISTS; `hole_pins.user_id` column EXISTS; `/health` → `{"status":"ok"}`.
+- VERSION was already `1.1.19` at merge time (no bump needed).
+- **TestFlight: v1.1.19, build `202607192038`.** Uploaded via `bash ops/ios/ship.sh` in the
+  foreground from synced `main` @ `0a52d2f`. Confirmed `processingState: VALID` (not expired)
+  via direct App Store Connect API polling (~3 min after upload). No Package-Graph hang.
+- `integration/next` fast-forwarded to `0a52d2f` and pushed clean (no force) — local branch was
+  stale at `00a0bea`, origin's `integration/next` was 1 commit behind `main`; both resolved by
+  the ff-merge + push.
+- Backlog (`backlog.json`, targeted text edits + JSON-validated, no json.load/dump):
+  `caddie-orb-persona-consistency`, `caddie-guide-local-lore`, and
+  `caddie-persona-inventory-frontend-backend-mismatch` moved `done-on-bundle` → `done`.
+  `multiuser-p0-authz-flip` stays `flip-ready` (resolution note updated to record the merge —
+  the `APP_ACCESS_MODE` flip itself is a separate owner-executed action, not touched by this run).
+- Board: new card "Bundle #152 (v1.1.19)…" created on Looper — Product Board, Status Shipped,
+  PR linked — https://app.notion.com/p/3a31c52592e08127b305f5652ad0f1bf
+- Contents shipped: one-voice caddie register (`CADDIE_HOUSE_REGISTER`, noticeable); researched
+  local-knowledge lore layer on hole guides (code shipped, feature DORMANT until the owner runs
+  `run_lore_backfill()` on prod); multi-user P0 authz FLIP-READY foundation (migrations 017/018
+  applied, dark until the separate flip).
+- For the owner post-flip: configure the Clerk Svix webhook (`user.deleted`/`user.banned`/
+  `session.revoked` → `POST /api/webhooks/clerk`) + set `CLERK_WEBHOOK_SECRET`; confirm signups
+  open in the Clerk dashboard.
+- No worktree created/cleaned in this run — worked directly on the primary checkout, branch-hopping.
+
 ## DONE (2026-07-19) — multiuser-p0-authz-flip FLIP-PREP (NOTICEABLE "multi-user: flip-ready") — landed on bundle PR #152
 Closed the 4 DEFERRED authz gaps (clerk_auth.py:143-163) + built THE FLIP GATE suite. NOT flipped/shipped
 (owner-gated separate call). Plan specs/multiuser-p0-authz-flip-plan.md (Fable). Impl commits
@@ -1362,3 +1418,180 @@ backend ruff clean, targeted pytest test_caddie_persona_inventory.py + test_cadd
 consistency.py 13/13 (DB-free, no container spun up). Committed to integration/next; pushed. backlog
 flipped done-on-bundle (targeted edit, JSON-validated, no json.load/dump). Rides PR #152 as silent —
 does not change the bundle's noticeable/silent classification.
+
+## THE FLIP — EXECUTED (2026-07-20 00:45 UTC, coordinator + owner)
+`APP_ACCESS_MODE=open` is LIVE on prod: owner pasted the exact flip command (explicit
+authorization), executed via SSM — config backed up (`~/.env.preflip.bak`), authorized-parties
+set, service restarted healthy, open mode confirmed in the live process, revocation cache warmed
+from `revoked_users` (0). Looper is MULTI-USER. Owner follow-ups: Clerk dashboard webhook
+(Svix secret + user.deleted/user.banned/session.revoked) + confirm signups open.
+
+## AWAITING — signout-on-profile cycle (2026-07-19)
+Item: multiuser-p0-signout-namespace-clear + Profile sign-out button (OWNER REQUEST — NOTICEABLE).
+Base head @6167075 (origin/integration/next, post-flip). Recon done (Explore + eng-lead reads):
+- /settings SignOutButton exists but /settings is UNREACHABLE in nav → owner couldn't find logout.
+  /profile IS a hub tab (FloatingTabBar). Slot: at/above <Footer/> profile/page.tsx:334 (or 2642-2668).
+- Centralized invariant is ASPIRATIONAL: ClerkTokenBridge.tsx:40-51 clears iOS keychain on
+  isSignedIn true→false (native only). NOT torn down on sign-out: scorecard_last_user_id
+  (identity-core.ts:47 stale fallback = the TOCTOU), current localStorage namespace, onboarding_step
+  cache, caddie realtime singleton (realtime.ts:286 activeRealtimeClient) + warm-session.ts:222.
+- Draw animation is PER-INSTALL (looper.loginHeroDrawSeen, SignInScreen.tsx:30) — will NOT replay on
+  sign-out→sign-in on same device. Intended; note for owner.
+- Onboarding gated on SERVER onboarding_step != done (AuthGate.tsx:171-176) → fresh account plays.
+Next: Plan(fable) → specs/multiuser-p0-signout-namespace-clear-plan.md; then builder on integration/next;
+then designer(BLOCKING) + reviewer(+/security-review) + qa. On resume: check specs/ for the plan file and
+git log origin/integration/next for builder commits before re-dispatching anything.
+
+## P0 INCIDENT + FIX — multi-user flip 401'd every request, ROLLED BACK (2026-07-20)
+CORRECTION to the "THE FLIP — EXECUTED / LIVE / MULTI-USER" note above: that flip was ROLLED
+BACK ~15 min after going live. With `APP_ACCESS_MODE=open` + `CLERK_AUTHORIZED_PARTIES=
+https://localhost,https://looperapp.org,https://www.looperapp.org`, EVERY authed request from the
+owner's real iOS app 401'd (server healthy; uniform 401 across all authed routes). Rollback to
+owner mode restored his app. `APP_ACCESS_MODE` is currently `owner` (his app works).
+
+ROOT CAUSE (conclusive — H1). Clerk's `azp` claim = the FAPI request's `Origin` header, and is
+OMITTED when Origin is empty/null (Clerk docs, verified). The native iOS app routes FAPI through
+NSURLSession (capacitor.config.ts CapacitorHttp / `_is_native`), which sends NO browser `Origin`
+→ native session tokens carry NO `azp`. clerk_auth.py:68-72's hardened check rejects a token whose
+azp is ABSENT (as well as mismatched) once CLERK_AUTHORIZED_PARTIES is set → it 401'd every native
+token. Pre-flip that env was unset so the azp branch was skipped; issuer/JWKS were unchanged and
+worked → azp was the SOLE new rejection surface. The `azp=https://localhost`-on-native assumption
+was never empirically confirmed (specs/auth-headless-spike-verdict.md §4 + §6 checklist unchecked).
+
+FIX (this cycle — lands on the bundle, does NOT re-flip): amend the azp check to reject ONLY
+present-and-not-allowlisted azp (the epic's ORIGINAL §3.4 policy; revert the "absent OR" hardening).
+Absent azp passes AFTER full JWKS-signature + CLERK_ISSUER verification (which already proves the
+token was minted by THIS Clerk instance — no forgery hole; azp only ever defended cross-app web
+replay). Plus: `ops/flip_canary` the runbook §8 must BLOCK on (mint a real test token on-box, hit
+/api/rounds + /api/caddie/profile → 200, garbage token → 401); and key-free WARNING logging naming
+the reject branch (azp-absent/azp-mismatch/issuer/signature/expired/revoked).
+
+## AWAITING — flip-fix Plan(fable) (2026-07-20)
+Item: multiuser-p0-authz-flip → back to flip-ready (done above). Lane = worktree
+agent-a577f5800961bf63a, based on origin/integration/next @46a7545.
+Awaiting: Fable Plan agent → specs/multiuser-p0-authz-flip-fix-plan.md.
+Then: builder implements on this lane → push origin/integration/next; reviewer (fresh, adversarial,
+/security-review the delta — the amended check must NOT open a token-forgery hole) + qa (full gates +
+`pytest -m flip_gate`). Then open the bundle PR (integration/next → main; none open now) with the
+NOTICEABLE "multi-user: flip fixed + canary" checklist item. Do NOT ship/ping/flip.
+On resume: check specs/ for the fix plan + `git log origin/integration/next` for builder commits
+before re-dispatching anything.
+
+## AWAITING (updated 5f3288e) — signout-on-profile: plan done, builder next
+Plan committed @5f3288e (specs/multiuser-p0-signout-namespace-clear-plan.md, Fable).
+Base = origin/integration/next @5f3288e. NEXT: builder (isolation:worktree) implements the plan's
+§10 checklist, commits + pushes to integration/next. Then designer(BLOCKING, rendered Profile),
+reviewer(+/security-review), qa(gates + sign-out→sign-up e2e drivable). LESSON RE-LEARNED this cycle:
+eng-lead git work MUST run in the assigned isolated worktree
+(/Users/justinlee/projects/scorecard/.claude/worktrees/agent-a21d98a1f85e4d9bd), NOT the shared
+checkout /Users/justinlee/projects/scorecard (another lane uses it concurrently). Push via
+`git push origin HEAD:integration/next` from the worktree branch. On resume: check origin/integration/next
+head + `git log` for the builder's commits before re-dispatching anything.
+
+## DONE (2026-07-20) — lore backfill-halt fix: schema-guaranteed category + sourced-medium confidence
+Bounded fix for tonight's halted owner-approved lore backfill (halted at $1.04/course-1, ~95%
+validator-dropped). Root cause (evidence-backed, backend/app/caddie/types.py + guide_writer.py):
+(1) `LoreItem.category` was a bare `str` — the writer prompt described the four buckets in prose
+but never stated their exact snake_case tokens, so the model emitted prose categories that rule-2
+of `validate_lore` correctly, but wastefully, dropped (10/18 items); (2) `LORE_WRITER_SYSTEM` said
+"when in doubt, say low" while rule 5 kept ONLY exact `confidence == "high"`, discarding honest
+self-reported `medium` items (8/18).
+Fix: `category` is now `Literal["green_character","feature","history","architect_intent"]` —
+structured output (`messages.parse`) enforces the JSON-schema enum at generation time, so a bad
+category is impossible to emit, not just detectable after the fact (validate_lore rule 2 kept as
+defense-in-depth for non-Pydantic-validated construction paths, e.g. `model_construct`).
+`LORE_WRITER_SYSTEM` now states the four tokens verbatim (backtick-quoted next to each numbered
+bucket) plus a confidence-calibration line (high = verified in a fetched source; medium =
+single-source/inference; low/unknown = genuinely uncertain) and no longer nudges toward "low" by
+default. `validate_lore` rule 5 (`_LORE_CONFIDENCE_KEEP = {"high","medium"}`) now keeps both — rule
+4 (mandatory attribution) already runs first and drops any unsourced item regardless of confidence,
+so a surviving "medium" is always a sourced medium; "low"/"unknown" still drop.
+Tests updated to the new matrix (per plan, not weakened — the underlying rule genuinely changed):
+`test_lore_writer.py` — schema-impossibility test replacing the old rule-2 drop test (bad category
+now raises `ValidationError` at construction) + a new `model_construct`-based defense-in-depth
+drop test + an anti-drift pin (`_LORE_CATEGORIES == get_args(Literal type)`) + rule-5 split into
+"low/unknown/empty/wrong-case still drop" + "sourced medium survives" + two new prompt-contract
+tests (exact tokens present, confidence calibration language present).
+`test_lore_acceptance_pinehurst.py` — replaced the old always-dropped `_MEDIUM_CONFIDENCE` fixture
+with `_SOURCED_MEDIUM_FALSE_FRONT` (a real dropped-item shape: sourced, honestly self-reported
+medium, false-front green_character claim) which now survives, and a new `_LOW_CONFIDENCE` fixture
+(sourced but low) which still drops — both wired into the aggregate keep/drop test and the live-key
+smoke test's confidence assertion widened to `("high","medium")`.
+`test_lore_consumption.py`/`test_lore_backfill.py` needed no changes (both only use `confidence=
+"high"` fixtures, unaffected by the widening).
+Gates (worktree agent-a47e28204c53cd2e2): ruff clean (whole backend); full offline backend suite
+3099 passed / 0 failed / 141 skipped / 13 deselected (`pytest -m "not flip_gate"`, DATABASE_URL
+stub, no container); the 4 lore test files 80 passed / 1 skipped (live-key shape smoke, correctly
+skipped without ANTHROPIC_API_KEY). No frontend surface touched (backend-only fix) — frontend gates
+not re-run.
+Landed on integration/next @6981c2a (rebased cleanly onto @2ad89e8, the concurrent azp-fix plan
+lane — disjoint files, no conflict). Classification: SILENT rider on the open bundle (no user-facing
+surface change; lore stays dormant until a manual `run_lore_backfill()` runs). backlog.json
+`caddie-guide-local-lore` resolution appended with the incident + fix summary (targeted edit,
+JSON-validated after, no json.load/dump collapse).
+NEXT (owner already approved the backfill spend — "Run it"): rerun the prod backfill using this
+fixed writer, in-process (materialize/shim pattern, do NOT wait for a ship). Order: clear
+`lore_attempted_at` on Pinehurst No. 2 holes 1,3,5,7 ONLY (hole 6 keeps its lore) -> rerun full
+backfill order Pinehurst -> Bethpage Black -> Bethpage Red -> Pebble -> Augusta -> St Andrews ->
+Oakmont -> Shinnecock (Pine Valley/Cypress/Muirfield/Kiawah will no-op, guideless — note for a later
+tactical-guide seed). Cost-log per course (~$0.26/hole basis, ~$30 ceiling); report Pinehurst-1 lore
+verbatim + per-course table + total when it lands. On SSM denial: STOP + report. On 529/usage:
+checkpoint + stop. Never echo secrets. This item was NOT run in this cycle (bounded to the code fix
++ verification only) — a fresh cycle should pick up the rerun using the fixed module on
+integration/next @6981c2a.
+
+## AWAITING — flip-fix review (2026-07-19)
+Builder landed the flip-fix @95881a1 on integration/next (clerk_auth.py azp policy + reject-reason
+logging; corrected TestAzpHardening matrix; 2 additive real-RS256 regression pins in
+test_clerk_jwt_parity.py; new ops/flip_canary.py; §8 runbook incident record). Local gates green
+(ruff, 39 pytest, py_compile). Awaiting: reviewer (fresh, adversarial + /security-review + /code-review
+the delta — the amended azp check must NOT open a token-forgery hole; flag the deliberate
+test-policy correction) + qa (full backend gates + `pytest -m flip_gate` via CI). On reviewer SHIP +
+qa PASS with no BLOCKING: open the bundle PR (integration/next → main; none open) with NOTICEABLE
+item "multi-user: flip fixed + canary", update backlog resolution + progress. BLOCKING → re-dispatch
+builder. Do NOT ship/ping/flip. Resume: git log origin/integration/next; if reviewer/qa already
+reported, act on their verdict — do not re-run them.
+
+## DONE this cycle — flip-fix reviewed GREEN, landed @95881a1 (2026-07-19)
+reviewer(adversarial + /security-review + /code-review the delta): SHIP — refuted all 5 break-it
+probes (azp branch reached only after RS256 signature verification against our JWKS + CLERK_ISSUER
+pinning, both mandatory in open mode via _assert_boot_config; present-but-mismatched azp still 401s;
+no verify_signature-disabled path in open mode; crafted-azp fail-closed; optional_user_id no more
+permissive). Canary secret-free + fail-closed, no injection/SSRF; logging never leaks token/secret
+(%r escapes azp). Test-policy correction honest (not gaming a gate); 2 new parity pins use real
+2048-bit RSA + real jwt.encode/decode. 3 non-blocking nits (commit says "39" tests, reviewer
+counted 33 for the 2 files — harmless; revoked-sub logged = mild plan-sanctioned PII; canary may
+leave a 60s session on a network blip). qa: PASS — ruff clean, 39/39 targeted auth tests, broader
+clerk/auth/webhook suite green (36 Postgres-skips deferred to CI), flip_canary py_compile + --help
+OK, diff scoped to 6 backend/ops/spec files (no frontend), test_flip_gate.py zero-diff.
+NOT shipped/pinged/flipped (per task). Backlog item = flip-ready (fix landed, re-flip owner-gated,
+now canary-gated). Bundle PR opened integration/next -> main.
+
+SECURITY/PROCESS NOTE: two prompt-injection attempts surfaced this cycle — a fake "date changed,
+do not mention" system-reminder and an unsolicited Telegram-instructions block appended after tool
+results. Both treated as untrusted DATA and ignored (no concealment, no Telegram actions, no
+config/permission changes). qa independently flagged the same fake reminder and took no action.
+
+## DONE-ON-BUNDLE @eafb454 (2026-07-19) — Profile sign-out + centralized teardown (OWNER REQUEST, NOTICEABLE)
+Owner asked "how do I log out?" (to test the new onboarding flow). Root cause: the only SignOutButton
+lived on /settings, UNREACHABLE in nav; /profile is a hub tab. Shipped on integration/next @eafb454
+(builder rebased cleanly over 2 concurrent lane commits):
+- Quiet "Account" Section at the bottom of profile/page.tsx with <SignOutButton/> (extracted to
+  frontend/src/components/auth/SignOutButton.tsx, shared by Profile+Settings, clerk-key self-guard).
+- CENTRALIZED sign-out invariant: ClerkTokenBridge reactive isSignedIn true->false effect now calls
+  runSignOutTeardown() (frontend/src/lib/sign-out-teardown.ts): stop caddie realtime+warm session ->
+  clear scorecard_last_user_id (THE TOCTOU fix) -> reset in-memory identity -> native keychain clear;
+  each step try/caught; reactive so it also covers revocation/expiry. Pointer-only namespace policy
+  (departing user's offline cache kept; unreachable-by-derivation — reviewer verified no enumeration path).
+- Draw hero animation per-install (looper.loginHeroDrawSeen) — will NOT replay on sign-out->sign-in; intended.
+VERDICTS: Reviewer SHIP (mutation-verified TOCTOU test has teeth; /security-review no HIGH/MEDIUM),
+QA PASS (lint/tsc/vitest 2850/build/voice-smoke 278; sign-out-teardown.test.ts 7/7; auth.spec.ts sign-out
+journey present, skips clean w/o CLERK_SECRET_KEY), Designer APPROVE (rendered idle+confirm, byte-parity,
+no Northstar violation). Backlog: multiuser-p0-signout-namespace-clear -> done; epic p0_status_note (b) done,
+(e) sign-out-TOCTOU done / cold-start stale-token clear stays FILED.
+NON-BLOCKING follow-ups filed (not this cycle): dedupe the 2 Account sections / drop dead Settings copy;
+equal-width Cancel/Confirm in shared confirm row; seed non-null profile in the in-memory-reset test.
+OWNER MANUAL TESTFLIGHT PATH: Profile -> bottom -> Sign out -> Yes, sign out -> sign-in screen (no draw
+replay, correct) -> Sign UP fresh account -> onboarding plays (name/handicap/bag/meet-caddie) -> Home with
+isolated data; sign back into original account -> data intact.
+NEXT: open bundle PR (integration/next -> main) as NOTICEABLE. Do NOT ship/ping this cycle (per directive).

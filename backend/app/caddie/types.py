@@ -1,7 +1,7 @@
 """Caddie system Pydantic models."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 
 # ── Player Statistics (derived from round history) ──
@@ -97,13 +97,26 @@ class LoreItem(BaseModel):
     provenance is stamped at the GUIDE level by research_hole_lore, never asked
     of the model). ALL fields defaulted so an older cached strategy_guide JSONB
     blob (no lore) and a partial item both still validate; validate_lore is the
-    gate that decides what survives, per-item ([[no-fake-data-fallbacks]])."""
+    gate that decides what survives, per-item ([[no-fake-data-fallbacks]]).
+
+    Incident (2026-07-20 backfill halt): `category` was a bare `str` — the
+    writer prompt described the four buckets in prose but never stated their
+    exact tokens, so the model emitted prose categories (e.g. "Green
+    Character") that rule-2 of `validate_lore` correctly, but wastefully,
+    dropped (10/18 items on the first course). `Literal` makes an invalid
+    category IMPOSSIBLE to emit under structured output (`messages.parse`
+    enforces the JSON-schema enum at generation time) instead of merely
+    detectable after the fact."""
 
     text: str = ""          # ONE plain sentence, register-matched (calm, on-paper)
-    category: str = "feature"  # green_character | feature | history | architect_intent
+    category: Literal["green_character", "feature", "history", "architect_intent"] = "feature"
     source: str = ""        # short spoken attribution ("USGA championship notes") — NEVER a URL;
                             # empty = unattributed -> validate_lore drops the item
-    confidence: str = "unknown"  # high | medium | low | unknown (self-reported; kept iff exactly "high")
+    # high | medium | low | unknown (self-reported). validate_lore's rule 5 keeps
+    # "high" always and "medium" iff the item cleared rule 4's mandatory-source
+    # gate (every surviving item already is, by construction) — see
+    # guide_writer._LORE_CONFIDENCE_KEEP. "low"/"unknown" always drop.
+    confidence: str = "unknown"
 
 
 class HoleStrategyGuide(BaseModel):

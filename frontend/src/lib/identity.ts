@@ -23,7 +23,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useUser } from "@clerk/react";
 import { getGolferProfileAsync, updateGolferProfile } from "./api";
-import { getCurrentUserId } from "./identity-core";
+import { getCurrentUserId, clearLastUserId } from "./identity-core";
 import { storageKey } from "./storage-keys";
 import type { GolferProfile } from "./types";
 
@@ -33,7 +33,7 @@ const LAST_USER_KEY = "scorecard_last_user_id";
 // (`@/lib/identity`) for consumers that don't need the framework-free split
 // — see identity-core.ts's file header for why the implementation lives
 // there.
-export { getCurrentUserId };
+export { getCurrentUserId, clearLastUserId };
 
 // ---------------------------------------------------------------------------
 // Onboarding tri-state store (specs/onboarding-shell-and-gate-plan.md §1.2)
@@ -146,6 +146,23 @@ export function publishOnboardingStep(
  *  prefills (name / handicap). Null before hydration resolves. */
 export function getHydratedGolferProfile(): GolferProfile | null {
   return onboardingSnapshot.profile;
+}
+
+/**
+ * Reset all in-memory identity module state on sign-out (centralized
+ * teardown invariant — specs/multiuser-p0-signout-namespace-clear-plan.md §1
+ * step 3 / §2 row 10). Resets the onboarding snapshot back to its pre-
+ * hydration shape AND the `hydratedForUserId` once-per-user guard TOGETHER —
+ * resetting one without the other would strand a same-user re-sign-in at
+ * `onboardingStep === 'unknown'` forever (no document reload is guaranteed,
+ * so `hydrateGolferProfile` would never re-run because the guard still
+ * thinks this user was already hydrated). Also drops the departing user's
+ * in-memory `GolferProfile` (name/handicap prefill residue).
+ */
+export function resetOnboardingOnSignOut(): void {
+  onboardingSnapshot = { userId: null, step: "unknown", profile: null };
+  hydratedForUserId = null;
+  notifyOnboardingListeners();
 }
 
 /**

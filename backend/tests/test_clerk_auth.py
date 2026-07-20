@@ -179,7 +179,17 @@ class TestBootGuard:
 
 class TestAzpHardening:
     """CLERK_AUTHORIZED_PARTIES is opt-in: unset -> unchanged (backward-
-    compatible); set -> a token's azp claim must be present and allowlisted."""
+    compatible). CORRECTED POLICY (post 2026-07 flip incident, see
+    specs/multiuser-p0-authz-flip-fix-plan.md): when set, a token's azp claim
+    is rejected only when it is PRESENT and not allowlisted. An ABSENT (or
+    empty-string) azp is ALLOWED — Clerk derives azp from the FAPI request's
+    Origin header and omits it when there is no Origin, so "native app"
+    (CapacitorHttp/NSURLSession, no Origin) and "web request without an
+    Origin header" are the SAME absent case; Clerk cannot and does not
+    distinguish them. The previous policy (reject absent-or-mismatched) was
+    the bug that caused the incident — every native-app token was rejected in
+    production. This class was updated to encode the CORRECTED policy, not to
+    game a passing test."""
 
     def _decode_stub(self, monkeypatch, payload: dict):
         """Stand in for the real JWKS-verified decode: skip signature
@@ -204,12 +214,22 @@ class TestAzpHardening:
         self._decode_stub(monkeypatch, {"sub": "user-1"})  # no azp claim
         assert clerk_auth._verified_user_id("fake-token") == "user-1"
 
-    def test_missing_azp_is_rejected_when_configured(self, monkeypatch):
+    def test_missing_azp_is_allowed_when_configured(self, monkeypatch):
+        """Corrected policy: an absent azp claim is ALLOWED even when
+        CLERK_AUTHORIZED_PARTIES is set — this is the native-app token shape
+        that caused the 2026-07 flip incident. Formerly named
+        test_missing_azp_is_rejected_when_configured, which pinned the buggy
+        reject-absent-azp behavior."""
         monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", "https://app.example.com")
         self._decode_stub(monkeypatch, {"sub": "user-1"})  # no azp claim
-        with pytest.raises(HTTPException) as exc:
-            clerk_auth._verified_user_id("fake-token")
-        assert exc.value.status_code == 401
+        assert clerk_auth._verified_user_id("fake-token") == "user-1"
+
+    def test_empty_string_azp_is_allowed_when_configured(self, monkeypatch):
+        """Empty-string azp is treated identically to absent azp (falsy
+        check) — allowed, not rejected."""
+        monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", "https://app.example.com")
+        self._decode_stub(monkeypatch, {"sub": "user-1", "azp": ""})
+        assert clerk_auth._verified_user_id("fake-token") == "user-1"
 
     def test_wrong_azp_is_rejected_when_configured(self, monkeypatch):
         monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", "https://app.example.com")
@@ -233,6 +253,34 @@ class TestAzpHardening:
         with pytest.raises(HTTPException) as exc:
             clerk_auth._verified_user_id("fake-token")
         assert exc.value.status_code == 401
+
+    def test_missing_sub_with_absent_azp_still_rejected(self, monkeypatch):
+        """Absent azp must not short-circuit the sub check — an origin-less
+        token with no sub is still 401'd."""
+        monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", "https://app.example.com")
+        self._decode_stub(monkeypatch, {})  # no azp, no sub
+        with pytest.raises(HTTPException) as exc:
+            clerk_auth._verified_user_id("fake-token")
+        assert exc.value.status_code == 401
+
+    def test_azp_mismatch_logs_warning_without_leaking_token(self, monkeypatch, caplog):
+        monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", "https://app.example.com")
+        self._decode_stub(
+            monkeypatch, {"sub": "user-1", "azp": "https://evil.example.com"}
+        )
+        with caplog.at_level("WARNING", logger="looper.clerk_auth"):
+            with pytest.raises(HTTPException):
+                clerk_auth._verified_user_id("fake-token")
+        warnings = [rec for rec in caplog.records if rec.levelname == "WARNING"]
+        assert any("azp-mismatch" in rec.message for rec in warnings)
+        assert not any("fake-token" in rec.message for rec in caplog.records)
+
+    def test_absent_azp_emits_no_warning(self, monkeypatch, caplog):
+        monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", "https://app.example.com")
+        self._decode_stub(monkeypatch, {"sub": "user-1"})  # no azp claim
+        with caplog.at_level("WARNING", logger="looper.clerk_auth"):
+            assert clerk_auth._verified_user_id("fake-token") == "user-1"
+        assert not any(rec.levelname == "WARNING" for rec in caplog.records)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

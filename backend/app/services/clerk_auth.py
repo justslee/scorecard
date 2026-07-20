@@ -62,17 +62,34 @@ def _verified_user_id(token: str) -> str:
         options=options,
     )
 
-    # azp fail-closed hardening: when CLERK_AUTHORIZED_PARTIES is configured,
-    # reject a token whose azp claim is absent or not on the allowlist. When
-    # unset (today's owner-mode prod), behavior is unchanged.
+    # azp check — §3.4 ORIGINAL policy, restored after the 2026-07 flip
+    # incident: when CLERK_AUTHORIZED_PARTIES is configured, reject a token
+    # whose azp claim is PRESENT and not on the allowlist. An ABSENT azp is
+    # ALLOWED: Clerk derives azp from the FAPI request's Origin header and
+    # OMITS it when there is no Origin — the native iOS app (CapacitorHttp →
+    # NSURLSession, see frontend/capacitor.config.ts) sends no Origin, so its
+    # tokens NEVER carry azp. This branch runs only AFTER full RS256
+    # signature verification against our own instance's JWKS and after
+    # CLERK_ISSUER pinning (jwt.decode above; both mandatory in open mode via
+    # _assert_boot_config), so an origin-less token is still
+    # cryptographically proven to come from THIS Clerk instance. Empty-string
+    # azp is treated the same as absent. Unset env = no azp check (unchanged).
+    # See specs/multiuser-p0-authz-flip-fix-plan.md for the full analysis.
     authorized_parties = _authorized_parties()
     if authorized_parties is not None:
         azp = payload.get("azp")
-        if not azp or azp not in authorized_parties:
+        if azp and azp not in authorized_parties:
+            log.warning(
+                "auth reject: azp-mismatch (token azp=%r not in CLERK_AUTHORIZED_PARTIES)",
+                azp,
+            )
             raise HTTPException(401, "Token azp not authorized for this deployment")
+        if not azp:
+            log.debug("auth: azp absent/empty — allowed (origin-less client, e.g. native app)")
 
     sub = payload.get("sub")
     if not sub:
+        log.warning("auth reject: missing-sub")
         raise HTTPException(401, "JWT missing sub claim")
     return sub
 
@@ -104,13 +121,19 @@ async def current_user_id(authorization: Optional[str] = Header(default=None)) -
         return _unverified_user_id(token) if token else _anonymous_user_id
 
     if not token:
+        log.info("auth reject: missing-bearer-token")
         raise HTTPException(401, "Missing Authorization: Bearer <token>")
 
     try:
         return _verified_user_id(token)
     except jwt.ExpiredSignatureError:
+        log.warning("auth reject: token-expired")
         raise HTTPException(401, "Token expired")
+    except jwt.InvalidIssuerError as e:
+        log.warning("auth reject: issuer-mismatch (expected CLERK_ISSUER=%s)", CLERK_ISSUER)
+        raise HTTPException(401, f"Token verification failed: {e}")
     except jwt.PyJWTError as e:
+        log.warning("auth reject: token-verification-failed (%s: %s)", type(e).__name__, e)
         raise HTTPException(401, f"Token verification failed: {e}")
 
 
@@ -198,6 +221,7 @@ async def require_member(user_id: str = Depends(current_user_id)) -> str:
 
     # open mode only.
     if revocation.is_revoked(user_id):
+        log.warning("auth reject: revoked-user (sub=%s)", user_id)
         raise HTTPException(403, "Forbidden: this account has been revoked.")
     return user_id
 
@@ -259,4 +283,5 @@ async def optional_user_id(authorization: Optional[str] = Header(default=None)) 
     try:
         return _verified_user_id(token)
     except jwt.PyJWTError:
+        log.debug("optional auth: token failed verification, treating as anonymous")
         return None

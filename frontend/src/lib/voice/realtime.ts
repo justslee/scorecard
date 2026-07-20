@@ -285,6 +285,17 @@ const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 // double-audio failure mode). Starting a new client stops any previous one.
 let activeRealtimeClient: RealtimeCaddieClient | null = null;
 
+/**
+ * Stop the live caddie connection, if any (mic/WebRTC teardown) — the
+ * React-ownership-INDEPENDENT guarantee used by the centralized sign-out
+ * invariant (specs/multiuser-p0-signout-namespace-clear-plan.md §1 step 1),
+ * so a hot mic can never survive sign-out even when a surface forgot its
+ * own unmount cleanup. `stop()` is terminal-guarded and idempotent.
+ */
+export function stopActiveRealtimeClient(): void {
+  activeRealtimeClient?.stop();
+}
+
 export class RealtimeCaddieClient {
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;

@@ -49,3 +49,22 @@ export function getCurrentUserId(): string | null {
     return null;
   }
 }
+
+/**
+ * Clear the persisted namespace pointer (sign-out teardown, THE TOCTOU fix —
+ * specs/multiuser-p0-signout-namespace-clear-plan.md §1 step 2 / §2 row 3).
+ * After this, `getCurrentUserId()` returns null and every `storageKey()` read
+ * resolves to the `anon` namespace — the departing user's data is
+ * unreachable by name for whoever signs in next on this device. MUST be
+ * called only after Clerk has already cleared `window.Clerk.user` (i.e. from
+ * the reactive signed-in→signed-out transition), or the very next
+ * synchronous call to `getCurrentUserId()` above would resurrect the pointer
+ * via its opportunistic re-write.
+ */
+export function clearLastUserId(): void {
+  try {
+    window.localStorage.removeItem(LAST_USER_KEY);
+  } catch {
+    // Private mode / quota — non-fatal.
+  }
+}
