@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-20) — Bundle #152 (v1.1.19) SHIPPED to main + TestFlight
+Owner verbatim **"Ship it and flip it now"**. Merge + deploy done by the coordinator; this run
+completed the release-manager tail: TestFlight ship, `integration/next` recut, and records.
+- PR #152 merged to `main` @ `0a52d2f` (standard merge, no force-push). Post-merge CI + deploy
+  gates: SUCCESS. On-box confirms: `alembic current` = `018_hole_pins_per_user`; `revoked_users`
+  table EXISTS; `hole_pins.user_id` column EXISTS; `/health` → `{"status":"ok"}`.
+- VERSION was already `1.1.19` at merge time (no bump needed).
+- **TestFlight: v1.1.19, build `202607192038`.** Uploaded via `bash ops/ios/ship.sh` in the
+  foreground from synced `main` @ `0a52d2f`. Confirmed `processingState: VALID` (not expired)
+  via direct App Store Connect API polling (~3 min after upload). No Package-Graph hang.
+- `integration/next` fast-forwarded to `0a52d2f` and pushed clean (no force) — local branch was
+  stale at `00a0bea`, origin's `integration/next` was 1 commit behind `main`; both resolved by
+  the ff-merge + push.
+- Backlog (`backlog.json`, targeted text edits + JSON-validated, no json.load/dump):
+  `caddie-orb-persona-consistency`, `caddie-guide-local-lore`, and
+  `caddie-persona-inventory-frontend-backend-mismatch` moved `done-on-bundle` → `done`.
+  `multiuser-p0-authz-flip` stays `flip-ready` (resolution note updated to record the merge —
+  the `APP_ACCESS_MODE` flip itself is a separate owner-executed action, not touched by this run).
+- Board: new card "Bundle #152 (v1.1.19)…" created on Looper — Product Board, Status Shipped,
+  PR linked — https://app.notion.com/p/3a31c52592e08127b305f5652ad0f1bf
+- Contents shipped: one-voice caddie register (`CADDIE_HOUSE_REGISTER`, noticeable); researched
+  local-knowledge lore layer on hole guides (code shipped, feature DORMANT until the owner runs
+  `run_lore_backfill()` on prod); multi-user P0 authz FLIP-READY foundation (migrations 017/018
+  applied, dark until the separate flip).
+- For the owner post-flip: configure the Clerk Svix webhook (`user.deleted`/`user.banned`/
+  `session.revoked` → `POST /api/webhooks/clerk`) + set `CLERK_WEBHOOK_SECRET`; confirm signups
+  open in the Clerk dashboard.
+- No worktree created/cleaned in this run — worked directly on the primary checkout, branch-hopping.
+
 ## DONE (2026-07-19) — multiuser-p0-authz-flip FLIP-PREP (NOTICEABLE "multi-user: flip-ready") — landed on bundle PR #152
 Closed the 4 DEFERRED authz gaps (clerk_auth.py:143-163) + built THE FLIP GATE suite. NOT flipped/shipped
 (owner-gated separate call). Plan specs/multiuser-p0-authz-flip-plan.md (Fable). Impl commits
