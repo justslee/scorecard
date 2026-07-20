@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (builder) — 2026-07-20 — caddie-tee-club-tree-severity-calibration (SILENT rider, p3)
+Implemented the p3 backlog item exactly (calibration follow-up to the shipped P0 tee-club
+expected-strokes selector, `specs/caddie-tee-club-expected-strokes-plan.md`). Reproduced the
+reported gap first: hcp-30 on a 20y tree chute (`driver 280/3wood 240/5wood 220/hybrid 200/
+7iron 160`, 467y par-4) still got driver at ~72% combined trouble probability. Verified
+numerically that BOTH candidate levers the `why` named (a bigger flat/handicap-scaled
+`_PENALTY_COST`; a dispersion-width super-linear cost) are infeasible without an unrealistic
+(>10x) severity constant on this bag — the next-shortest floor-surviving club only drops P by
+~0.06 vs driver while costing ~0.63 strokes more approach distance. Implemented the THIRD named
+lever: `_TROUBLE_CEILING_BY_HANDICAP` / `_trouble_ceiling()` in
+`backend/app/caddie/aim_point.py` — a handicap-scaled absolute P(trouble) risk ceiling that
+`_select_club_expected_strokes` uses to prefer the E-min club whose OWN combined trouble
+probability clears the bar, falling back to plain E-min when nothing clears it (unchanged
+"no club helps, don't fabricate one" contract). Calibrated a NO-OP at/below handicap 15 (ceiling
+0.95, above the worst pinned-suite P of 0.9151 in `test_corridor_width_selection.py::test_04`'s
+pathological 5y corridor) — every hcp<=15 shipped test is byte-identical, confirmed empirically.
+- New `backend/tests/test_tee_club_tree_severity_calibration.py` (13 tests): hcp-0/15/30 x
+  chute-20y/corridor-40y/open-80y matrix on the exact reported bag/hole. Pins: hcp0 and hcp15
+  driver on all 3 widths (scratch/baseline unaffected — hcp15 extends coverage to width=20,
+  previously untested, still driver); hcp30 chute-20 -> 5wood (lays back off driver, driver's
+  own ~67% trouble surfaces as the rejected `corridor_alt_club` in the note) while hcp30
+  corridor-40 and open-80 both stay driver (not over-corrected). Plus direct `_trouble_ceiling`
+  interpolation/clamp tests and a floor-respected check.
+- Gates: `ruff check .` clean. Full offline sweep (no DB): `uv run pytest tests/ --ignore=tests/
+  eval` -> 2910 passed, 154 skipped (DB-only), 0 failed; `uv run pytest tests/eval` -> 208
+  passed. Combined 3118/3118 offline pass, 0 regressions (caught and fixed one real regression
+  during development — `test_corridor_width_selection.py::test_04`'s pathological 5y corridor at
+  hcp15 briefly flipped off driver at ceiling=0.90; raised to 0.95 and reverified clean).
+- Files: `backend/app/caddie/aim_point.py` (+87/-2, additive — new constant/function + a 6-line
+  change to the existing E-min loop to filter/fall-back over a `pool`), `backend/tests/
+  test_tee_club_tree_severity_calibration.py` (new). `backlog.json`: item flipped `ready` ->
+  `done` with a resolution note (targeted text edit, JSON-validated, no json.load/dump).
+- Base: fast-forwarded this worktree's stale branch (was pinned at bundle #152's `0a52d2f`) to
+  `origin/integration/next` @ `b151366` (bundle #153 head, multi-user flip fix + Profile
+  sign-out) before starting — no other changes on top besides this item's commit.
+- Risk: p3 backend-only, additive, no schema/API-shape changes, zero regressions across the full
+  offline battery. SILENT (backend engine calibration — not directly TestFlight-visible copy/UI,
+  though it does change a live caddie recommendation for high-handicap players on tight tree
+  holes; flagging that nuance for eng-lead in case they want it called out in the bundle notes).
+
 ## DONE — flip-fix builder landed @ <pending push sha, see next commit>
 Implemented `specs/multiuser-p0-authz-flip-fix-plan.md` exactly (P0 backend security fix, the
 correction to the flip incident). All 5 deliverables: (1) `backend/app/services/clerk_auth.py` —

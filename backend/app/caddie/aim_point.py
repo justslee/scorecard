@@ -719,6 +719,76 @@ _LAYBACK_FLOOR_YDS: int = 100
 # clubs on rounding noise; within this many strokes, the LONGER club wins.
 _E_TIE_TOLERANCE: float = 0.02
 
+# ── Trouble ceiling (backlog `caddie-tee-club-tree-severity-calibration`,
+# fable-review non-blocker follow-up to the P0 fix) ─────────────────────────
+#
+# Observed: a hcp-30 player on a genuinely tight (~20y) tree chute still gets
+# driver even after the handicap-scaled `_PENALTY_COST` fix above (reviewer
+# B2) — driver carries ~72% combined trouble probability there and the
+# E-model STILL prefers it. Verified numerically this is NOT fixable by
+# raising the flat/handicap-scaled cost further: on the reported bag
+# (driver/3wood/5wood/hybrid/7iron), the next-shortest club that clears the
+# floor (hybrid) only drops P by ~0.06 versus driver while costing ~0.63
+# strokes more approach distance — flipping the E-ordering via cost alone
+# needs a >10x multiplier on `_PENALTY_COST["trees"]` (a "trees" miss costing
+# more strokes than the water constant, i.e. worse than a plain penalty
+# drop), which is not a believable severity number. A dispersion-width
+# super-linear cost was also tried: the long clubs' dispersion widths cluster
+# too closely at high handicap (driver 110y vs hybrid 90y at hcp 30) to
+# produce enough differentiation either.
+#
+# The lever that DOES work, and the one the fable follow-up explicitly named
+# as a candidate: an absolute P(trouble) ceiling — a risk tolerance that
+# tightens with handicap, modeling that a weaker player should refuse a
+# near-coin-flip tee shot regardless of what the raw expected-strokes math
+# says (variance a poor player can't afford, not captured by a pure E[strokes]
+# average). Implementation: among the bend-cap/floor survivors, prefer the
+# E-min club whose OWN combined trouble probability is <= this ceiling; if
+# NONE clear the ceiling, fall back to plain E-min over all survivors
+# (today's contract — "no club helps, don't fabricate one").
+#
+# Calibrated to be a NO-OP at/below handicap 15 (0.95 comfortably exceeds the
+# worst combined P seen anywhere in the pinned regression battery — 0.9151 in
+# `test_corridor_width_selection.py::test_04`'s deliberately pathological 5y
+# blanket-narrow corridor, which explicitly pins "driver still wins, no
+# fallback" at hcp 15) — every hcp<=15 shipped test is therefore provably
+# byte-identical. Tightens above 15 so a hcp-30 player on the reported 20y
+# chute (driver P~0.716) is pushed down to the longest club that clears the
+# bar (hybrid, P~0.657 there) while a 40y+ corridor (driver P<=0.47 at hcp
+# 30) or a scratch/mid-handicap player on the same 20y chute (driver
+# P<=0.59) never trips it.
+_TROUBLE_CEILING_BY_HANDICAP: dict[int, float] = {
+    0: 1.00,
+    15: 0.95,
+    20: 0.85,
+    25: 0.75,
+    30: 0.68,
+    36: 0.62,
+}
+
+
+def _trouble_ceiling(handicap: float) -> float:
+    """Interpolate the handicap-scaled trouble-probability ceiling (same
+    piecewise-linear-between-breakpoints style as `_handicap_multiplier` /
+    `dispersion._interpolate_handicap`)."""
+    hcp = max(0.0, min(36.0, handicap))
+    keys = sorted(_TROUBLE_CEILING_BY_HANDICAP.keys())
+
+    if hcp <= keys[0]:
+        return _TROUBLE_CEILING_BY_HANDICAP[keys[0]]
+    if hcp >= keys[-1]:
+        return _TROUBLE_CEILING_BY_HANDICAP[keys[-1]]
+
+    for i in range(len(keys) - 1):
+        k1, k2 = keys[i], keys[i + 1]
+        if k1 <= hcp <= k2:
+            t = (hcp - k1) / (k2 - k1)
+            v1 = _TROUBLE_CEILING_BY_HANDICAP[k1]
+            v2 = _TROUBLE_CEILING_BY_HANDICAP[k2]
+            return v1 + t * (v2 - v1)
+
+    return _TROUBLE_CEILING_BY_HANDICAP[keys[-1]]
+
 
 def _phi(x: float) -> float:
     """Standard normal CDF via stdlib `math.erf` — Φ(x) = P(Z <= x)."""
@@ -827,6 +897,10 @@ def _select_club_expected_strokes(
     SAME `_handicap_multiplier` `approach_expected_strokes` already applies
     to the approach term — without it the flat cost understates trouble
     relative to distance for every handicap above scratch.
+
+    Among the survivors, the pick additionally prefers the E-min club whose
+    own combined P(trouble) clears `_trouble_ceiling(handicap)` (calibration
+    follow-up, see that constant's note) — a no-op at/below handicap 15.
     """
     bag = clubs or DEFAULT_CLUB_DISTANCES
     hcp_mult = _handicap_multiplier(handicap)
@@ -870,8 +944,19 @@ def _select_club_expected_strokes(
         return None
 
     longest = survivors[0]
-    best = longest
-    for s in survivors[1:]:
+
+    # Trouble ceiling (calibration follow-up, see the constant's own note
+    # above): prefer the E-min club whose OWN combined P(trouble) clears the
+    # handicap-scaled bar; if none do, fall back to plain E-min over every
+    # survivor (today's untouched contract). `pool` keeps `survivors`'
+    # longest-to-shortest order, so `pool[0]` is the longest CONTROLLABLE
+    # candidate when the ceiling actually excludes something.
+    ceiling = _trouble_ceiling(handicap)
+    qualifying = [s for s in survivors if (s[4] + s[5]) <= ceiling]
+    pool = qualifying if qualifying else survivors
+
+    best = pool[0]
+    for s in pool[1:]:
         if s[6] < best[6] - _E_TIE_TOLERANCE:
             best = s
 
