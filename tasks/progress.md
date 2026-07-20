@@ -3,6 +3,49 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (release-manager) — 2026-07-20 — SHIPPED bundle #153 (v1.1.20) — multi-user flip fix + Profile sign-out
+Owner approval in-session, verbatim **"Ship it"**, given against pinned head `e62ab6d` with all
+three gates (Frontend / Backend / E2E) verified SUCCESS via structured `check-runs` fields on the
+exact SHA (never scraped output). Local `integration/next` checkout was stale (behind origin) —
+fast-forwarded to `e62ab6d` before proceeding; no rider found on the pinned head itself.
+- **Bumped VERSION 1.1.19 -> 1.1.20** (root `VERSION`, commit `b151366`), pushed, all three gates
+  re-verified SUCCESS on the bump head (foreground poll against `check-runs`, not `gh pr checks`
+  text). Confirmed monotonic vs every prior VERSION-bump commit (last was 1.1.19) before building.
+- **Merged PR #153 -> `main`** (standard `gh pr merge --merge`, no force-push) at
+  `46708530ffb89d48c607487e4e7e3a824f13efd1`. Post-merge `CI` + `Deploy backend (SSM)` workflows
+  on that exact SHA both SUCCESS (foreground poll).
+- **Key-free on-box confirms** (AWS SSM Run-Command, no secrets echoed): `/health` ->
+  `{"status":"ok"}`; deployed `git rev-parse HEAD` == merge SHA; `alembic current` unchanged at
+  `018_hole_pins_per_user (head)`; `APP_ACCESS_MODE` unset (0 grep matches — owner mode intact,
+  the re-flip is NOT part of this ship); deployed `clerk_auth.py` contains the absent-azp-allowed
+  fix (grepped the amended branch on-box); `ops/flip_canary.py` present on-box; the
+  `/tmp/lore_rerun/runner.py` backfill process (PIDs 25840/25841) confirmed still running,
+  untouched by the deploy restart — expected, left alone per the ship brief.
+- **TestFlight (foreground):** `bash ops/ios/ship.sh` from synced `main` @ the merge SHA ->
+  archive succeeded, distribution-signed, uploaded. **v1.1.20, build 202607192150.** Polled the
+  App Store Connect API directly (ES256 JWT, key never printed) until `processingState: VALID`
+  (not expired) — no `gh`/`altool` shortcuts, no guessing from the upload log alone.
+- **Recut `integration/next`:** origin had gained an unexpected extra commit, `fed27c1`
+  ("caddie: calibrate tee-club trouble ceiling for high-handicap tree chutes") — landed on
+  `integration/next` *after* PR #153's pinned/bumped head was already merged, i.e. after the
+  ship-worthy diff was locked, not a rider inside #153. Footprint matched the named
+  tree-severity-calibration lane exactly (`aim_point.py` + new test + `backlog.json` +
+  `progress.md`) so it's legitimate, but it is real uncommitted-to-main work — recutting by
+  force-pushing `main`'s SHA over it would have destroyed it, which the ship brief's "never
+  force-push" rule forbids. Reset local `integration/next` to the actual remote tip (`fed27c1`),
+  then `git merge --no-ff main` (clean, no conflicts — `main` was already an ancestor via
+  `b151366`) so `integration/next` carries every shipped commit plus the rider intact. Pushed as a
+  normal fast-forward-safe update — fresh head `599d7ea0ae40c276f0481021835c8a5b1eb589ab`.
+- **Records:** Notion "Looper — Product Board" — created the `#153` card (none existed pre-ship),
+  Status "Shipped", noting the re-flip stays pending/canary-gated/coordinator-executed. `PushNotification`
+  sent to the owner. `backlog.json`: `multiuser-p0-authz-flip` resolution appended with the merge
+  SHA/TestFlight build (status stays `flip-ready` — re-flip untouched); `multiuser-p0-signout-namespace-clear`
+  note appended confirming the merge (status was already terminal `done`). Top-level `note`
+  prepended with the bundle #153 ship summary. All edits targeted text replacements + a
+  `json.load` validation pass afterward — never a blind `json.load`/`dump` round-trip.
+- Did NOT touch `APP_ACCESS_MODE`, the multi-user re-flip, or anything canary-gated — that stays
+  the coordinator's separate action per the ship brief.
+
 ## DONE (builder) — 2026-07-20 — caddie-tee-club-tree-severity-calibration (SILENT rider, p3)
 Implemented the p3 backlog item exactly (calibration follow-up to the shipped P0 tee-club
 expected-strokes selector, `specs/caddie-tee-club-expected-strokes-plan.md`). Reproduced the
