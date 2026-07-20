@@ -1414,3 +1414,38 @@ Base head @6167075 (origin/integration/next, post-flip). Recon done (Explore + e
 Next: Plan(fable) → specs/multiuser-p0-signout-namespace-clear-plan.md; then builder on integration/next;
 then designer(BLOCKING) + reviewer(+/security-review) + qa. On resume: check specs/ for the plan file and
 git log origin/integration/next for builder commits before re-dispatching anything.
+
+## P0 INCIDENT + FIX — multi-user flip 401'd every request, ROLLED BACK (2026-07-20)
+CORRECTION to the "THE FLIP — EXECUTED / LIVE / MULTI-USER" note above: that flip was ROLLED
+BACK ~15 min after going live. With `APP_ACCESS_MODE=open` + `CLERK_AUTHORIZED_PARTIES=
+https://localhost,https://looperapp.org,https://www.looperapp.org`, EVERY authed request from the
+owner's real iOS app 401'd (server healthy; uniform 401 across all authed routes). Rollback to
+owner mode restored his app. `APP_ACCESS_MODE` is currently `owner` (his app works).
+
+ROOT CAUSE (conclusive — H1). Clerk's `azp` claim = the FAPI request's `Origin` header, and is
+OMITTED when Origin is empty/null (Clerk docs, verified). The native iOS app routes FAPI through
+NSURLSession (capacitor.config.ts CapacitorHttp / `_is_native`), which sends NO browser `Origin`
+→ native session tokens carry NO `azp`. clerk_auth.py:68-72's hardened check rejects a token whose
+azp is ABSENT (as well as mismatched) once CLERK_AUTHORIZED_PARTIES is set → it 401'd every native
+token. Pre-flip that env was unset so the azp branch was skipped; issuer/JWKS were unchanged and
+worked → azp was the SOLE new rejection surface. The `azp=https://localhost`-on-native assumption
+was never empirically confirmed (specs/auth-headless-spike-verdict.md §4 + §6 checklist unchecked).
+
+FIX (this cycle — lands on the bundle, does NOT re-flip): amend the azp check to reject ONLY
+present-and-not-allowlisted azp (the epic's ORIGINAL §3.4 policy; revert the "absent OR" hardening).
+Absent azp passes AFTER full JWKS-signature + CLERK_ISSUER verification (which already proves the
+token was minted by THIS Clerk instance — no forgery hole; azp only ever defended cross-app web
+replay). Plus: `ops/flip_canary` the runbook §8 must BLOCK on (mint a real test token on-box, hit
+/api/rounds + /api/caddie/profile → 200, garbage token → 401); and key-free WARNING logging naming
+the reject branch (azp-absent/azp-mismatch/issuer/signature/expired/revoked).
+
+## AWAITING — flip-fix Plan(fable) (2026-07-20)
+Item: multiuser-p0-authz-flip → back to flip-ready (done above). Lane = worktree
+agent-a577f5800961bf63a, based on origin/integration/next @46a7545.
+Awaiting: Fable Plan agent → specs/multiuser-p0-authz-flip-fix-plan.md.
+Then: builder implements on this lane → push origin/integration/next; reviewer (fresh, adversarial,
+/security-review the delta — the amended check must NOT open a token-forgery hole) + qa (full gates +
+`pytest -m flip_gate`). Then open the bundle PR (integration/next → main; none open now) with the
+NOTICEABLE "multi-user: flip fixed + canary" checklist item. Do NOT ship/ping/flip.
+On resume: check specs/ for the fix plan + `git log origin/integration/next` for builder commits
+before re-dispatching anything.
