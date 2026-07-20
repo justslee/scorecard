@@ -138,7 +138,7 @@ The harness already supports identity injection (`backend/tests/integration/conf
 The design was adversarially threat-modeled before build. Verdict: the app-layer-scoping + `user_session`-centralization architecture (§2) is defensible and the RLS deferral is sound; the row-scoping audit in §1 is accurate. Findings, all folded into the P0 build scope:
 
 - **BLOCKING — `courses_mapped.py` global-geometry writes** → §3.3.0 above. Carve POST/PUT/DELETE to `require_owner` post-flip; negative write-authz test. (§1 misclassified these tables as "correct as-is" — true for reads, false for the mutation surface; corrected.)
-- **SHOULD-FIX — `azp`/issuer fail-open.** `clerk_auth.py:41` sets `verify_aud:False` and `:46` verifies the issuer only if `CLERK_ISSUER` is set (else unverified — signature-only). The §3.4 azp rule ("reject present-and-mismatched azp") leaves a hole: a token minted with **no** `azp` bypasses it. Fix: in open mode, boot-guard-require both `CLERK_ISSUER` and `CLERK_AUTHORIZED_PARTIES`, and make `_verified_user_id` reject a token whose `azp` is **absent OR** not in the allowlist.
+- **SHOULD-FIX — `azp`/issuer fail-open.** `clerk_auth.py:41` sets `verify_aud:False` and `:46` verifies the issuer only if `CLERK_ISSUER` is set (else unverified — signature-only). The §3.4 azp rule ("reject present-and-mismatched azp") leaves a hole: a token minted with **no** `azp` bypasses it. Fix: in open mode, boot-guard-require both `CLERK_ISSUER` and `CLERK_AUTHORIZED_PARTIES`, and make `_verified_user_id` reject a token whose `azp` is **absent OR** not in the allowlist. [**CORRECTED post-incident, see "Incident record — first flip attempt (2026-07)" in §8** — the "reject absent OR mismatched" hardening broke every native-app request in production; the shipped, correct policy is §3.4's original: reject only present-and-mismatched, absent azp allowed.]
 - **SHOULD-FIX — member-accessible outbound telephony** (`request_availability_call`) → folded into §3.3.2 above.
 - **SHOULD-FIX — CI scoping-lint blind spot.** The §2 lint scoped to `backend/app/routes/` misses tenant queries in `app/services/` (the `courses_mapped` store — finding #1's actual write site) and `app/caddie/` (`session.py:407 _load_messages`, `memory.py`). Fix: extend the lint to `app/services/` + `app/caddie/`, OR enumerate the transitive-ownership exemptions (e.g. `_load_messages` is safe only because it is reached via `get_owned_session`) so exemptions are auditable, not accidental.
 - **SHOULD-FIX — backfill misses `"anonymous"`-stamped rows.** With JWKS unset / `ALLOW_ANONYMOUS=1`, `current_user_id` returns the literal `"anonymous"` (clerk_auth.py:79/27), which routes stamp into `owner_id`/`user_id`. `UPDATE ... WHERE owner_id IS NULL` (§3.2 Migration A) skips these → permanently orphaned post-tighten. Fix: reassign `owner_id IN (NULL, 'anonymous')` to the owner (or delete `'anonymous'` rows) and assert Step-0 finds no owner_id outside `{NULL, 'anonymous', OWNER_CLERK_USER_ID}` before proceeding.
@@ -257,9 +257,38 @@ Owner-gated, deliberate action — nothing in the unattended loop ever performs 
 1. **Env change (prod, Secrets Manager / backend/.env):** set `APP_ACCESS_MODE=open`; ensure `CLERK_JWKS_URL` is set, `ALLOW_ANONYMOUS` is UNSET, and set the two newly-required vars: `CLERK_ISSUER` (the Clerk instance issuer URL) and `CLERK_AUTHORIZED_PARTIES` (comma-separated: the Capacitor origin `https://localhost` + the prod web origin). Set `CLERK_WEBHOOK_SECRET` (Svix) and configure the Clerk webhook (`user.deleted`, `user.banned`, `session.revoked` → `POST /api/webhooks/clerk`). Open Clerk signups (dashboard) as the same action.
 2. **Restart the backend.** `_assert_boot_config()` refuses to boot on any misconfiguration above; startup then warms the revocation cache from `revoked_users` (open mode only) — a restart can never silently un-revoke a banned member.
 3. **Migration order note:** 017 then 018, both already applied (additive, backward-compatible with owner-mode code — that is why they merge ahead of the flip). No flip-day migration work. The separate §3.2 backfill/tighten migrations remain their own reviewed PR.
-4. **Live post-flip smoke:** sign in with a second real Clerk account: it sees empty rounds/pins/profile (never the owner's data); create a round + mark a pin; verify the owner's app is unaffected (his rounds, his pins for the same course/date unchanged); verify a revoked test account 403s on `/api/rounds`. Owner account: everything byte-identical.
+4. **Live post-flip smoke — BLOCKING canary first.** On the box, run
+   `python3 ops/flip_canary.py --base-url https://api.looperapp.org` (reads `CLERK_SECRET_KEY` /
+   `CLERK_ISSUER` / `OWNER_CLERK_USER_ID` from `backend/.env`; prerequisite: `sk_live_…` present
+   there). It mints a REAL production Clerk session token server-side (Backend API sign-in-token →
+   FAPI ticket exchange → session token) — an **origin-less token with NO `azp`**, the exact shape
+   the native iOS app sends and the exact shape the first flip attempt rejected — and requires 200 on
+   `GET /api/rounds`, 200 on `GET /api/caddie/profile`, and 401 on a garbage token. **The flip is not
+   declared good until the canary prints PASS and exits 0.** If it fails: roll back (step 5) FIRST,
+   then diagnose from journald — every auth reject now logs a named reason (`azp-mismatch` /
+   `issuer-mismatch` / `token-expired` / `token-verification-failed` / `missing-sub` /
+   `revoked-user`). Only after canary PASS, the manual checks: sign in with a second real Clerk
+   account (sees empty rounds/pins/profile, never the owner's data; create a round + mark a pin;
+   owner's app unaffected); verify a revoked test account 403s on `/api/rounds`. Owner account:
+   everything byte-identical.
 5. **Rollback:** unset `APP_ACCESS_MODE` (or set `owner`) + restart — require_member reverts to the owner-only gate. Migrations STAY (additive and backward-compatible: `hole_pins.user_id` is stamped by owner-mode writes too; `revoked_users` is inert in owner mode). Optionally re-restrict Clerk signups.
 6. **Carve-outs that STAY owner-only after the flip:** `courses_mapped.py` POST/PUT/DELETE (:93/:142/:165 — global course geometry); caller-voice GET/PUT, rehearsal-call, voice-booking config (`tee_times.py` param-level `require_owner`); `request_availability_call` (real outbound telephony; per-member callback numbers are a future slice). Availability-job stamp-and-match and `user_session` centralization remain deferred, safe behind these carve-outs (see the DEFERRED block in `clerk_auth.py`).
+
+### Incident record — first flip attempt (2026-07)
+
+The first owner→open flip was rolled back after ~15 minutes: every authenticated request from the
+owner's real iOS app returned 401 (server healthy). Root cause: the §3.8 SHOULD-FIX #2 hardening
+made `_verified_user_id` reject tokens whose `azp` was **absent** or not allowlisted — but Clerk
+derives `azp` from the FAPI request's Origin header and omits it when there is none, and the
+native app (CapacitorHttp/NSURLSession) sends no Origin, so **every native token carries no
+`azp`**. The `azp=https://localhost` assumption was never observed live pre-flip
+(`auth-headless-spike-verdict.md` §4/§6). Fix (`specs/multiuser-p0-authz-flip-fix-plan.md`):
+reverted to §3.4's original policy — reject only **present-and-mismatched** `azp`; absent passes,
+but only after RS256 signature verification against our own JWKS and `CLERK_ISSUER` pinning (both
+mandatory in open mode). Signature + issuer, plus per-row scoping, carry the real security load;
+azp remains as web-origin misconfig/replay hardening. Lessons encoded: (1) `ops/flip_canary.py` is
+a blocking §8 step and reproduces the failing token shape exactly; (2) every 401 branch now logs a
+named reject reason; (3) never gate on a claim whose live shape was not empirically captured.
 
 ---
 

@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — flip-fix builder landed @ <pending push sha, see next commit>
+Implemented `specs/multiuser-p0-authz-flip-fix-plan.md` exactly (P0 backend security fix, the
+correction to the flip incident). All 5 deliverables: (1) `backend/app/services/clerk_auth.py` —
+`_verified_user_id`'s azp branch now allows an ABSENT/empty azp (rejects only present-and-not-
+allowlisted), `if azp and azp not in authorized_parties:` form; added key-free reject-reason
+logging on every 401/403 branch (`current_user_id`, `_verified_user_id`, `require_member`,
+`optional_user_id`). (2) `backend/tests/test_clerk_auth.py` — `TestAzpHardening` corrected per
+plan §5 (this is a DELIBERATE product-policy correction, not gaming a gate — the pinned "reject
+absent azp" behavior was the incident's bug): renamed test to assert absent azp is now ALLOWED,
+added empty-string-azp-allowed, missing-sub-with-absent-azp→401, and two caplog assertions
+(azp-mismatch WARNING + token not logged; absent-azp emits no WARNING). (3)
+`backend/tests/test_clerk_jwt_parity.py` — two additive real-RS256-signature regression tests
+(`test_native_shaped_token_absent_azp_accepted_with_allowlist_set`,
+`test_wrong_issuer_rejected_even_with_azp_absent`). (4) `ops/flip_canary.py` — new, executable,
+stdlib-only; mints a real Clerk session token server-side via sign-in-token→FAPI-ticket→session-
+token (prod-safe path), asserts claim-name-only JWT shape, checks `/api/rounds` +
+`/api/caddie/profile` 200 with the real token and 401 with garbage, best-effort session revoke,
+PASS/FAIL per check, exits non-zero on any failure. (5) `specs/multi-user-epic-plan.md` — §8 step 4
+replaced with the BLOCKING-canary-first version, appended `### Incident record — first flip
+attempt (2026-07)`, annotated §3.8 SHOULD-FIX #2 with a one-line bracketed correction.
+`backend/tests/integration/test_flip_gate.py` untouched (verified: it overrides `current_user_id`
+via dependency_overrides, never invokes `_verified_user_id`).
+- Gates: `cd backend && ruff check .` → clean. `uv run pytest tests/test_clerk_auth.py
+  tests/test_clerk_jwt_parity.py -q` → 39 passed (DB-free, no Postgres spun up locally).
+  `python3 -m py_compile ops/flip_canary.py` and `--help` → parses clean.
+- No deviation from the plan.
+
 ## DONE (2026-07-20) — Bundle #152 (v1.1.19) SHIPPED to main + TestFlight
 Owner verbatim **"Ship it and flip it now"**. Merge + deploy done by the coordinator; this run
 completed the release-manager tail: TestFlight ship, `integration/next` recut, and records.

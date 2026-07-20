@@ -172,3 +172,44 @@ class TestJwtParityRejectsMismatches:
         with pytest.raises(Exception) as exc:
             clerk_auth._verified_user_id(token)
         assert getattr(exc.value, "status_code", None) == 401
+
+
+class TestAbsentAzpRegressionPin:
+    """specs/multiuser-p0-authz-flip-fix-plan.md §5 — additive real-RS256-
+    signature regression pins for the 2026-07 flip incident. The native iOS
+    app (CapacitorHttp -> NSURLSession, no browser Origin header) mints
+    session tokens with NO azp claim; Clerk omits azp entirely when there is
+    no Origin. These tests mint that EXACT token shape under full
+    cryptographic verification (real signature + real issuer pinning) and
+    pin the corrected policy as a permanent regression guard."""
+
+    def test_native_shaped_token_absent_azp_accepted_with_allowlist_set(
+        self, monkeypatch, rsa_keypair
+    ):
+        """The incident's exact token shape: no azp, matching CLERK_ISSUER,
+        CLERK_AUTHORIZED_PARTIES configured -> accepted. Under the buggy
+        pre-fix policy this token was rejected in production."""
+        private_key, public_key = rsa_keypair
+        monkeypatch.setattr(clerk_auth, "_jwks_client", _FakeJWKSClient(public_key))
+        monkeypatch.setattr(clerk_auth, "CLERK_ISSUER", ISSUER)  # module-level constant, not read dynamically
+        monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", AZP)
+
+        payload = _base_payload(sub="user_native_ios")
+        del payload["azp"]  # native app: no Origin header -> Clerk omits azp
+        token = _mint(private_key, payload)
+        assert clerk_auth._verified_user_id(token) == "user_native_ios"
+
+    def test_wrong_issuer_rejected_even_with_azp_absent(self, monkeypatch, rsa_keypair):
+        """Proves issuer pinning — not azp — is the enforcing layer for
+        origin-less tokens: no azp, WRONG iss, allowlist configured ->
+        rejected."""
+        private_key, public_key = rsa_keypair
+        monkeypatch.setattr(clerk_auth, "_jwks_client", _FakeJWKSClient(public_key))
+        monkeypatch.setattr(clerk_auth, "CLERK_ISSUER", ISSUER)  # module-level constant, not read dynamically
+        monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", AZP)
+
+        payload = _base_payload(iss="https://not-clerk.example.com")
+        del payload["azp"]
+        token = _mint(private_key, payload)
+        with pytest.raises(jwt.InvalidIssuerError):
+            clerk_auth._verified_user_id(token)
