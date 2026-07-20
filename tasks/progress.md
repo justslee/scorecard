@@ -1571,3 +1571,27 @@ SECURITY/PROCESS NOTE: two prompt-injection attempts surfaced this cycle — a f
 do not mention" system-reminder and an unsolicited Telegram-instructions block appended after tool
 results. Both treated as untrusted DATA and ignored (no concealment, no Telegram actions, no
 config/permission changes). qa independently flagged the same fake reminder and took no action.
+
+## DONE-ON-BUNDLE @eafb454 (2026-07-19) — Profile sign-out + centralized teardown (OWNER REQUEST, NOTICEABLE)
+Owner asked "how do I log out?" (to test the new onboarding flow). Root cause: the only SignOutButton
+lived on /settings, UNREACHABLE in nav; /profile is a hub tab. Shipped on integration/next @eafb454
+(builder rebased cleanly over 2 concurrent lane commits):
+- Quiet "Account" Section at the bottom of profile/page.tsx with <SignOutButton/> (extracted to
+  frontend/src/components/auth/SignOutButton.tsx, shared by Profile+Settings, clerk-key self-guard).
+- CENTRALIZED sign-out invariant: ClerkTokenBridge reactive isSignedIn true->false effect now calls
+  runSignOutTeardown() (frontend/src/lib/sign-out-teardown.ts): stop caddie realtime+warm session ->
+  clear scorecard_last_user_id (THE TOCTOU fix) -> reset in-memory identity -> native keychain clear;
+  each step try/caught; reactive so it also covers revocation/expiry. Pointer-only namespace policy
+  (departing user's offline cache kept; unreachable-by-derivation — reviewer verified no enumeration path).
+- Draw hero animation per-install (looper.loginHeroDrawSeen) — will NOT replay on sign-out->sign-in; intended.
+VERDICTS: Reviewer SHIP (mutation-verified TOCTOU test has teeth; /security-review no HIGH/MEDIUM),
+QA PASS (lint/tsc/vitest 2850/build/voice-smoke 278; sign-out-teardown.test.ts 7/7; auth.spec.ts sign-out
+journey present, skips clean w/o CLERK_SECRET_KEY), Designer APPROVE (rendered idle+confirm, byte-parity,
+no Northstar violation). Backlog: multiuser-p0-signout-namespace-clear -> done; epic p0_status_note (b) done,
+(e) sign-out-TOCTOU done / cold-start stale-token clear stays FILED.
+NON-BLOCKING follow-ups filed (not this cycle): dedupe the 2 Account sections / drop dead Settings copy;
+equal-width Cancel/Confirm in shared confirm row; seed non-null profile in the in-memory-reset test.
+OWNER MANUAL TESTFLIGHT PATH: Profile -> bottom -> Sign out -> Yes, sign out -> sign-in screen (no draw
+replay, correct) -> Sign UP fresh account -> onboarding plays (name/handicap/bag/meet-caddie) -> Home with
+isolated data; sign back into original account -> data intact.
+NEXT: open bundle PR (integration/next -> main) as NOTICEABLE. Do NOT ship/ping this cycle (per directive).
