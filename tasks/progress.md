@@ -1539,3 +1539,15 @@ verbatim + per-course table + total when it lands. On SSM denial: STOP + report.
 checkpoint + stop. Never echo secrets. This item was NOT run in this cycle (bounded to the code fix
 + verification only) — a fresh cycle should pick up the rerun using the fixed module on
 integration/next @6981c2a.
+
+## AWAITING — flip-fix review (2026-07-19)
+Builder landed the flip-fix @95881a1 on integration/next (clerk_auth.py azp policy + reject-reason
+logging; corrected TestAzpHardening matrix; 2 additive real-RS256 regression pins in
+test_clerk_jwt_parity.py; new ops/flip_canary.py; §8 runbook incident record). Local gates green
+(ruff, 39 pytest, py_compile). Awaiting: reviewer (fresh, adversarial + /security-review + /code-review
+the delta — the amended azp check must NOT open a token-forgery hole; flag the deliberate
+test-policy correction) + qa (full backend gates + `pytest -m flip_gate` via CI). On reviewer SHIP +
+qa PASS with no BLOCKING: open the bundle PR (integration/next → main; none open) with NOTICEABLE
+item "multi-user: flip fixed + canary", update backlog resolution + progress. BLOCKING → re-dispatch
+builder. Do NOT ship/ping/flip. Resume: git log origin/integration/next; if reviewer/qa already
+reported, act on their verdict — do not re-run them.
