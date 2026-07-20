@@ -1678,3 +1678,20 @@ OWNER MANUAL TESTFLIGHT PATH: Profile -> bottom -> Sign out -> Yes, sign out -> 
 replay, correct) -> Sign UP fresh account -> onboarding plays (name/handicap/bag/meet-caddie) -> Home with
 isolated data; sign back into original account -> data intact.
 NEXT: open bundle PR (integration/next -> main) as NOTICEABLE. Do NOT ship/ping this cycle (per directive).
+
+## LOOP PAUSED (2026-07-20 ~02:05 UTC, owner: "Kill the loop for now")
+Open threads at pause:
+- **Multi-user: OPEN MODE LIVE (unverified).** The canary-gated re-flip executed after the v1.1.20
+  azp-fix deploy; live process confirmed open. The scripted canary needs CLERK_SECRET_KEY (not on
+  box); the owner's app-open check is the live canary — NOT yet confirmed. Rollback armed:
+  `cp ~/.env.preflip2.bak backend/.env && systemctl restart scorecard-api`. If the owner reports
+  "can't reach server", roll back FIRST.
+- **Lore backfill: running unattended on-box** (`/tmp/lore_rerun/runner.py`, log
+  `/tmp/lore_rerun/run.log`, fixed writer from int/next @6981c2a, 8 courses, ~$0.26/hole).
+  Safe: negative-cache resumable; harvest the log + report the table on loop resume.
+- **Queued (do NOT run concurrently with lore):** tactical guide seeding for Pine Valley, Cypress
+  Point, Muirfield Village, Kiawah (the seeding op silently died before them; owner approval
+  "seed all 8" covers them). Then their lore.
+- Owner follow-ups outstanding: Clerk dashboard webhook (Svix) + signups-open confirm + SSO
+  toggle; CLERK_SECRET_KEY to the box for self-sufficient canaries; lore for the 4 courses above.
+- Next bundle (open, unshipped): tree-severity calibration (landed @fed27c1).
