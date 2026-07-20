@@ -1460,3 +1460,55 @@ eng-lead git work MUST run in the assigned isolated worktree
 checkout /Users/justinlee/projects/scorecard (another lane uses it concurrently). Push via
 `git push origin HEAD:integration/next` from the worktree branch. On resume: check origin/integration/next
 head + `git log` for the builder's commits before re-dispatching anything.
+
+## DONE (2026-07-20) — lore backfill-halt fix: schema-guaranteed category + sourced-medium confidence
+Bounded fix for tonight's halted owner-approved lore backfill (halted at $1.04/course-1, ~95%
+validator-dropped). Root cause (evidence-backed, backend/app/caddie/types.py + guide_writer.py):
+(1) `LoreItem.category` was a bare `str` — the writer prompt described the four buckets in prose
+but never stated their exact snake_case tokens, so the model emitted prose categories that rule-2
+of `validate_lore` correctly, but wastefully, dropped (10/18 items); (2) `LORE_WRITER_SYSTEM` said
+"when in doubt, say low" while rule 5 kept ONLY exact `confidence == "high"`, discarding honest
+self-reported `medium` items (8/18).
+Fix: `category` is now `Literal["green_character","feature","history","architect_intent"]` —
+structured output (`messages.parse`) enforces the JSON-schema enum at generation time, so a bad
+category is impossible to emit, not just detectable after the fact (validate_lore rule 2 kept as
+defense-in-depth for non-Pydantic-validated construction paths, e.g. `model_construct`).
+`LORE_WRITER_SYSTEM` now states the four tokens verbatim (backtick-quoted next to each numbered
+bucket) plus a confidence-calibration line (high = verified in a fetched source; medium =
+single-source/inference; low/unknown = genuinely uncertain) and no longer nudges toward "low" by
+default. `validate_lore` rule 5 (`_LORE_CONFIDENCE_KEEP = {"high","medium"}`) now keeps both — rule
+4 (mandatory attribution) already runs first and drops any unsourced item regardless of confidence,
+so a surviving "medium" is always a sourced medium; "low"/"unknown" still drop.
+Tests updated to the new matrix (per plan, not weakened — the underlying rule genuinely changed):
+`test_lore_writer.py` — schema-impossibility test replacing the old rule-2 drop test (bad category
+now raises `ValidationError` at construction) + a new `model_construct`-based defense-in-depth
+drop test + an anti-drift pin (`_LORE_CATEGORIES == get_args(Literal type)`) + rule-5 split into
+"low/unknown/empty/wrong-case still drop" + "sourced medium survives" + two new prompt-contract
+tests (exact tokens present, confidence calibration language present).
+`test_lore_acceptance_pinehurst.py` — replaced the old always-dropped `_MEDIUM_CONFIDENCE` fixture
+with `_SOURCED_MEDIUM_FALSE_FRONT` (a real dropped-item shape: sourced, honestly self-reported
+medium, false-front green_character claim) which now survives, and a new `_LOW_CONFIDENCE` fixture
+(sourced but low) which still drops — both wired into the aggregate keep/drop test and the live-key
+smoke test's confidence assertion widened to `("high","medium")`.
+`test_lore_consumption.py`/`test_lore_backfill.py` needed no changes (both only use `confidence=
+"high"` fixtures, unaffected by the widening).
+Gates (worktree agent-a47e28204c53cd2e2): ruff clean (whole backend); full offline backend suite
+3099 passed / 0 failed / 141 skipped / 13 deselected (`pytest -m "not flip_gate"`, DATABASE_URL
+stub, no container); the 4 lore test files 80 passed / 1 skipped (live-key shape smoke, correctly
+skipped without ANTHROPIC_API_KEY). No frontend surface touched (backend-only fix) — frontend gates
+not re-run.
+Landed on integration/next @6981c2a (rebased cleanly onto @2ad89e8, the concurrent azp-fix plan
+lane — disjoint files, no conflict). Classification: SILENT rider on the open bundle (no user-facing
+surface change; lore stays dormant until a manual `run_lore_backfill()` runs). backlog.json
+`caddie-guide-local-lore` resolution appended with the incident + fix summary (targeted edit,
+JSON-validated after, no json.load/dump collapse).
+NEXT (owner already approved the backfill spend — "Run it"): rerun the prod backfill using this
+fixed writer, in-process (materialize/shim pattern, do NOT wait for a ship). Order: clear
+`lore_attempted_at` on Pinehurst No. 2 holes 1,3,5,7 ONLY (hole 6 keeps its lore) -> rerun full
+backfill order Pinehurst -> Bethpage Black -> Bethpage Red -> Pebble -> Augusta -> St Andrews ->
+Oakmont -> Shinnecock (Pine Valley/Cypress/Muirfield/Kiawah will no-op, guideless — note for a later
+tactical-guide seed). Cost-log per course (~$0.26/hole basis, ~$30 ceiling); report Pinehurst-1 lore
+verbatim + per-course table + total when it lands. On SSM denial: STOP + report. On 529/usage:
+checkpoint + stop. Never echo secrets. This item was NOT run in this cycle (bounded to the code fix
++ verification only) — a fresh cycle should pick up the rerun using the fixed module on
+integration/next @6981c2a.
