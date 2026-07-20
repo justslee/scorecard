@@ -16,6 +16,7 @@ import { fetchShotStats, sortClubStats, dispersionLabel, formatClubName } from "
 import type { ClubStat } from "@/lib/shot-stats";
 import { buildStatsGroundingBlock } from "@/lib/stats-grounding";
 import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
+import SignOutButton from "@/components/auth/SignOutButton";
 
 // ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
 // The caddie (CaddiePanel) normalises these same camelCase keys to short keys
@@ -331,6 +332,27 @@ export default function ProfilePage() {
         <CourseReviews />
         {/* Shot analytics — single calm placeholder replacing two stacked ones */}
         <ShotAnalytics />
+        {/* Account — quiet, end-of-book placement (colophon), matching the
+            yardage-book rhythm. Sign-out lives here (Settings' copy is
+            unreachable in nav — see specs/multiuser-p0-signout-namespace-
+            clear-plan.md §5). */}
+        <Section kicker="Account" title="Your account">
+          <p
+            style={{
+              fontFamily: T.serif,
+              fontSize: 14,
+              color: T.pencil,
+              fontStyle: "italic",
+              lineHeight: 1.55,
+              letterSpacing: -0.1,
+              margin: 0,
+            }}
+          >
+            Sign out of your Looper account on this device. Your rounds and
+            profile are saved on the server and will be here when you return.
+          </p>
+          <SignOutButton />
+        </Section>
         <Footer />
       </div>
     </div>
