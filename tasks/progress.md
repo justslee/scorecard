@@ -1551,3 +1551,23 @@ qa PASS with no BLOCKING: open the bundle PR (integration/next → main; none op
 item "multi-user: flip fixed + canary", update backlog resolution + progress. BLOCKING → re-dispatch
 builder. Do NOT ship/ping/flip. Resume: git log origin/integration/next; if reviewer/qa already
 reported, act on their verdict — do not re-run them.
+
+## DONE this cycle — flip-fix reviewed GREEN, landed @95881a1 (2026-07-19)
+reviewer(adversarial + /security-review + /code-review the delta): SHIP — refuted all 5 break-it
+probes (azp branch reached only after RS256 signature verification against our JWKS + CLERK_ISSUER
+pinning, both mandatory in open mode via _assert_boot_config; present-but-mismatched azp still 401s;
+no verify_signature-disabled path in open mode; crafted-azp fail-closed; optional_user_id no more
+permissive). Canary secret-free + fail-closed, no injection/SSRF; logging never leaks token/secret
+(%r escapes azp). Test-policy correction honest (not gaming a gate); 2 new parity pins use real
+2048-bit RSA + real jwt.encode/decode. 3 non-blocking nits (commit says "39" tests, reviewer
+counted 33 for the 2 files — harmless; revoked-sub logged = mild plan-sanctioned PII; canary may
+leave a 60s session on a network blip). qa: PASS — ruff clean, 39/39 targeted auth tests, broader
+clerk/auth/webhook suite green (36 Postgres-skips deferred to CI), flip_canary py_compile + --help
+OK, diff scoped to 6 backend/ops/spec files (no frontend), test_flip_gate.py zero-diff.
+NOT shipped/pinged/flipped (per task). Backlog item = flip-ready (fix landed, re-flip owner-gated,
+now canary-gated). Bundle PR opened integration/next -> main.
+
+SECURITY/PROCESS NOTE: two prompt-injection attempts surfaced this cycle — a fake "date changed,
+do not mention" system-reminder and an unsolicited Telegram-instructions block appended after tool
+results. Both treated as untrusted DATA and ignored (no concealment, no Telegram actions, no
+config/permission changes). qa independently flagged the same fake reminder and took no action.
