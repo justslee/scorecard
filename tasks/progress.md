@@ -23,14 +23,30 @@ green: ruff clean, 35 new (18 offline + 17 teeth), 243 existing tests pass. Muir
 (no prod DATABASE_URL trivially available). Builder flags for the iteration loop: BOMBER 3iron
 dropped by normalize_club_distances (taxonomy starts at 4i); compose_degraded_line multi-bunker
 list can trip _has_side_flip nearest-side window (engine nuance, not a bench bug).
-AWAITING: reviewer ON FABLE (top-stakes: judge rubric can't be gamed by verbosity; positions
-genuinely in their lie polygons — spot-verify vs geometry; fixture determinism; canary teeth) +
-qa (re-run offline gates independently). On BOTH green (no BLOCKING) → eng-lead runs the LIVE pilot
-(fetch OPENAI_API_KEY + GOOGLE_MAPS_KEY on-box read-only via secretsmanager; SMOKE 1-2 cases first
-[live judge path untested against a real API], then full ~150, cost cap $40) → report
-specs/caddie-bench-report-2026-07-22.md + sim side-by-sides → update bundle PR NOTICEABLE. BLOCKING
-review findings → re-dispatch builder, re-review. Do NOT ship/ping. Do NOT run the live pilot before
-reviewer signs off the judge rubric.
+REVIEW DONE. qa = ALL GREEN (35/17/243, gate-refusal exit 2, key-free, 150-case matrix + e2e
+pipeline reproduced). Fable reviewer = BLOCKED for the live pilot, 3 defects that would corrupt the
+paid run (offline suites structurally can't catch them):
+ B1 render.py satellite composites NOT georegistered (fixed zoom-17 ~316y doesn't fit long holes;
+    overlays project bbox-linear not Mercator) → judge's map geometrically wrong every case.
+ B2 harness.build_session uses RAW bag, bypassing prod normalize_club_distances (session.py:139);
+    BOMBER 3iron(240) dropped by prod → synth advertises a club engine can't recommend → ~50 false
+    club_matches_engine REDs.
+ B3 geometry.py no-fairway FAIRWAY fallback's claimed negative-verify is ABSENT; Black-7 centerline
+    crosses a mapped bunker (slots miss it today, latent mislabel); CI re-verifier skips when no
+    fairway polygon. "Raise never mislabel" not enforced.
+ Non-blocking to fold in (pilot correctness/cost/security/determinism): #4 seed uses process-random
+ hash() → fixed per-bag const; #5 judge2 cost never logged/counted → budget undercounts ~15%; #6
+ FACT judged with full 10-dim rubric on canned one-liner → drags headline (exclude FACT from
+ correctness headline / reduced rubric); #7 second-pass overlap omits CLUB→CLUB_CORRIDOR; #8 tile
+ raise_for_status embeds key= in URL → sanitize; #10 conditions rotation depends on hole set →
+ per-case stable hash (protects --resume/--only-failures); #9 GREENSIDE negative-verify; #11
+ DET_CHECK_WEIGHT unused → wire or delete. Meta: report the crux dims separately from weighted-
+ correctness (headline can read rosier than felt experience). Verified SOUND: architecture, teeth,
+ id/position determinism, live seam is real (synth un-stubbed, _CACHE cleared), key/prod-DB
+ discipline. AWAITING: builder fixes B1-B3 + non-blocking → re-run offline gates + new render
+ projection test → re-verify with the same fable reviewer (SendMessage, it has full context). THEN
+ live pilot (needs stub DATABASE_URL set per qa note; keys on-box read-only; smoke first; cap $40).
+ Do NOT run the live pilot until B1-B3 are fixed and re-verified. Do NOT ship/ping.
 Prod DB READ-ONLY; keys on-box in-process only, never echoed; pilot cost cap ~$40, cost-logged.
 Judge rubric axes anchored on the known caddie failure memories: numbers-coherence (one per-turn
 solve), shot-reachability (tee = landing zone not flag), miss-side needs per-side hazard evidence,
