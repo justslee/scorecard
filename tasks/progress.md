@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (2026-07-22) — CADDIE BENCH epic, cycle 1 (framework + pilot + report)
+OWNER TOP PRIORITY (2026-07-22): build an extensive caddie testing/eval framework — 1000+ unique
+generated player questions from REAL on-course positions, run against the REAL advice path, judge
+each vs a map composite + structured facts with a VISION frontier judge (mirror the owner's
+ChatGPT-5.6-Sol screenshot flow), report per-dimension scores + failure taxonomy, then iterate the
+caddie until results improve. THIS PASS = fable plan + framework build + PILOT run (~120-150 cases,
+6-8 holes across Bethpage Black/Red + Pinehurst + Augusta + Pebble) + report + screenshot-fidelity
+proof. Do NOT ship/ping this pass. Land on the next bundle PR (integration/next).
+LANE: isolated worktree agent-af66fee82b0253415 (branch worktree-agent-af66fee82b0253415), based on
+origin/integration/next @52695fd (ahead of main w/ noticeable fed27c1). New code under
+backend/tests/eval/caddie_bench/ — a SUPERSET of the existing two-tier harness
+(backend/tests/eval/): REUSE golden/schema.py/run_tier2 judge/teeth patterns; do NOT duplicate.
+LIVE seam = POST /api/caddie/session/voice with the real gpt-5.6-sol synth UN-stubbed.
+STATE: architecture explore agent (a1c871223d31280c2) mapping the live advice seams
+(run_strategy_turn / routing.py / payload assembly / geometry DB / gpt-5.6-sol call). NEXT on its
+return → dispatch Plan agent ON FABLE → specs/caddie-bench-plan.md, then builder(s), reviewer, qa.
+Prod DB READ-ONLY; keys on-box in-process only, never echoed; pilot cost cap ~$40, cost-logged.
+Judge rubric axes anchored on the known caddie failure memories: numbers-coherence (one per-turn
+solve), shot-reachability (tee = landing zone not flag), miss-side needs per-side hazard evidence,
+corridor-aware club. If I die: reconcile from origin/integration/next + specs/caddie-bench-plan.md;
+do NOT re-run a finished child.
+
 ## DONE (release-manager) — 2026-07-20 — SHIPPED bundle #153 (v1.1.20) — multi-user flip fix + Profile sign-out
 Owner approval in-session, verbatim **"Ship it"**, given against pinned head `e62ab6d` with all
 three gates (Frontend / Backend / E2E) verified SUCCESS via structured `check-runs` fields on the
