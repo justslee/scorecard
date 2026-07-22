@@ -16,7 +16,7 @@
   "bomber": {
     "handicap": 8,
     "clubs": {
-      "driver": 320, "3wood": 285, "3iron": 240, "5iron": 220, "7iron": 190,
+      "driver": 320, "3wood": 285, "4iron": 240, "5iron": 220, "7iron": 190,
       "9iron": 165, "pw": 150, "gw": 135, "sw": 118, "lw": 95
     }
   }

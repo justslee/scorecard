@@ -113,12 +113,27 @@ def _reverify_containment(fx: geo.HoleFixture, lie: LieCategory, lon: float, lat
     elif lie == LieCategory.GREENSIDE:
         assert green, "GREENSIDE case requires a mapped green"
         assert not any(_point_in_polygon_feature(lon, lat, f) for f in green), "GREENSIDE must verify OUTSIDE the green"
+        # B3 (non-blocking #9): a greenside point must also clear any mapped
+        # greenside bunker/water — not just the green polygon itself.
+        assert not _in_any(lon, lat, bunker) and not _in_any(lon, lat, water), (
+            "GREENSIDE must verify outside mapped bunker/water too"
+        )
     elif lie == LieCategory.ROUGH:
         assert not _in_any(lon, lat, fairway) and not _in_any(lon, lat, bunker) and not _in_any(lon, lat, water) and not _in_any(lon, lat, green), (
             "ROUGH must verify outside fairway/bunker/water/green"
         )
     elif lie == LieCategory.FAIRWAY and fairway:
         assert _in_any(lon, lat, fairway), "FAIRWAY position must verify inside a mapped fairway polygon"
+    elif lie == LieCategory.FAIRWAY and not fairway:
+        # B3: the fixture has no mapped fairway polygon (the "centerline IS
+        # the fairway" fallback, e.g. Bethpage Black hole 7) — this branch
+        # used to be a silent no-op (the `and fairway` guard above skipped
+        # it entirely), so the CI re-verifier never actually checked these
+        # cases. Assert the fallback point is at least clear of any mapped
+        # bunker/water/green (never a mislabeled hazard point).
+        assert not _in_any(lon, lat, bunker) and not _in_any(lon, lat, water) and not _in_any(lon, lat, green), (
+            "no-fairway-polygon FAIRWAY fallback must verify outside mapped bunker/water/green"
+        )
     elif lie == LieCategory.RECOVERY_TREES:
         assert not _in_any(lon, lat, fairway) and not _in_any(lon, lat, green), "RECOVERY_TREES must verify outside fairway/green"
     # TEE has no polygon to check against in every fixture; sampling it is a

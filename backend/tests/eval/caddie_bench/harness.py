@@ -23,6 +23,7 @@ from typing import Callable, Optional
 
 from app.caddie import strategy as strategy_mod
 from app.caddie.aim_point import generate_recommendation
+from app.caddie.club_selection import normalize_club_distances
 from app.caddie.guide_writer import GUIDE_INJECTION_PATTERN, _HAZARD_PATTERNS, _has_side_flip
 from app.caddie.routing import classify_intent
 from app.caddie.session import RoundSession
@@ -73,9 +74,20 @@ def build_session(
     round_id: str = "bench",
     user_id: str = "bench-user",
 ) -> RoundSession:
+    """B2 fix: prod normalizes the bag through `normalize_club_distances` at
+    session load (`app/caddie/session.py::row_to_session`, the "heal-on-load"
+    chokepoint) — a non-canonical club key (e.g. a spoken/legacy '3iron',
+    which the canonical iron taxonomy starts at 4-iron and doesn't have) is
+    DROPPED there before it ever reaches the engine. Without this, the bench
+    session would carry a raw bag the LIVE Claude synth can still see and
+    recommend, while `generate_recommendation`'s own oracle call (which also
+    normalizes internally) never can — a bench session that isn't
+    byte-identical to what prod actually builds, and a guaranteed
+    `club_matches_engine` det-check RED for every non-canonical club."""
     return RoundSession(
         round_id=round_id, user_id=user_id, hole_intel=hole_intel,
-        club_distances=club_distances, handicap=handicap, weather=weather, current_hole=current_hole,
+        club_distances=normalize_club_distances(dict(club_distances)),
+        handicap=handicap, weather=weather, current_hole=current_hole,
     )
 
 

@@ -299,7 +299,7 @@ def sample_position(fx: HoleFixture, spec: PositionSpec) -> ResolvedPosition:
 
     elif lie == LieCategory.FAIRWAY:
         pct = spec.along_pct if spec.along_pct is not None else 0.5
-        lon, lat = _resolve_fairway_point(polyline, pct, fairway_feats)
+        lon, lat = _resolve_fairway_point(polyline, pct, fairway_feats, bunker_feats, water_feats, green_feats)
 
     elif lie == LieCategory.ROUGH:
         pct = spec.along_pct if spec.along_pct is not None else 0.5
@@ -339,7 +339,7 @@ def sample_position(fx: HoleFixture, spec: PositionSpec) -> ResolvedPosition:
     elif lie == LieCategory.GREENSIDE:
         if not green_feats:
             raise GeometrySamplingError(f"{fx.fixture_id}: no mapped green — cannot sample a GREENSIDE position")
-        lon, lat = _resolve_greenside_point(green_feats[0], green_lonlat, tee_lonlat)
+        lon, lat = _resolve_greenside_point(green_feats[0], green_lonlat, tee_lonlat, bunker_feats, water_feats)
 
     else:
         raise AssertionError(f"unhandled LieCategory {lie!r}")
@@ -370,8 +370,13 @@ def _radial_search(
     return None
 
 
+_FAIRWAY_FALLBACK_BAND = 0.05    # +/- fraction of the tee->green centerline searched around `pct`
+_FAIRWAY_FALLBACK_STEP = 0.005   # search step, same units as `pct`/`along_pct`
+
+
 def _resolve_fairway_point(
     polyline: list[tuple[float, float]], pct: float, fairway_feats: list[dict],
+    bunker_feats: list[dict] = (), water_feats: list[dict] = (), green_feats: list[dict] = (),
 ) -> tuple[float, float]:
     centerline_pt = _point_on_centerline(polyline, pct)
     if not fairway_feats:
@@ -379,8 +384,28 @@ def _resolve_fairway_point(
         # has no mapped fairway polygon in the committed Overpass fixture):
         # the OSM `golf=hole` polyline IS the played line by definition, so a
         # point ON it is honestly "fairway" even with no polygon to verify
-        # against. Negative-verify it isn't inside a hazard instead.
-        return centerline_pt
+        # against — BUT (B3 fix) that's only honest if the point isn't
+        # actually inside a mapped bunker/water/green (Black-7's centerline
+        # at pct ~0.23-0.28 IS inside a mapped bunker — a latent mislabel
+        # this negative-verify catches). If the exact `pct` point is
+        # trouble, nudge along the centerline within a small slot band
+        # before giving up; NEVER silently return a hazard-covered point.
+        danger = list(bunker_feats) + list(water_feats) + list(green_feats)
+        lon, lat = centerline_pt
+        if not _in_any(lon, lat, danger):
+            return centerline_pt
+        offset = _FAIRWAY_FALLBACK_STEP
+        while offset <= _FAIRWAY_FALLBACK_BAND:
+            for direction in (1, -1):
+                candidate_pct = min(1.0, max(0.0, pct + direction * offset))
+                cand_lon, cand_lat = _point_on_centerline(polyline, candidate_pct)
+                if not _in_any(cand_lon, cand_lat, danger):
+                    return cand_lon, cand_lat
+            offset += _FAIRWAY_FALLBACK_STEP
+        raise GeometrySamplingError(
+            f"no-fairway-polygon centerline fallback at pct={pct} (and its +/-{_FAIRWAY_FALLBACK_BAND} slot-band "
+            "neighbors) all fall inside a mapped bunker/water/green — refusing to mislabel a hazard point as FAIRWAY"
+        )
     lon, lat = centerline_pt
     if _in_any(lon, lat, fairway_feats):
         return lon, lat
@@ -410,14 +435,18 @@ def _resolve_rough_point(
 
 def _resolve_greenside_point(
     green_feature: dict, green_lonlat: tuple[float, float], tee_lonlat: tuple[float, float],
+    bunker_feats: list[dict] = (), water_feats: list[dict] = (),
 ) -> tuple[float, float]:
-    """Ring 10-25y around the green polygon, verified NOT inside it — walks
-    outward from the green centroid, along the tee->green line extended, in
-    5y steps starting at 10y past the green edge."""
+    """Ring 10-25y around the green polygon, verified NOT inside it AND (B3
+    fix, non-blocking #9) NOT inside any mapped greenside bunker/water —
+    walks outward from the green centroid, along the tee->green line
+    extended, in 5y steps starting at 10y past the green edge. Never returns
+    a point mislabeled GREENSIDE that's actually in a bunker/water hazard."""
     base_lon, base_lat = green_lonlat
     tx, ty = _to_xy(base_lat, base_lon, *tee_lonlat)
     length = math.hypot(tx, ty) or 1.0
     dx, dy = -tx / length, -ty / length  # unit vector AWAY from the tee (green -> beyond)
+    danger = list(bunker_feats) + list(water_feats)
     for offset_yd in (12, 15, 18, 20, 25):
         offset_m = offset_yd * _M_PER_YARD
         for angle_deg in (0, 45, 90, 135, 180, -45, -90, -135):
@@ -426,6 +455,6 @@ def _resolve_greenside_point(
             ry = dx * math.sin(theta) + dy * math.cos(theta)
             x, y = rx * offset_m, ry * offset_m
             lon, lat = _from_xy(base_lat, base_lon, x, y)
-            if not _point_in_polygon_feature(lon, lat, green_feature):
+            if not _point_in_polygon_feature(lon, lat, green_feature) and not _in_any(lon, lat, danger):
                 return lon, lat
-    raise GeometrySamplingError("could not find a greenside point outside the green polygon")
+    raise GeometrySamplingError("could not find a greenside point outside the green polygon and clear of mapped bunker/water")
