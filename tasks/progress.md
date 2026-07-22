@@ -43,10 +43,34 @@ paid run (offline suites structurally can't catch them):
  DET_CHECK_WEIGHT unused → wire or delete. Meta: report the crux dims separately from weighted-
  correctness (headline can read rosier than felt experience). Verified SOUND: architecture, teeth,
  id/position determinism, live seam is real (synth un-stubbed, _CACHE cleared), key/prod-DB
- discipline. AWAITING: builder fixes B1-B3 + non-blocking → re-run offline gates + new render
- projection test → re-verify with the same fable reviewer (SendMessage, it has full context). THEN
- live pilot (needs stub DATABASE_URL set per qa note; keys on-box read-only; smoke first; cap $40).
- Do NOT run the live pilot until B1-B3 are fixed and re-verified. Do NOT ship/ping.
+ discipline.
+BUILDER DONE (2026-07-22, commits 382ed28 + aa8a9c8 on this worktree branch): fixed B1/B2/B3 +
+ all 8 non-blocking items. B1 render.py: per-hole fit-zoom (`_fit_zoom`, standard Static-Maps
+ fit-bounds math) + ALL overlays now project through the SAME Web-Mercator pixel math
+ (`_static_maps_projector`) used for the base-tile request, in both vector/satellite modes; new
+ offline test_render_projection.py (4 tests, pure math, no network) proves tee+green land inside
+ the image for every pilot hole + north=up/east=right. B2 harness.build_session now runs the bag
+ through normalize_club_distances exactly like prod's session-load chokepoint; bags.json BOMBER
+ "3iron":240 → "4iron":240 (canonical); verified all 3 bags survive normalization with zero drops.
+ B3 geometry._resolve_fairway_point's no-fairway fallback now negative-verifies against
+ bunker/water/green (nudges along the centerline within a slot band, raises if none clear);
+ same fix applied to GREENSIDE sampling (#9); the CI re-verifier (test_bench_offline.py) no longer
+ silently skips the no-fairway FAIRWAY case. Non-blocking #4 (stable per-bag seed dict, no more
+ hash()), #5 (judge2 usage now returned/logged/counted), #6 (FACT cases skip the LLM judge
+ entirely — judge=None — report.py explicitly excludes them from weighted-correctness and reports
+ fact_routing_accuracy separately), #7 (should_second_pass overlap map: CLUB_MATCHES_ENGINE →
+ CLUB_CORRIDOR added), #8 (tile-fetch httpx errors re-raised with key redacted), #10
+ (_stable_condition: per-case SHA-256 hash of hole/slot/bag, replaces the enumeration counter),
+ #11 (DET_CHECK_WEIGHT deleted; report.py surfaces an aggregate det_check_pass_rate_overall in the
+ Headline instead) — all fixed. Reviewer meta-note done too: report.py now prints correctness-dims
+ and owner-crux-dims pass rates as separate headline lines. Gates: ruff clean, 47/47 offline
+ caddie_bench tests (was 39; +8 new), 18/18 teeth, 255/255 tests/eval. Two independent
+ `python -c` processes (different PYTHONHASHSEED) produce a byte-identical 150-case dump
+ (ids/conditions/seeds/resolved positions) — determinism re-verified end to end.
+AWAITING: re-verify with the same fable reviewer (SendMessage, it has full context) before running
+ the live pilot (needs stub DATABASE_URL set per qa note; keys on-box read-only; smoke first; cap
+ $40). Do NOT run the live pilot until the reviewer re-confirms B1-B3 are actually closed. Do NOT
+ ship/ping — this is still framework work, not a user-visible bundle item.
 Prod DB READ-ONLY; keys on-box in-process only, never echoed; pilot cost cap ~$40, cost-logged.
 Judge rubric axes anchored on the known caddie failure memories: numbers-coherence (one per-turn
 solve), shot-reachability (tee = landing zone not flag), miss-side needs per-side hazard evidence,
