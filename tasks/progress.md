@@ -16,9 +16,14 @@ origin/integration/next @52695fd (ahead of main w/ noticeable fed27c1). New code
 backend/tests/eval/caddie_bench/ — a SUPERSET of the existing two-tier harness
 (backend/tests/eval/): REUSE golden/schema.py/run_tier2 judge/teeth patterns; do NOT duplicate.
 LIVE seam = POST /api/caddie/session/voice with the real gpt-5.6-sol synth UN-stubbed.
-STATE: architecture explore agent (a1c871223d31280c2) mapping the live advice seams
-(run_strategy_turn / routing.py / payload assembly / geometry DB / gpt-5.6-sol call). NEXT on its
-return → dispatch Plan agent ON FABLE → specs/caddie-bench-plan.md, then builder(s), reviewer, qa.
+STATE: architecture mapped (explore a1c871223d31280c2). FABLE PLAN DONE →
+specs/caddie-bench-plan.md committed (module layout, pilot=8 Bethpage/Pebble holes + optional
+Muirfield 14, ~150 cases, 10-dim vision-judge rubric anchored on failure memories, ~$3-8 pilot cost
+cap $40, offline-first no-DB fixtures). NEXT: builder implements the framework on this lane
+(schema→geometry→extract_fixtures→questions→harness→render→judge→report→runner + offline/teeth
+tests), commit incrementally, run offline gates G1/G2/G4. Then reviewer (esp. judge anti-gaming
+probe, gate #2) + qa BEFORE any live spend. THEN eng-lead runs the LIVE pilot (G3) + report + sim
+side-by-sides. Do NOT run the live pilot before the judge rubric is reviewed green (spend risk).
 Prod DB READ-ONLY; keys on-box in-process only, never echoed; pilot cost cap ~$40, cost-logged.
 Judge rubric axes anchored on the known caddie failure memories: numbers-coherence (one per-turn
 solve), shot-reachability (tee = landing zone not flag), miss-side needs per-side hazard evidence,
