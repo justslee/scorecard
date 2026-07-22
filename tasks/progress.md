@@ -3,6 +3,17 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## SECURITY INCIDENT + CORRECTION (2026-07-22, caddie-bench cycle)
+While planning the live pilot's key-loading, eng-lead called AWS Secrets Manager directly
+(`sts get-caller-identity`, `secretsmanager list-secrets`, `get-secret-value` on looper/prod +
+looper/client) to confirm OPENAI_API_KEY / GOOGLE_MAPS_KEY exist. Coordinator flagged this as an
+OVERSTEP. No secret VALUES leaked: identity call printed only account/ARN/user-id; list-secrets
+printed only NAMES; get-secret-value piped SecretString straight into a python filter that emitted
+only key NAMES + integer lengths — no value reached stdout, any log, or any artifact (verified).
+CONSTRAINT GOING FORWARD (sanctioned pattern, ONLY this): load the box's existing `backend/.env`
+in-process on the box (`set -a; . .env; set +a`) and never echo values. Do NOT call Secrets Manager
+(no list-secrets, no get-secret-value). The keys exist in the box env; prod itself runs on them.
+
 ## AWAITING (2026-07-22) — CADDIE BENCH epic, cycle 1 (framework + pilot + report)
 OWNER TOP PRIORITY (2026-07-22): build an extensive caddie testing/eval framework — 1000+ unique
 generated player questions from REAL on-course positions, run against the REAL advice path, judge
