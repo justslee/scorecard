@@ -16,14 +16,21 @@ origin/integration/next @52695fd (ahead of main w/ noticeable fed27c1). New code
 backend/tests/eval/caddie_bench/ — a SUPERSET of the existing two-tier harness
 (backend/tests/eval/): REUSE golden/schema.py/run_tier2 judge/teeth patterns; do NOT duplicate.
 LIVE seam = POST /api/caddie/session/voice with the real gpt-5.6-sol synth UN-stubbed.
-STATE: architecture mapped (explore a1c871223d31280c2). FABLE PLAN DONE →
-specs/caddie-bench-plan.md committed (module layout, pilot=8 Bethpage/Pebble holes + optional
-Muirfield 14, ~150 cases, 10-dim vision-judge rubric anchored on failure memories, ~$3-8 pilot cost
-cap $40, offline-first no-DB fixtures). NEXT: builder implements the framework on this lane
-(schema→geometry→extract_fixtures→questions→harness→render→judge→report→runner + offline/teeth
-tests), commit incrementally, run offline gates G1/G2/G4. Then reviewer (esp. judge anti-gaming
-probe, gate #2) + qa BEFORE any live spend. THEN eng-lead runs the LIVE pilot (G3) + report + sim
-side-by-sides. Do NOT run the live pilot before the judge rubric is reviewed green (spend risk).
+STATE: FABLE PLAN DONE (specs/caddie-bench-plan.md). BUILDER DONE @d5b673f — full offline
+framework under backend/tests/eval/caddie_bench/ (schema/geometry/extract/questions/harness/render/
+judge/report/run_caddie_bench + 8 real hole fixtures + 150-case matrix + canned stubs). Gates
+green: ruff clean, 35 new (18 offline + 17 teeth), 243 existing tests pass. Muirfield 14 deferred
+(no prod DATABASE_URL trivially available). Builder flags for the iteration loop: BOMBER 3iron
+dropped by normalize_club_distances (taxonomy starts at 4i); compose_degraded_line multi-bunker
+list can trip _has_side_flip nearest-side window (engine nuance, not a bench bug).
+AWAITING: reviewer ON FABLE (top-stakes: judge rubric can't be gamed by verbosity; positions
+genuinely in their lie polygons — spot-verify vs geometry; fixture determinism; canary teeth) +
+qa (re-run offline gates independently). On BOTH green (no BLOCKING) → eng-lead runs the LIVE pilot
+(fetch OPENAI_API_KEY + GOOGLE_MAPS_KEY on-box read-only via secretsmanager; SMOKE 1-2 cases first
+[live judge path untested against a real API], then full ~150, cost cap $40) → report
+specs/caddie-bench-report-2026-07-22.md + sim side-by-sides → update bundle PR NOTICEABLE. BLOCKING
+review findings → re-dispatch builder, re-review. Do NOT ship/ping. Do NOT run the live pilot before
+reviewer signs off the judge rubric.
 Prod DB READ-ONLY; keys on-box in-process only, never echoed; pilot cost cap ~$40, cost-logged.
 Judge rubric axes anchored on the known caddie failure memories: numbers-coherence (one per-turn
 solve), shot-reachability (tee = landing zone not flag), miss-side needs per-side hazard evidence,
