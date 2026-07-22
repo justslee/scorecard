@@ -1,0 +1,32 @@
+{
+  "all_pass": {
+    "scores": {
+      "numbers_coherence": 2, "shot_reachability": 2, "miss_side_evidence": 2, "club_corridor": 2,
+      "hazard_awareness": 2, "wind_awareness": 2, "answers_the_question": 2, "strategic_depth": 2,
+      "natural_speech": 2, "non_repetitive": 2
+    },
+    "confidence": {
+      "numbers_coherence": 0.9, "shot_reachability": 0.9, "miss_side_evidence": 0.9, "club_corridor": 0.9,
+      "hazard_awareness": 0.9, "wind_awareness": 0.9, "answers_the_question": 0.9, "strategic_depth": 0.9,
+      "natural_speech": 0.9, "non_repetitive": 0.9
+    },
+    "failure_class": "good",
+    "engine_looks_wrong": false,
+    "reason": "canned all-pass verdict for offline CI"
+  },
+  "all_fail": {
+    "scores": {
+      "numbers_coherence": 0, "shot_reachability": 0, "miss_side_evidence": 0, "club_corridor": 0,
+      "hazard_awareness": 0, "wind_awareness": 0, "answers_the_question": 0, "strategic_depth": 0,
+      "natural_speech": 0, "non_repetitive": 0
+    },
+    "confidence": {
+      "numbers_coherence": 0.9, "shot_reachability": 0.9, "miss_side_evidence": 0.9, "club_corridor": 0.9,
+      "hazard_awareness": 0.9, "wind_awareness": 0.9, "answers_the_question": 0.9, "strategic_depth": 0.9,
+      "natural_speech": 0.9, "non_repetitive": 0.9
+    },
+    "failure_class": "vague",
+    "engine_looks_wrong": false,
+    "reason": "canned all-fail verdict for offline CI"
+  }
+}

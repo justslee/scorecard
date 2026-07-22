@@ -87,3 +87,7 @@ backend/tests/eval/last_latency_run.json
 
 # Gated strategy-synthesis latency probe run report (specs/caddie-smart-strategy-tool-plan.md §5) — local only, key-free
 backend/tests/eval/last_strategy_latency_run.json
+
+# Caddie bench (specs/caddie-bench-plan.md) — per-case results/costs/composites/tile cache from
+# a LIVE run; all gitignored (key-free filenames, but the artifacts themselves are local-only)
+backend/tests/eval/caddie_bench/runs/
