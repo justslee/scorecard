@@ -27,6 +27,19 @@ from tests.eval.caddie_bench.schema import (
 # headline line, never folded into the correctness number.
 CRUX_DIMENSIONS: frozenset[JudgeDimension] = frozenset(JudgeDimension) - CORRECTNESS_DIMENSIONS
 
+# ── Real-call canary (self-detecting "the synth call never left the process")
+#
+# A `run_caddie_bench.py` wiring bug can make the LIVE synth seam silently
+# resolve to itself (or otherwise short-circuit before reaching the real
+# model) — every case then falls through to the engine's degraded fallback
+# line, and the judge grades THAT, not real advice. That produced a run with
+# degraded_rate=100% and a synth-call p50 latency of ~98ms (a real
+# `gpt-5.6-sol` call takes well over a second). These are named, run-level
+# thresholds so that failure mode can never again silently produce
+# fallback-graded numbers that look like a real pilot.
+REAL_CALL_CANARY_MAX_DEGRADED_RATE = 0.5  # >= this fraction degraded => synth call is suspect
+REAL_CALL_CANARY_MIN_SYNTH_LATENCY_MS = 1000.0  # a real gpt-5.6-sol call takes >1s; below this it never left the process
+
 
 @dataclass
 class RunMeta:
@@ -57,6 +70,35 @@ class HeadlineStats:
     latency_p50_ms: Optional[float]
     latency_p95_ms: Optional[float]
     failure_class_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class RealCallCanaryResult:
+    invalid: bool
+    reasons: list[str] = field(default_factory=list)
+
+
+def check_real_call_canary(headline: HeadlineStats) -> RealCallCanaryResult:
+    """Run-level self-check: does this run look like the synth call actually
+    reached the real model? Evaluated on EVERY run (including a
+    `--max-cases 2` smoke) — see `REAL_CALL_CANARY_*` above for why. An empty
+    run (0 cases, e.g. an `--only-failures` resume with nothing left to
+    retry) has no signal either way and is never flagged."""
+    if headline.case_count == 0:
+        return RealCallCanaryResult(invalid=False)
+
+    reasons: list[str] = []
+    if headline.degraded_rate >= REAL_CALL_CANARY_MAX_DEGRADED_RATE:
+        reasons.append(
+            f"degraded_rate {headline.degraded_rate:.1%} >= {REAL_CALL_CANARY_MAX_DEGRADED_RATE:.0%} "
+            "(nearly every case fell through to the engine's fallback line)"
+        )
+    if headline.latency_p50_ms is not None and headline.latency_p50_ms < REAL_CALL_CANARY_MIN_SYNTH_LATENCY_MS:
+        reasons.append(
+            f"latency p50 {headline.latency_p50_ms:.0f}ms < {REAL_CALL_CANARY_MIN_SYNTH_LATENCY_MS:.0f}ms "
+            "(too fast for a real model call — it never left the process)"
+        )
+    return RealCallCanaryResult(invalid=bool(reasons), reasons=reasons)
 
 
 def _is_fact_case(case_id: str) -> bool:
@@ -210,6 +252,21 @@ def generate_report(
     """Pure markdown generation from resolved results + run metadata."""
     headline = compute_headline(results)
     lines: list[str] = []
+
+    real_call_canary = check_real_call_canary(headline)
+    if real_call_canary.invalid:
+        lines.append("# 🚨 FAILED — REAL-CALL CANARY TRIPPED — RUN INVALID 🚨")
+        lines.append("")
+        lines.append(
+            "**Do not trust any number below.** The synth call almost certainly never "
+            "reached the real model — every graded case may be the engine's degraded "
+            "fallback line, not real advice. Reasons:"
+        )
+        for reason in real_call_canary.reasons:
+            lines.append(f"- {reason}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
 
     lines.append(f"# Caddie Bench Report — run `{meta.run_id}`")
     lines.append("")

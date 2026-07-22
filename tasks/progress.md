@@ -3,6 +3,38 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-22) — live-synth wrapper recursion FIXED (builder, silent rider)
+Fixed the BLOCKING bug from the AWAITING entry below. Seam: `run_caddie_bench.py`'s
+`_LiveSynth.__call__` did `from app.caddie.strategy import synthesize_strategy as
+real_synthesize_strategy` INSIDE `__call__` (lazy import at call time) — but
+`harness._stub_synth` patches `strategy_mod.synthesize_strategy = synth` (the wrapper
+itself) BEFORE `strategy_turn.py:193`'s `strategy_mod.synthesize_strategy(...)` call, so
+the lazy re-resolve fetched the wrapper, not the real fn → recursion (~980 deep,
+RecursionError), silently caught nowhere → every case fell to the degraded line.
+Fix: `_LiveSynth.__init__` now captures the real callable ONCE (before any patch exists —
+the instance is always built before the first `harness.run_case`); `__call__` delegates to
+that saved reference, never re-resolving the (by-then-patched) module name. Verified the
+patch seam matches `strategy_turn.py`'s actual call site (`strategy_mod.synthesize_strategy`,
+module-attribute lookup) — no separate patch needed there.
+Added: (1) a self-detecting real-call canary (`report.check_real_call_canary`, named
+constants `REAL_CALL_CANARY_MAX_DEGRADED_RATE=0.5` / `REAL_CALL_CANARY_MIN_SYNTH_LATENCY_MS
+=1000ms`) — a run with degraded_rate>=50% or synth p50<1s is flagged INVALID: loud stderr
+banner, a prominent "FAILED — REAL-CALL CANARY TRIPPED" banner prepended to the generated
+report, and a new exit code 4 (`_EXIT_REAL_CALL_CANARY_INVALID`, documented in the module
+docstring alongside the existing 0/1/2/3 scheme); evaluated on every run incl. smoke.
+(2) `--render-mode {vector,satellite}` CLI flag (default satellite), threaded into
+`render.render_case`; satellite still hard-requires GOOGLE_MAPS_KEY/NEXT_PUBLIC_GOOGLE_MAPS_KEY
+(now checked eagerly at the top of `run()`, before any budget is spent — gate-refusal exit 2);
+vector never touches/requires a key.
+Tests: new unit test proves non-recursive delegation (stub called exactly once, cost/latency
+record captured) — confirmed it goes RED against the old wiring by transiently reintroducing
+the bug and re-running (RecursionError, pasted in the PR/report). Canary tests (synthetic
+100%-degraded/98ms flags INVALID; healthy run passes; empty run never flags) + report-banner
+tests + render-mode tests (default=satellite refuses w/o key, vector never requires one,
+argparse rejects a bad choice). Gates: ruff clean; caddie_bench 58/58 (was 47 + new); teeth
+18/18; full tests/eval 266/266. Files: backend/tests/eval/caddie_bench/{run_caddie_bench.py,
+report.py, test_bench_offline.py}. Silent infra fix — no user-facing change.
+
 ## AWAITING (2026-07-22) — fix BLOCKING live-synth wrapper recursion (smoke-exposed)
 Owner-authorized smoke ran on-box (coordinator, vector via a sed): pipeline works end-to-end
 ($0.0296, report generated) BUT exposed a BLOCKING bug in run_caddie_bench.py: the live-synth

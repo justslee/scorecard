@@ -10,10 +10,17 @@ run_caddie_bench.py). Same three guards as `tests/eval/run_tier2.py`:
 Plus (§1): `--budget-usd` (pilot default 40.00) enforced BEFORE every
 synth/judge call against a refuse-unknown-model pricing table; `--max-cases`,
 `--only-failures <run_id>`, `--holes`, `--resume <run_id>` (per-case JSONL is
-appended case-by-case — resumable at the case level). Writes
+appended case-by-case — resumable at the case level); `--render-mode
+{vector,satellite}` (default satellite, the owner's fidelity flow — hard-
+requires `GOOGLE_MAPS_KEY`/`NEXT_PUBLIC_GOOGLE_MAPS_KEY`; `vector` never
+touches a key, for an offline/no-key smoke). Writes
 `runs/<run_id>/{results.jsonl, costs.jsonl, composites/}` — all gitignored,
 all key-free. Exit codes mirror run_tier2: 0 pass-bar met / 1 missed /
-2 gate refusal / 3 budget abort.
+2 gate refusal (incl. satellite mode with no maps key) / 3 budget abort /
+4 REAL-CALL CANARY TRIPPED — run-level self-check that the synth call
+actually left the process (see `report.check_real_call_canary` /
+`REAL_CALL_CANARY_MAX_DEGRADED_RATE` / `REAL_CALL_CANARY_MIN_SYNTH_LATENCY_MS`);
+this run's numbers must be treated as invalid and discarded, never graded.
 
 Invocation (never in CI — run this yourself, after a reviewer signs off on
 the judge rubric, per the builder's contract):
@@ -53,6 +60,13 @@ _PRICING_PER_MTOK_USD: dict[str, tuple[float, float]] = {
     "gpt-5.6-sol": (1.75, 14.00),
 }
 
+# Exit codes (documented in the module docstring above).
+_EXIT_PASS = 0
+_EXIT_MISSED_BAR = 1
+_EXIT_GATE_REFUSAL = 2
+_EXIT_BUDGET_ABORT = 3
+_EXIT_REAL_CALL_CANARY_INVALID = 4
+
 
 def _cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     if model not in _PRICING_PER_MTOK_USD:
@@ -67,20 +81,40 @@ def _cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
 class _LiveSynth:
     """Stateful `synthesize_strategy`-shaped callable — tracks cost/latency
     on itself so `harness.run_case` can read them back after the call
-    (`run_strategy_turn` doesn't return token usage to its caller)."""
+    (`run_strategy_turn` doesn't return token usage to its caller).
+
+    BUG FIX (self-recursion): the original saved a reference to
+    `app.caddie.strategy.synthesize_strategy` via a lazy `from ... import`
+    done INSIDE `__call__`. `harness._stub_synth` patches that exact module
+    attribute (`strategy_mod.synthesize_strategy = synth`, i.e. this
+    instance) before `run_strategy_turn` ever calls it — so once patched,
+    re-resolving the name at call time returned THIS wrapper, not the real
+    OpenAI-backed function. The wrapper called itself, recursed ~980 deep,
+    hit RecursionError, and every case silently fell through to the engine's
+    degraded line instead of ever reaching the real model (observed:
+    degraded_rate 100%, synth latency p50 98ms — invalidating the pilot).
+
+    Fix: capture the ORIGINAL callable ONCE at construction time, before
+    `_stub_synth` ever installs this wrapper (this instance is always built
+    before the first `harness.run_case` call — see `run()` below), and
+    delegate to that saved reference forever after. Never re-resolve
+    `strategy.synthesize_strategy` inside `__call__` — that name IS this
+    wrapper once a case is in flight."""
 
     def __init__(self, model: str, cost_log: list[dict], case_id_ref: list[str]):
+        from app.caddie.strategy import synthesize_strategy as real_synthesize_strategy
+
         self.model = model
         self.cost_log = cost_log
         self.case_id_ref = case_id_ref  # mutable 1-elem list holding the CURRENT case id
         self.last_cost_usd = 0.0
         self.last_latency_ms = 0.0
+        # The REAL, un-patched synth — resolved once, before any patch exists.
+        self._real_synthesize_strategy = real_synthesize_strategy
 
     async def __call__(self, ground_truth: str, *, model: str) -> tuple[str, dict]:
-        from app.caddie.strategy import synthesize_strategy as real_synthesize_strategy
-
         start = time.monotonic()
-        text, usage = await real_synthesize_strategy(ground_truth, model=model)
+        text, usage = await self._real_synthesize_strategy(ground_truth, model=model)
         self.last_latency_ms = (time.monotonic() - start) * 1000
         self.last_cost_usd = _cost_usd(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
         self.cost_log.append({
@@ -98,6 +132,22 @@ def _append_jsonl(path: Path, obj: dict) -> None:
 
 
 async def run(args: argparse.Namespace) -> int:
+    # #4: satellite (the default, owner's fidelity flow) hard-requires a
+    # maps key — `render.fetch_base_tile` also raises on this, but only at
+    # the FIRST case's render, after we've already spent a synth+judge call.
+    # Fail fast, before any budget is spent. VECTOR mode must NEVER require
+    # (or even look at) a maps key.
+    if args.render_mode == "satellite" and not (
+        os.getenv("GOOGLE_MAPS_KEY") or os.getenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY")
+    ):
+        print(
+            "--render-mode satellite (the default) requires GOOGLE_MAPS_KEY (or "
+            "NEXT_PUBLIC_GOOGLE_MAPS_KEY) set — refusing to start a run that would fail "
+            "on the first render. Pass --render-mode vector for an offline/no-key smoke.",
+            file=sys.stderr,
+        )
+        return _EXIT_GATE_REFUSAL
+
     run_id = args.resume or time.strftime("%Y%m%d-%H%M%S")
     out_dir = RUNS_DIR / run_id
     results_path = out_dir / "results.jsonl"
@@ -162,7 +212,7 @@ async def run(args: argparse.Namespace) -> int:
 
         result = await harness.run_case(case, fx, phrasing, bag, synth=synth)
 
-        composite_path = render.render_case(case, fx, result.resolved, mode="satellite", out_dir=out_dir)
+        composite_path = render.render_case(case, fx, result.resolved, mode=args.render_mode, out_dir=out_dir)
         det_summary = "; ".join(f"{d.check.value}={'PASS' if d.passed else 'FAIL'}" for d in result.det_checks)
 
         # #6 fix: FACT-class cases are canned one-liner distance readouts —
@@ -237,14 +287,33 @@ async def run(args: argparse.Namespace) -> int:
     report_path = report.write_report(all_results, meta, Path(args.report_out) if args.report_out else out_dir / "report.md")
     print(f"Report written to: {report_path}")
 
+    # Self-detecting real-call canary — evaluated EVERY run, including a
+    # `--max-cases 2` smoke, so the recursion bug (or anything else that
+    # keeps the synth call from ever leaving the process) can never again
+    # silently produce fallback-graded numbers that look like a real pilot.
+    real_call_canary = report.check_real_call_canary(headline)
+    if real_call_canary.invalid:
+        print("=" * 78, file=sys.stderr)
+        print("REAL-CALL CANARY TRIPPED — RUN INVALID, DO NOT TRUST THESE NUMBERS", file=sys.stderr)
+        for reason in real_call_canary.reasons:
+            print(f"  - {reason}", file=sys.stderr)
+        print(
+            "The synth call almost certainly never reached the real model (e.g. a "
+            "self-referential patch/recursion) and every graded case may be the "
+            "engine's degraded fallback line, not real advice from the model under test.",
+            file=sys.stderr,
+        )
+        print("=" * 78, file=sys.stderr)
+        return _EXIT_REAL_CALL_CANARY_INVALID
+
     if aborted:
-        return 3
+        return _EXIT_BUDGET_ABORT
     if headline.canary_all_pass:
         print("CANARY GATE FAILED: at least one poison-pill case scored GOOD — the judge has no teeth.", file=sys.stderr)
-        return 1
+        return _EXIT_MISSED_BAR
     if headline.weighted_correctness_score < args.min_weighted_correctness:
-        return 1
-    return 0
+        return _EXIT_MISSED_BAR
+    return _EXIT_PASS
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -256,6 +325,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--resume", default=None, metavar="RUN_ID")
     parser.add_argument("--min-weighted-correctness", type=float, default=0.85)
     parser.add_argument("--report-out", default=None)
+    # #4: was a manual sed of the `mode="satellite"` literal at the
+    # render_case call site — not load-bearing, easy to forget to revert.
+    # satellite (default) = the owner's fidelity flow, judged against;
+    # vector = zero-network/zero-key substrate for an offline smoke.
+    parser.add_argument(
+        "--render-mode", choices=["vector", "satellite"], default="satellite",
+        help="Composite renderer backend (default: satellite, the owner's fidelity flow; "
+        "requires GOOGLE_MAPS_KEY). Use 'vector' for a key-free/offline smoke.",
+    )
     args = parser.parse_args(argv)
 
     if os.getenv("CADDIE_EVAL_LIVE") != "1" or not os.getenv("OPENAI_API_KEY"):
@@ -267,7 +345,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "Requires OPENAI_API_KEY set AND CADDIE_EVAL_LIVE=1.",
             file=sys.stderr,
         )
-        return 2
+        return _EXIT_GATE_REFUSAL
 
     import asyncio
 

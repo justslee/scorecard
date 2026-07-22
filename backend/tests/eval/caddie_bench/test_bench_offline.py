@@ -6,7 +6,8 @@ pilot holes; position containment for every pilot case (re-verified here,
 independently of `geometry.sample_position`'s own internal verification);
 full harness end-to-end with a STUBBED synth (canned answers) + STUBBED
 judge + VECTOR renderer; report generation from canned results; runner
-gate-refusal (no env -> exit 2); filename-glob pins.
+gate-refusal (no env -> exit 2); filename-glob pins; the `_LiveSynth`
+non-recursion fix + the real-call canary + `--render-mode`.
 """
 
 from __future__ import annotations
@@ -457,3 +458,202 @@ def test_det_check_weight_constant_was_removed():
     from tests.eval.caddie_bench import schema as schema_mod
 
     assert not hasattr(schema_mod, "DET_CHECK_WEIGHT")
+
+
+# ── 8. LIVE-synth recursion fix + real-call canary + --render-mode ─────────
+#
+# A live smoke test found `run_caddie_bench._LiveSynth` recursing into
+# itself (~980 deep -> RecursionError) instead of ever reaching the real
+# OpenAI-backed `synthesize_strategy` — every case silently fell through to
+# the engine's degraded fallback line, and the judge graded THAT (observed:
+# degraded_rate 100%, synth latency p50 98ms). This section pins the fix
+# (non-recursive delegation), the run-level self-detecting canary that makes
+# this failure mode loud instead of silent, and the new `--render-mode` flag.
+
+
+class _RealCallRecorder:
+    """Stands in for the REAL, un-patched `synthesize_strategy` — records
+    exactly how many times it was actually invoked."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def __call__(self, ground_truth: str, *, model: str) -> tuple[str, dict]:
+        self.calls += 1
+        return "stub advice text", {"input_tokens": 11, "output_tokens": 22}
+
+
+async def test_live_synth_wrapper_delegates_to_the_saved_original_exactly_once_not_recursively(monkeypatch):
+    """Pins the recursion fix. Wiring mirrors the live runner EXACTLY:
+    (1) `app.caddie.strategy.synthesize_strategy` is the real (here, stub)
+        function.
+    (2) `_LiveSynth(...)` is constructed — it must capture that real
+        reference right here, before anything is patched.
+    (3) `harness._stub_synth` then patches the module attribute to the
+        wrapper ITSELF (`strategy_mod.synthesize_strategy = synth`).
+    (4) The advice path calls `strategy_mod.synthesize_strategy(...)` — i.e.
+        the wrapper.
+
+    With the OLD wrapper (a lazy `from app.caddie.strategy import
+    synthesize_strategy` done INSIDE `__call__`), step 4 re-resolves the
+    module attribute at call time — which by then IS the wrapper — so the
+    call recurses into itself and this test goes RED (RecursionError, and
+    the stub's `.calls` never increments). The FIXED wrapper delegates to
+    the reference captured in step 2 and never re-resolves the patched
+    name."""
+    from app.caddie import strategy as strategy_mod
+
+    stub = _RealCallRecorder()
+    monkeypatch.setattr(strategy_mod, "synthesize_strategy", stub)
+
+    cost_log: list[dict] = []
+    case_id_ref = ["case-1"]
+    synth = run_caddie_bench._LiveSynth(model="gpt-5.6-sol", cost_log=cost_log, case_id_ref=case_id_ref)
+
+    # The seam `harness._stub_synth` actually installs in the live runner.
+    monkeypatch.setattr(strategy_mod, "synthesize_strategy", synth)
+
+    text, usage = await strategy_mod.synthesize_strategy("ground truth text", model="gpt-5.6-sol")
+
+    assert stub.calls == 1, "the saved original must be called exactly once — never recursively"
+    assert text == "stub advice text"
+    assert usage == {"input_tokens": 11, "output_tokens": 22}
+    assert len(cost_log) == 1, "a cost/latency record must be captured for the call"
+    assert cost_log[0]["case_id"] == "case-1"
+    assert cost_log[0]["call"] == "synth"
+    assert cost_log[0]["model"] == "gpt-5.6-sol"
+    assert synth.last_latency_ms >= 0.0
+    assert synth.last_cost_usd > 0.0
+
+
+def test_check_real_call_canary_flags_a_synthetic_100pct_degraded_98ms_run_invalid():
+    """Feeds the run-level checker exactly the observed failure signature
+    (degraded_rate=1.0, synth latency p50=98ms) and asserts it flags the run
+    INVALID — the assertion the bug silently skipped."""
+    headline = report.HeadlineStats(
+        case_count=10, dimension_pass_rate={}, weighted_correctness_score=0.0,
+        correctness_dims_pass_rate=0.0, crux_dims_pass_rate=0.0, degraded_rate=1.0,
+        contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
+        det_check_pass_rate_overall=1.0, fact_routing_accuracy=None, fact_case_count=0,
+        latency_p50_ms=98.0, latency_p95_ms=110.0,
+    )
+    result = report.check_real_call_canary(headline)
+    assert result.invalid is True
+    assert len(result.reasons) == 2, "both the degraded-rate AND the latency signal should fire here"
+
+
+def test_check_real_call_canary_passes_a_healthy_run():
+    headline = report.HeadlineStats(
+        case_count=10, dimension_pass_rate={}, weighted_correctness_score=0.9,
+        correctness_dims_pass_rate=0.9, crux_dims_pass_rate=0.9, degraded_rate=0.1,
+        contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
+        det_check_pass_rate_overall=1.0, fact_routing_accuracy=None, fact_case_count=0,
+        latency_p50_ms=1850.0, latency_p95_ms=2400.0,
+    )
+    result = report.check_real_call_canary(headline)
+    assert result.invalid is False
+    assert result.reasons == []
+
+
+def test_check_real_call_canary_never_flags_an_empty_run():
+    headline = report.HeadlineStats(
+        case_count=0, dimension_pass_rate={}, weighted_correctness_score=0.0,
+        correctness_dims_pass_rate=0.0, crux_dims_pass_rate=0.0, degraded_rate=0.0,
+        contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
+        det_check_pass_rate_overall=0.0, fact_routing_accuracy=None, fact_case_count=0,
+        latency_p50_ms=None, latency_p95_ms=None,
+    )
+    assert report.check_real_call_canary(headline).invalid is False
+
+
+def test_generate_report_prepends_a_failed_banner_when_the_canary_trips():
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    # 3 degraded, 0 real results, latency ~98ms each — reproduces the exact
+    # observed bug signature end to end (through CaseResult -> compute_headline
+    # -> generate_report), not just the isolated HeadlineStats checker.
+    results = [
+        CaseResult(
+            case_id=f"holeA__slot{i}__owner__x",
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="degraded fallback line", degraded=True, engine_ref={"club": "driver"},
+            det_checks=[], latency_ms=98.0,
+        )
+        for i in range(3)
+    ]
+    meta = report.RunMeta(run_id="smoke-test", case_count=len(results))
+    text = report.generate_report(results, meta)
+    assert text.startswith("# 🚨 FAILED — REAL-CALL CANARY TRIPPED — RUN INVALID 🚨")
+    assert "degraded_rate" in text
+    assert "never reached the real model" in text
+
+
+def test_generate_report_has_no_failed_banner_on_a_healthy_run():
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    results = [
+        CaseResult(
+            case_id="holeA__slot0__owner__x",
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="real advice", degraded=False, engine_ref={"club": "driver"},
+            det_checks=[], latency_ms=1800.0,
+        )
+    ]
+    meta = report.RunMeta(run_id="healthy-run", case_count=len(results))
+    text = report.generate_report(results, meta)
+    assert not text.startswith("# 🚨 FAILED")
+    assert text.startswith("# Caddie Bench Report")
+
+
+def test_run_refuses_satellite_render_mode_without_maps_key(monkeypatch):
+    """#4: satellite (the default) hard-requires a maps key — the run must
+    refuse fast (gate-refusal exit code), before spending any budget on
+    fixture loading or a synth/judge call, and vector must never trip this."""
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.delenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", raising=False)
+
+    assert run_caddie_bench.main(["--render-mode", "satellite"]) == run_caddie_bench._EXIT_GATE_REFUSAL
+
+
+def test_render_mode_rejects_an_out_of_taxonomy_choice(monkeypatch):
+    """Exercises the REAL `main()` argparse wiring (argument parsing happens
+    before the env gate, so this doesn't need CADDIE_EVAL_LIVE/OPENAI_API_KEY
+    set) — a typo'd `--render-mode` must be rejected by argparse itself."""
+    with pytest.raises(SystemExit):
+        run_caddie_bench.main(["--render-mode", "not-a-real-mode"])
+
+
+def test_render_mode_defaults_to_satellite(monkeypatch):
+    """No `--render-mode` passed -> the default must behave as satellite:
+    with no maps key, the run still refuses (same gate-refusal path as
+    passing `--render-mode satellite` explicitly)."""
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.delenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", raising=False)
+
+    assert run_caddie_bench.main([]) == run_caddie_bench._EXIT_GATE_REFUSAL
+
+
+def test_render_mode_vector_never_requires_a_maps_key(monkeypatch):
+    """`--render-mode vector` must NEVER raise/refuse for a missing maps key
+    — it passes the satellite-key gate and proceeds into the run (which then
+    exits on the empty/degenerate case set, NOT on a maps-key refusal)."""
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.delenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", raising=False)
+
+    exit_code = run_caddie_bench.main(["--render-mode", "vector", "--max-cases", "0"])
+    assert exit_code != run_caddie_bench._EXIT_GATE_REFUSAL
+
+
+def test_exit_code_constants_are_distinct_and_documented():
+    codes = {
+        run_caddie_bench._EXIT_PASS, run_caddie_bench._EXIT_MISSED_BAR,
+        run_caddie_bench._EXIT_GATE_REFUSAL, run_caddie_bench._EXIT_BUDGET_ABORT,
+        run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID,
+    }
+    assert codes == {0, 1, 2, 3, 4}, "exit codes must stay distinct — a collision would hide which failure mode fired"
