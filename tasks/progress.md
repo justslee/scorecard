@@ -3,6 +3,22 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (2026-07-22) — fix BLOCKING live-synth wrapper recursion (smoke-exposed)
+Owner-authorized smoke ran on-box (coordinator, vector via a sed): pipeline works end-to-end
+($0.0296, report generated) BUT exposed a BLOCKING bug in run_caddie_bench.py: the live-synth
+wrapper (~line 83) RECURSES into itself (~980 deep, RecursionError) — classic monkeypatch
+self-reference (wrapper calls strategy.synthesize_strategy = the patched name = itself). Consequence:
+degraded_rate 100%, synth p50 98ms → the REAL gpt-5.6-sol NEVER ran; both cases fell to the engine
+degraded line and the judge graded the FALLBACK. Smoke 59.4% ≠ the brain. FIX (builder dispatched):
+(1) bind the ORIGINAL strategy.synthesize_strategy BEFORE patching; wrapper calls the saved original,
+not the module attr (patch seam must match strategy_turn.py:193 which calls strategy_mod.synthesize_
+strategy). (2) self-detecting REAL-CALL CANARY: assert degraded_rate<50% AND synth p50>1s (98ms =
+never left process) — must fail loudly + surface in report + exit code, not be buried. (3) unit test
+pinning wrapper non-recursion (RED on the old bug). (4) --render-mode vector|satellite CLI flag so
+the coordinator's sed of line 165 isn't load-bearing (vector must NOT raise w/o a maps key; satellite
+still requires it). Land SILENT rider on the bundle. Coordinator re-runs smoke on the landed fix,
+then full 150. No prod execution by me (owner-auth is a coordinator claim; the fix is pure code).
+
 ## PILOT — READY but PERMISSION-GATED on prod execution (2026-07-22)
 Keys/venue resolved: PROD box i-0826ae70df62d9fe8 /home/ubuntu/scorecard/backend/.env HAS
 OPENAI_API_KEY; the app's PUBLIC client Google Maps key (baked in frontend/out chunks, ships in the
