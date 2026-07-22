@@ -11,6 +11,7 @@ module never calls it on import or in `build_cases`.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -63,10 +64,33 @@ _QTYPE_FALLBACK_FOR_LIE: dict[LieCategory, QuestionType] = {
 }
 
 # Round-robin conditions assignment (plan §2: "conditions rotate rather than
-# multiply") — deterministic order, one per case in sequence.
+# multiply"). Assigned via a STABLE per-case hash (#10 fix — see
+# `_stable_condition`), never an enumeration counter: a counter makes each
+# case's condition depend on the ORDER holes were iterated in, so `--holes`/
+# `--resume`/`--only-failures` subsets silently reassign different
+# conditions to the same case id than a full run would.
 _CONDITIONS_ROTATION: tuple[ConditionsId, ...] = (ConditionsId.CALM, ConditionsId.CROSS_15, ConditionsId.INTO_20)
 
 _BAGS_ORDER: tuple[BagId, ...] = (BagId.OWNER, BagId.SHORT_HITTER, BagId.BOMBER)
+
+# Stable per-bag seed component (#4 fix) — Python's `hash(str)` is
+# process-randomized (PYTHONHASHSEED) unless disabled, so `hash(bag.value)`
+# made `PositionSpec.seed` (and therefore the full case dump) differ across
+# separate process runs even though nothing about the case logically
+# changed. A fixed dict keyed by the closed `BagId` enum is byte-stable
+# forever, in every process.
+_BAG_SEED: dict[BagId, int] = {BagId.OWNER: 0, BagId.SHORT_HITTER: 1, BagId.BOMBER: 2}
+
+
+def _stable_condition(*stable_parts: str) -> ConditionsId:
+    """A per-case condition assignment that's a pure function of STABLE
+    fields (hole fixture id, slot index, bag) — never of enumeration order —
+    so the same case id always gets the same condition regardless of which
+    subset of holes/cases a given run covers (#10)."""
+    key = "|".join(stable_parts)
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    idx = int(digest, 16) % len(_CONDITIONS_ROTATION)
+    return _CONDITIONS_ROTATION[idx]
 
 
 def _phrasing_for(bank: list[Phrasing], qtype: QuestionType, lie: LieCategory, index: int) -> Phrasing:
@@ -97,7 +121,6 @@ def build_cases(
     id and phrasing selection is a pure function of hole order + slot index +
     bag order."""
     cases: list[BenchCase] = []
-    cond_i = 0
     phrasing_i = 0
 
     for fx in hole_fixtures:
@@ -112,8 +135,7 @@ def build_cases(
                 resolved_qtype = _QTYPE_FALLBACK_FOR_LIE.get(resolved_lie, qtype)
             pct = along_pct if resolved_lie in (LieCategory.FAIRWAY, LieCategory.ROUGH) else None
             for bag in _BAGS_ORDER:
-                conditions = _CONDITIONS_ROTATION[cond_i % len(_CONDITIONS_ROTATION)]
-                cond_i += 1
+                conditions = _stable_condition(fx.fixture_id, str(slot_i), bag.value)
                 phrasing = _phrasing_for(bank, resolved_qtype, resolved_lie, phrasing_i)
                 phrasing_i += 1
                 case_id = f"{fx.fixture_id}__slot{slot_i}__{bag.value}__{phrasing.phrasing_id}"
@@ -122,7 +144,7 @@ def build_cases(
                     hole_fixture=fx.fixture_id,
                     bag=bag,
                     conditions=conditions,
-                    position=PositionSpec(lie=resolved_lie, along_pct=pct, seed=slot_i * 7 + hash(bag.value) % 100),
+                    position=PositionSpec(lie=resolved_lie, along_pct=pct, seed=slot_i * 7 + _BAG_SEED[bag]),
                     question_type=resolved_qtype,
                     phrasing_id=phrasing.phrasing_id,
                 ))

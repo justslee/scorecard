@@ -92,8 +92,6 @@ CORRECTNESS_DIMENSIONS: frozenset[JudgeDimension] = frozenset({
     JudgeDimension.HAZARD_AWARENESS, JudgeDimension.WIND_AWARENESS,
 })
 
-DET_CHECK_WEIGHT = 2  # matches CORRECTNESS_DIMENSIONS weighting in report.py
-
 
 class DetCheckName(str, Enum):
     """Closed registry of deterministic (never-judge) checks (§5a)."""

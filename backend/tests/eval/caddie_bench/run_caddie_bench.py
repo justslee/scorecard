@@ -40,6 +40,7 @@ from tests.eval.caddie_bench.schema import (
     QUESTIONS_V1_PATH,
     RUNS_DIR,
     CaseResult,
+    QuestionType,
     load_bags,
     load_question_bank,
 )
@@ -163,21 +164,49 @@ async def run(args: argparse.Namespace) -> int:
 
         composite_path = render.render_case(case, fx, result.resolved, mode="satellite", out_dir=out_dir)
         det_summary = "; ".join(f"{d.check.value}={'PASS' if d.passed else 'FAIL'}" for d in result.det_checks)
-        first_scores, judge_usage = await judge_mod.judge_case(
-            case, result.resolved, result.engine_ref, result.answer, det_summary,
-            composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
-        )
-        judge_cost = _cost_usd(judge_mod._judge_model(), judge_usage.get("input_tokens", 0), judge_usage.get("output_tokens", 0)) if judge_usage else 0.0
-        cost_log.append({
-            "case_id": case.id, "call": "judge", "model": judge_mod._judge_model(),
-            "input_tokens": judge_usage.get("input_tokens", 0), "output_tokens": judge_usage.get("output_tokens", 0),
-            "usd": round(judge_cost, 6),
-        })
 
-        second_scores, contested = await judge_mod.second_pass_if_needed(
-            first_scores, result.det_checks, case, result.resolved, result.engine_ref, result.answer,
-            det_summary, composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
-        )
+        # #6 fix: FACT-class cases are canned one-liner distance readouts —
+        # the full 10-dim advice rubric (club corridor, miss-side evidence,
+        # strategic depth, ...) doesn't apply to them and dragged the
+        # weighted-correctness headline. Skip the LLM judge entirely for
+        # FACT cases (`judge=None` -> `report.compute_headline` naturally
+        # excludes them from weighted correctness/per-dim pass rate/worst-10,
+        # same filter it already applies); their routing correctness
+        # (`result.intent == "fact"`) is reported separately (report.py).
+        if case.question_type == QuestionType.FACT_DISTANCE:
+            first_scores, second_scores, contested, judge_cost = None, None, False, 0.0
+        else:
+            first_scores, judge_usage = await judge_mod.judge_case(
+                case, result.resolved, result.engine_ref, result.answer, det_summary,
+                composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
+            )
+            judge_cost = _cost_usd(judge_mod._judge_model(), judge_usage.get("input_tokens", 0), judge_usage.get("output_tokens", 0)) if judge_usage else 0.0
+            cost_log.append({
+                "case_id": case.id, "call": "judge", "model": judge_mod._judge_model(),
+                "input_tokens": judge_usage.get("input_tokens", 0), "output_tokens": judge_usage.get("output_tokens", 0),
+                "usd": round(judge_cost, 6),
+            })
+
+            # #5 fix: the second-pass judge call's own usage used to be
+            # discarded entirely (`_usage` thrown away inside judge.py) —
+            # logged nowhere, counted nowhere, so the runner wrote no
+            # `judge2` cost line and `--budget-usd` undercounted ~15% of
+            # judge calls (every second-pass case). `second_pass_if_needed`
+            # now returns the usage; log + fold it into this case's cost.
+            second_scores, contested, judge2_usage = await judge_mod.second_pass_if_needed(
+                first_scores, result.det_checks, case, result.resolved, result.engine_ref, result.answer,
+                det_summary, composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
+            )
+            if judge2_usage:
+                judge2_cost = _cost_usd(
+                    judge_mod._judge_model(), judge2_usage.get("input_tokens", 0), judge2_usage.get("output_tokens", 0),
+                )
+                judge_cost += judge2_cost
+                cost_log.append({
+                    "case_id": case.id, "call": "judge2", "model": judge_mod._judge_model(),
+                    "input_tokens": judge2_usage.get("input_tokens", 0), "output_tokens": judge2_usage.get("output_tokens", 0),
+                    "usd": round(judge2_cost, 6),
+                })
 
         case_cost = result.cost_usd + judge_cost
         total_cost += case_cost

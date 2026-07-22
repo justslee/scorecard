@@ -312,3 +312,148 @@ def test_bags_json_matches_owner_bag_from_corner_tree_forward_bound_test():
     bags = load_bags(BAGS_PATH)
     assert bags[BagId.OWNER].clubs == _OWNER_BAG
     assert bags[BagId.OWNER].handicap == 3.0
+
+
+# ── 7. Post-Fable-review fixes (B2, #4, #6, #7, #10, #11) ───────────────────
+
+
+def test_build_session_normalizes_the_bag_like_prod_session_load():
+    """B2: `harness.build_session` must run the bag through
+    `normalize_club_distances` exactly like prod's session-load chokepoint
+    (`app/caddie/session.py`), so a non-canonical club key never survives
+    into the bench's `RoundSession.club_distances` (the LIVE synth's bag
+    context) even though `generate_recommendation`'s own oracle call already
+    normalizes internally — the two must never diverge."""
+    from app.caddie.types import WeatherConditions
+
+    weather = WeatherConditions(wind_speed_mph=0.0, wind_direction=0)
+    session = harness.build_session(
+        {}, {"3iron": 240, "driver": 300}, 8.0, weather, current_hole=1,
+    )
+    assert "3iron" not in session.club_distances, "a non-canonical club key must be dropped, matching prod"
+    assert session.club_distances.get("4iron") is None, "raw '3iron' must NOT silently alias to '4iron'"
+    assert session.club_distances["driver"] == 300
+
+
+def test_bomber_bag_has_no_non_canonical_clubs():
+    """B2: fixtures/bags.json's BOMBER must carry its long iron under a
+    canonical key (4iron), never the non-canonical '3iron' the canonical
+    taxonomy (starting at 4-iron) drops."""
+    from app.caddie.club_selection import normalize_club_distances
+
+    bags = load_bags(BAGS_PATH)
+    bomber = bags[BagId.BOMBER].clubs
+    assert "3iron" not in bomber
+    assert bomber.get("4iron") == 240
+    normalized = normalize_club_distances(dict(bomber))
+    assert normalized == bomber, "every BOMBER club must already be canonical (survive normalization unchanged)"
+
+
+def _slot_key(case) -> str:
+    """(hole_fixture, slotN, bag) — the stable fields `_stable_condition`
+    hashes — deliberately EXCLUDES the phrasing_id suffix of `case.id`,
+    since phrasing selection is a separate, order-dependent counter
+    (`phrasing_i`, out of scope for #10) that legitimately differs when the
+    hole iteration order changes; only the CONDITION must not."""
+    return f"{case.hole_fixture}__{case.id.split('__')[1]}__{case.bag.value}"
+
+
+def test_build_cases_condition_assignment_is_independent_of_hole_enumeration_order():
+    """#10: a case's condition must be a pure function of its own stable
+    fields (hole, slot, bag) — NOT of where its hole fell in the iteration
+    order. Building the SAME two-hole subset in reversed order must assign
+    the SAME condition to each (hole, slot, bag) triple (this is exactly
+    what breaks `--holes`/`--resume`/`--only-failures` subset runs under the
+    old enumeration-counter assignment)."""
+    fixtures = _all_hole_fixtures()[:2]
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+
+    forward = {_slot_key(c): c.conditions for c in q.build_cases(fixtures, bank, include_canaries=False)}
+    reversed_cases = {_slot_key(c): c.conditions for c in q.build_cases(list(reversed(fixtures)), bank, include_canaries=False)}
+
+    assert forward.keys() == reversed_cases.keys()
+    mismatches = {k: (forward[k], reversed_cases[k]) for k in forward if forward[k] != reversed_cases[k]}
+    assert not mismatches, f"conditions must not depend on hole enumeration order: {mismatches}"
+
+
+def test_build_cases_position_seed_is_a_stable_bag_constant_not_a_hash():
+    """#4: `PositionSpec.seed` must be `slot_i * 7 + <stable per-bag int>` —
+    never `hash(bag.value)`, which is process-randomized (PYTHONHASHSEED)
+    and made the case dump differ across separate process runs."""
+    fixtures = _all_hole_fixtures()
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    cases = q.build_cases(fixtures, bank, include_canaries=False)
+    from tests.eval.caddie_bench.schema import BagId as _BagId
+
+    expected_bag_seed = {_BagId.OWNER: 0, _BagId.SHORT_HITTER: 1, _BagId.BOMBER: 2}
+    slot_seeds: dict[str, int] = {}
+    for c in cases:
+        if c.question_type.value == "fact_distance":
+            continue  # FACT cases hardcode seed=99, out of scope for the slot formula
+        slot_i = int(c.id.split("__slot")[1].split("__")[0])
+        expected = slot_i * 7 + expected_bag_seed[c.bag]
+        slot_seeds[c.id] = c.position.seed
+        assert c.position.seed == expected, f"{c.id}: seed {c.position.seed} != expected {expected}"
+
+
+def test_report_excludes_fact_class_from_correctness_headline_and_reports_routing_separately():
+    """#6: FACT-class results (case id contains `__fact__`) must never
+    contribute to `weighted_correctness_score`/`dimension_pass_rate` — even
+    if (defensively) a FACT result somehow carries a judge score — and their
+    routing correctness (`intent == "fact"`) is surfaced as its own
+    `fact_routing_accuracy`, separate from the advice headline."""
+    from tests.eval.caddie_bench.schema import CaseResult, DetCheckName, DetCheckResult, ResolvedPosition
+
+    good = _canned_judge_scores("all_pass")
+    bad = _canned_judge_scores("all_fail")
+
+    advice_good = CaseResult(
+        case_id="holeA__slot0__owner__x", resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+        intent="advice", answer="x", degraded=False, engine_ref={"club": "driver"}, det_checks=[], judge=good,
+    )
+    # A FACT case defensively carrying a judge score (should never happen
+    # post-fix, but the filter must still hold if it did) — an all-FAIL
+    # score that, if counted, would drag weighted_correctness down.
+    fact_with_stray_judge = CaseResult(
+        case_id="holeA__fact__q1", resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0),
+        intent="fact", answer="150 to the green.", degraded=False, engine_ref={"club": "7iron"},
+        det_checks=[DetCheckResult(check=DetCheckName.NUMBERS_CLOSE, passed=True)], judge=bad,
+    )
+    fact_misrouted = CaseResult(
+        case_id="holeB__fact__q2", resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0),
+        intent="advice", answer="not a fact readout", degraded=False, engine_ref={"club": "7iron"}, det_checks=[],
+    )
+
+    headline = report.compute_headline([advice_good, fact_with_stray_judge, fact_misrouted])
+    # weighted_correctness must reflect ONLY the advice_good case (all-pass).
+    assert headline.weighted_correctness_score == pytest.approx(1.0)
+    assert headline.fact_case_count == 2
+    assert headline.fact_routing_accuracy == pytest.approx(0.5)  # 1 of 2 FACT cases actually routed to "fact"
+
+
+def test_det_check_pass_rate_overall_aggregates_across_every_check():
+    """#11: an overall det-check pass rate must be computed and surfaced in
+    the headline (DET_CHECK_WEIGHT was an unused, misleading constant —
+    removed; this is the actual fix)."""
+    from tests.eval.caddie_bench.schema import CaseResult, DetCheckName, DetCheckResult, ResolvedPosition
+
+    result = CaseResult(
+        case_id="holeA__slot0__owner__x", resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+        intent="advice", answer="x", degraded=False, engine_ref={"club": "driver"},
+        det_checks=[
+            DetCheckResult(check=DetCheckName.NUMBERS_CLOSE, passed=True),
+            DetCheckResult(check=DetCheckName.INJECTION, passed=True),
+            DetCheckResult(check=DetCheckName.LENGTH_CAPS, passed=False),
+            DetCheckResult(check=DetCheckName.HAZARD_ONLY_FROM_INPUT, passed=True),
+        ],
+    )
+    headline = report.compute_headline([result])
+    assert headline.det_check_pass_rate_overall == pytest.approx(0.75)
+
+
+def test_det_check_weight_constant_was_removed():
+    """#11: the unused `DET_CHECK_WEIGHT` constant is gone (kept the report
+    honest instead of leaving a dangling implied-but-unused weight)."""
+    from tests.eval.caddie_bench import schema as schema_mod
+
+    assert not hasattr(schema_mod, "DET_CHECK_WEIGHT")

@@ -27,6 +27,7 @@ from tests.eval.caddie_bench.schema import (  # noqa: E402
     BAGS_PATH,
     HOLES_DIR,
     BagId,
+    BenchCase,
     CaseResult,
     ConditionsId,
     FailureClass,
@@ -34,6 +35,7 @@ from tests.eval.caddie_bench.schema import (  # noqa: E402
     JudgeScores,
     LieCategory,
     PositionSpec,
+    QuestionType,
     ResolvedPosition,
     load_bags,
 )
@@ -209,6 +211,37 @@ def test_sampler_raises_on_bunker_free_fixture():
     )
     with pytest.raises(GeometrySamplingError):
         geo.sample_position(stripped, PositionSpec(lie=LieCategory.BUNKER, seed=1))
+
+
+# ── 2b. should_second_pass overlap teeth (#7 fix) ───────────────────────
+
+
+def _fake_det_checks(club_matches_engine_passed: bool):
+    from tests.eval.caddie_bench.schema import DetCheckName, DetCheckResult
+
+    return [DetCheckResult(check=DetCheckName.CLUB_MATCHES_ENGINE, passed=club_matches_engine_passed)]
+
+
+def test_should_second_pass_fires_on_club_matches_engine_vs_club_corridor_disagreement():
+    """#7: `CLUB_MATCHES_ENGINE -> CLUB_CORRIDOR` was missing from the
+    overlap map — a deterministic club mismatch (the answer names a
+    different club than the engine's own solve) that the judge nonetheless
+    PASSES on club_corridor must trigger a second pass, same as the other
+    det-check/judge-dimension overlaps."""
+    case = BenchCase(
+        id="x", hole_fixture="x_h1", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    scores = {d: 2 for d in JudgeDimension}
+    confidence = {d: 0.95 for d in JudgeDimension}  # above the confidence floor, isolates the overlap trigger
+    first = JudgeScores(scores=scores, confidence=confidence, failure_class=FailureClass.GOOD, engine_looks_wrong=False, reason="x")
+
+    det_checks_mismatch = _fake_det_checks(club_matches_engine_passed=False)  # det FAILED, judge scored club_corridor=2 (PASS)
+    det_checks_agree = _fake_det_checks(club_matches_engine_passed=True)  # det PASSED, judge PASSED -> no conflict
+
+    assert judge_mod.should_second_pass(first, det_checks_mismatch, case) is True
+    assert judge_mod.should_second_pass(first, det_checks_agree, case) is False
 
 
 # ── 3. Judge-schema teeth ────────────────────────────────────────────────

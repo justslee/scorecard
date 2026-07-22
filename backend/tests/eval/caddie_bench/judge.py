@@ -247,6 +247,11 @@ def should_second_pass(
         DetCheckName.POSITIONING_NO_PIN_LANGUAGE: JudgeDimension.SHOT_REACHABILITY,
         DetCheckName.SIDE_FLIP: JudgeDimension.MISS_SIDE_EVIDENCE,
         DetCheckName.HAZARD_ONLY_FROM_INPUT: JudgeDimension.HAZARD_AWARENESS,
+        # #7 fix: this pair was missing — a deterministic club mismatch
+        # (answer names a different club than the engine's own solve) that
+        # the judge nonetheless PASSES on club_corridor is exactly the kind
+        # of det-check/judge disagreement this overlap map exists to catch.
+        DetCheckName.CLUB_MATCHES_ENGINE: JudgeDimension.CLUB_CORRIDOR,
     }
     det_by_name = {d.check: d for d in det_checks}
     for det_name, dim in overlap.items():
@@ -269,22 +274,28 @@ async def second_pass_if_needed(
     first: JudgeScores, det_checks: list[DetCheckResult], case: BenchCase, resolved: ResolvedPosition,
     engine_ref: dict, answer: str, det_summary: str, *, composite_path: Optional[Path] = None,
     model: Optional[str] = None, hole_number: int = 0, par: int = 4, hole_yards: Optional[int] = None,
-) -> tuple[Optional[JudgeScores], bool]:
+) -> tuple[Optional[JudgeScores], bool, dict]:
     """Re-judges once with facts-first/answer-last ordering unchanged in
     content but re-requested fresh (cheap position de-bias — the prompt
     builder already puts facts before the answer). Persistent disagreement
     (second differs from first on failure_class or any dimension by >= 2)
-    marks `contested=True`, never averaged away."""
+    marks `contested=True`, never averaged away.
+
+    Returns `(second_scores_or_None, contested, usage)` — `usage` (#5 fix) is
+    the second-pass call's own token usage dict (`{}` when no second pass
+    ran), so the caller can cost/log it as its own `judge2` line instead of
+    silently discarding it (the pre-fix bug: the runner's `--budget-usd` cap
+    undercounted ~15% of judge calls because this usage was thrown away)."""
     if not should_second_pass(first, det_checks, case):
-        return None, False
-    second, _usage = await judge_case(
+        return None, False, {}
+    second, usage = await judge_case(
         case, resolved, engine_ref, answer, det_summary, composite_path=composite_path, model=model,
         hole_number=hole_number, par=par, hole_yards=hole_yards,
     )
     disagrees = second.failure_class != first.failure_class or any(
         abs(second.scores.get(dim, 0) - first.scores.get(dim, 0)) >= 2 for dim in JudgeDimension
     )
-    return second, disagrees
+    return second, disagrees, usage
 
 
 # ── Canary-fail gate (§5c: "a judge that passes ANY canary fails the RUN") ─
