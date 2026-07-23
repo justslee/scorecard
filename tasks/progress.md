@@ -2058,3 +2058,33 @@ tee-frame reject (§3.3) DEFERRED, judge untouched, 752 tee-parity pins byte-ide
 AWAITING: builder implements the plan on integration/next (per-step commits + push). Then fresh
 adversarial reviewer + qa (full offline gates; NO live bench run — that's eng-lead/owner-gated).
 Resume: git log origin/integration/next; act on child verdicts, don't re-run finished children.
+
+## CADDIE BENCH CYCLE 2 — builder DONE, landed @4e8bf1a on integration/next (2026-07-23)
+Implemented specs/caddie-bench-cycle2-plan.md exactly, 4 sequenced commits (55f7bf2 physics.
+relative_wind pure helper; 0179785 bearing threading + wind ground-truth/degraded clauses + mph
+guard; 6d057b1 hazards_line from-you reframe — the degrade-spike root-cause fix; 4e8bf1a degraded-
+line hazard cap/dedupe + end-to-end bearing pins). Pushed to origin/integration/next @4e8bf1a.
+
+One deviation from plan text (noted in commit 1's message): §2.1's prose said "|rel| > 135 -> tail"
+but plan §4 edge case 9 explicitly pinned "135 -> tail" for the test — implemented `>= 135` for the
+tail bucket (135/-135 -> tail, 45/-45 -> cross) to satisfy the pinned edge case; the two clauses of
+the plan text were inconsistent at the single-degree boundary, edge case 9's explicit table wins.
+No other deviations. §3.3 runtime tee-frame reject correctly deferred (not built), per eng-lead §8.3.
+
+Gates (all green, shown in full to eng-lead in the handoff report):
+  ruff check .: All checks passed (both `backend/backend` runs, every commit).
+  pytest tests/ -q --deselect tests/test_green_slope_ingest.py: 3220 passed, 154 skipped (DB-backed,
+    expected — no local Postgres, never spun one up), 36 deselected (the pre-existing flake file).
+    Started at 3201 passed at base; +19 new tests across the 4 commits, zero regressions.
+  frontend: npx tsc --noEmit clean; npx tsx voice-tests/runner.ts --smoke: pass=278 fail=0 (no
+    frontend source touched — this just confirms zero blast radius).
+No shared-shape changes (models.py/types.ts untouched, per plan §7 — confirmed, nothing to sync).
+NOT run: the live CADDIE_EVAL_LIVE bench re-run vs baseline 20260722-145448 / cycle-1 20260723-170704
+— owner/eng-lead-gated per the plan, costs money, builder never runs it.
+
+AWAITING: fresh adversarial reviewer (frame correctness, tee byte-identity claim, no judge/det-check
+weakening — diff the changed tests against the plan per the reviewer's standing mandate) + qa (full
+offline gates, already green above) before this is ready to fold into the next owner-facing bundle
+ship. This is a SILENT change on its own (bench/eval infra + prompt-text/physics-accuracy fix, no new
+user-facing capability) unless the owner wants to be pinged that caddie wind/hazard answers changed.
+Resume: git log origin/integration/next @4e8bf1a; the next step is review, not more building.
