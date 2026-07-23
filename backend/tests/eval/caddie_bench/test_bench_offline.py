@@ -30,8 +30,12 @@ from tests.eval.caddie_bench.schema import (  # noqa: E402
     HOLES_DIR,
     QUESTIONS_V1_PATH,
     BagId,
+    BenchCase,
+    ConditionsId,
     JudgeScores,
     LieCategory,
+    PositionSpec,
+    QuestionType,
     load_bags,
     load_question_bank,
 )
@@ -236,6 +240,69 @@ async def test_harness_end_to_end_offline_produces_a_sample_report(tmp_path):
     # All 4 canaries scored all_fail here (2 sampled) -> canary gate PASS.
     headline = report.compute_headline(results)
     assert headline.canary_all_pass is False
+
+
+# ── caddie-bench-cycle2-plan.md §2.2 — run_case threads resolved.shot_bearing
+#    into the live-path solve (harness.py:~430), fixing a live-vs-bench
+#    physics mismatch (build_strategy_payload used to solve with bearing 0.0
+#    while engine_ref above already used the true bearing) ─────────────────
+
+
+async def test_run_case_threads_resolved_shot_bearing_into_run_strategy_turn(monkeypatch):
+    fixtures = {fx.fixture_id: fx for fx in _all_hole_fixtures()}
+    fx = next(iter(fixtures.values()))
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    bags = load_bags(BAGS_PATH)
+    phrasing = next(p for p in bank if p.question_type == QuestionType.TEE_STRATEGY)
+
+    case = BenchCase(
+        id="bearing-thread-test", hole_fixture=fx.fixture_id, bag=BagId.OWNER,
+        conditions=ConditionsId.INTO_20, position=PositionSpec(lie=LieCategory.TEE, seed=1),
+        question_type=QuestionType.TEE_STRATEGY, phrasing_id=phrasing.phrasing_id,
+    )
+
+    captured: dict = {}
+    real_run_strategy_turn = harness.run_strategy_turn
+
+    async def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return await real_run_strategy_turn(*args, **kwargs)
+
+    monkeypatch.setattr(harness, "run_strategy_turn", _spy)
+
+    resolved = geo.sample_position(fx, case.position)
+    # run_case's own _stub_db_seams()/_stub_synth() already wrap the call.
+    await harness.run_case(case, fx, phrasing, bags[case.bag], synth=_canned_synth)
+
+    assert "shot_bearing_deg" in captured
+    assert captured["shot_bearing_deg"] == pytest.approx(resolved.shot_bearing_deg)
+
+
+async def test_run_case_into_20_ground_truth_contains_headwind_language():
+    """Functional pin, not just the plumbing above: an INTO_20 case's
+    ground truth (what the model actually sees) states the wind-vs-shot-line
+    headwind phrase — the whole point of Fix B."""
+    fixtures = {fx.fixture_id: fx for fx in _all_hole_fixtures()}
+    fx = next(iter(fixtures.values()))
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    bags = load_bags(BAGS_PATH)
+    phrasing = next(p for p in bank if p.question_type == QuestionType.TEE_STRATEGY)
+
+    case = BenchCase(
+        id="into20-wind-test", hole_fixture=fx.fixture_id, bag=BagId.OWNER,
+        conditions=ConditionsId.INTO_20, position=PositionSpec(lie=LieCategory.TEE, seed=1),
+        question_type=QuestionType.TEE_STRATEGY, phrasing_id=phrasing.phrasing_id,
+    )
+
+    captured_ground_truth: dict = {}
+
+    async def _spy_synth(ground_truth: str, *, model: str) -> tuple[str, dict]:
+        captured_ground_truth["text"] = ground_truth
+        return await _canned_synth(ground_truth, model=model)
+
+    await harness.run_case(case, fx, phrasing, bags[case.bag], synth=_spy_synth)
+
+    assert "headwind — into you" in captured_ground_truth["text"]
 
 
 def test_report_generation_flags_canary_gate_failure_when_a_canary_scores_good():

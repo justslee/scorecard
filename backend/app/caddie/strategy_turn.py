@@ -103,8 +103,28 @@ def compose_degraded_line(
     # player-relative `carry_from_you_yards` frame (approach-solve plan
     # §1.5) when the turn is approach-framed — the raw tee-anchored
     # `carry_yards` otherwise (tee turns: key absent, byte-identical).
+    #
+    # caddie-bench-cycle2-plan.md §1.5 — the mechanical "bunker right about
+    # 115 from you, bunker right about 130 from you, ..." readout on every
+    # new-degrade transcript. Two bounded, fields-only changes: dedupe
+    # (type, side) pairs first (keep the nearest of each pair, so the clause
+    # never repeats "bunker right ... bunker right ..."), THEN cap at the 3
+    # nearest survivors — `carries["carries"]` is already sorted ascending
+    # by raw tee carry (carries_payload), and a constant offset subtraction
+    # preserves that ordering for the from-you frame too, so "first" is
+    # "nearest" in either frame. <=3 unique (type, side) pairs -> byte-
+    # identical to before this change.
     hz = [c for c in (carries.get("carries") or []) if c.get("carry_yards")]
     if hz:
+        seen_type_side: set[tuple] = set()
+        deduped: list[dict] = []
+        for c in hz:
+            key = (c.get("type"), c.get("side"))
+            if key in seen_type_side:
+                continue
+            seen_type_side.add(key)
+            deduped.append(c)
+        hz = deduped[:3]
         parts.append(
             " Watch "
             + ", ".join(

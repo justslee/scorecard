@@ -937,6 +937,61 @@ def test_compose_degraded_line_clean_reachable_approach_sane_numbers_and_favor_s
     assert line == "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
 
 
+def test_compose_degraded_line_caps_hazard_clause_at_3_nearest():
+    """caddie-bench-cycle2-plan.md §1.5 — the mechanical multi-hazard
+    readout: >3 hazards -> only the 3 NEAREST (list already sorted ascending
+    by carries_payload) are spoken."""
+    many_carries = {
+        "carries": [
+            {"type": "bunker", "side": "left", "carry_yards": 100},
+            {"type": "water", "side": "right", "carry_yards": 150},
+            {"type": "trees", "side": "left", "carry_yards": 200},
+            {"type": "bunker", "side": "right", "carry_yards": 250},
+            {"type": "water", "side": "left", "carry_yards": 300},
+        ]
+    }
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, many_carries)
+    assert "bunker left at 100" in line
+    assert "water right at 150" in line
+    assert "trees left at 200" in line
+    assert "bunker right at 250" not in line
+    assert "water left at 300" not in line
+
+
+def test_compose_degraded_line_dedupes_type_side_pairs_keeping_the_nearest():
+    """Never repeats "bunker right ... bunker right ..." — the SAME
+    (type, side) pair keeps only its nearest entry."""
+    dupe_carries = {
+        "carries": [
+            {"type": "bunker", "side": "right", "carry_yards": 115},
+            {"type": "bunker", "side": "right", "carry_yards": 130},
+            {"type": "water", "side": "left", "carry_yards": 180},
+        ]
+    }
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, dupe_carries)
+    assert line.count("bunker right") == 1
+    assert "bunker right at 115" in line
+    assert "bunker right at 130" not in line
+    assert "water left at 180" in line
+
+
+def test_compose_degraded_line_at_most_3_unique_pairs_byte_identical():
+    """<=3 unique (type, side) pairs -> unaffected by the cap/dedupe change
+    (the existing Red-6/Augusta-12 pins above already prove this; this test
+    names the invariant directly)."""
+    three_carries = {
+        "carries": [
+            {"type": "bunker", "side": "left", "carry_yards": 100},
+            {"type": "water", "side": "right", "carry_yards": 150},
+            {"type": "trees", "side": "left", "carry_yards": 200},
+        ]
+    }
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, three_carries)
+    assert "bunker left at 100" in line
+    assert "water right at 150" in line
+    assert "trees left at 200" in line
+
+
 _COMP_LEGAL_REC = {
     "club": "driver",
     "raw_yards": 430,
