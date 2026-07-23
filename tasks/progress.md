@@ -2044,3 +2044,17 @@ AWAITING: fable Plan agent -> specs/caddie-bench-cycle2-plan.md. Then builder; f
 reviewer (frame correctness by execution, tee byte-identity, no judge weakening); qa (full gates).
 Resume: git log origin/integration/next; act on child verdicts, don't re-run finished children.
 On-box helper: scratchpad/ssm.sh (aws-cli SSM to i-0826ae70df62d9fe8); delta.py/diag.py staged.
+
+## CADDIE BENCH CYCLE 2 — plan landed @4612a26, AWAITING builder (2026-07-23)
+Fable plan -> specs/caddie-bench-cycle2-plan.md. Two scoped fixes: (A) hazards_line from-you reframe
+(thread from_distance_yards through conditions_payload->format_hazards_line, mirror carries_payload's
+gate; single-frame ground truth kills the tee/from-you dual-frame that drives the degrade spike;
+cap+dedupe compose_degraded_line) (B) wind-relative frame (new physics.relative_wind head/tail/cross;
+thread shot_bearing_deg through run_strategy_turn->build_strategy_payload->recommend_payload — ALSO
+fixes a live-vs-bench structural mismatch the plan surfaced: live path solved with shot_bearing=0.0
+while the bench oracle uses the true bearing). ENG-LEAD decisions in plan §8: bearing threading IN
+SCOPE (omit-when-None => existing fixtures byte-identical), keep-both-frames APPROVED, runtime
+tee-frame reject (§3.3) DEFERRED, judge untouched, 752 tee-parity pins byte-identical.
+AWAITING: builder implements the plan on integration/next (per-step commits + push). Then fresh
+adversarial reviewer + qa (full offline gates; NO live bench run — that's eng-lead/owner-gated).
+Resume: git log origin/integration/next; act on child verdicts, don't re-run finished children.
