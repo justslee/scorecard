@@ -30,6 +30,7 @@ from app.caddie.physics import (
     integrate_flight,
     neutral_carry_from_stored,
     plays_like_target,
+    relative_wind,
     roll_out,
     shot_distance_for_club,
 )
@@ -460,3 +461,91 @@ def test_wind_adjustment_diagnostic_band_180_into_20mph():
     # measured ~35% on 179y without pinning today's exact figure.
     assert wind_adj.yards <= 0.40 * 180
     assert adjusted == 180 + wind_adj.yards
+
+
+# ── relative_wind (caddie-bench-cycle2-plan.md §2.1) ───────────────────────
+# The plays_like/CONDITIONS render is otherwise zero-signal for crosswind —
+# these tests pin the wind-vs-shot-line decomposition, its bucket boundaries,
+# and the exact spoken strings (load-bearing for §3.2's mph guard).
+
+
+def test_relative_wind_none_when_no_weather():
+    assert relative_wind(None, 90.0) is None
+
+
+def test_relative_wind_none_when_calm_below_3mph():
+    # Mirrors compute_adjustments' has_weather_effect wind gate exactly.
+    assert relative_wind(_Weather(wind_speed_mph=2.9, wind_direction=0), 0.0) is None
+
+
+def test_relative_wind_head_at_3mph_boundary():
+    assert relative_wind(_Weather(wind_speed_mph=3.0, wind_direction=0), 0.0) is not None
+
+
+def test_relative_wind_into_20_preset_buckets_head():
+    # harness.py conditions_to_weather(INTO_20): wind_direction == shot_bearing.
+    shot_bearing = 137.0
+    weather = _Weather(wind_speed_mph=20.0, wind_direction=round(shot_bearing) % 360)
+    rw = relative_wind(weather, shot_bearing)
+    assert rw is not None
+    assert rw.bucket == "head"
+    assert rw.spoken == "20 mph headwind — into you"
+    assert rw.head_mph == pytest.approx(20.0, abs=0.5)
+
+
+def test_relative_wind_cross_15_preset_buckets_cross_right():
+    # harness.py conditions_to_weather(CROSS_15): wind_direction == shot_bearing + 90.
+    shot_bearing = 42.0
+    weather = _Weather(wind_speed_mph=15.0, wind_direction=round(shot_bearing + 90.0) % 360)
+    rw = relative_wind(weather, shot_bearing)
+    assert rw is not None
+    assert rw.bucket == "cross_right"
+    assert rw.spoken == "15 mph crosswind off the right — pushes it left"
+    assert rw.cross_mph == pytest.approx(15.0, abs=0.5)
+
+
+def test_relative_wind_tailwind():
+    weather = _Weather(wind_speed_mph=10.0, wind_direction=180)
+    rw = relative_wind(weather, 0.0)
+    assert rw is not None
+    assert rw.bucket == "tail"
+    assert rw.spoken == "10 mph tailwind — helping"
+    assert rw.head_mph == pytest.approx(-10.0, abs=0.5)
+
+
+def test_relative_wind_cross_left():
+    # Wind FROM the left of the shot line pushes the ball right.
+    weather = _Weather(wind_speed_mph=12.0, wind_direction=270)
+    rw = relative_wind(weather, 0.0)
+    assert rw is not None
+    assert rw.bucket == "cross_left"
+    assert rw.spoken == "12 mph crosswind off the left — pushes it right"
+
+
+@pytest.mark.parametrize(
+    "rel, expected_bucket",
+    [
+        (45.0, "cross"),  # boundary sample: 45 -> cross (plan §4 edge case 9)
+        (-45.0, "cross"),
+        (134.9, "cross"),
+        (135.0, "tail"),  # boundary sample: 135 -> tail (plan §4 edge case 9)
+        (-135.0, "tail"),
+    ],
+)
+def test_relative_wind_bucket_boundaries(rel, expected_bucket):
+    shot_bearing = 0.0
+    wind_dir = rel % 360.0
+    weather = _Weather(wind_speed_mph=10.0, wind_direction=wind_dir)
+    rw = relative_wind(weather, shot_bearing)
+    assert rw is not None
+    if expected_bucket == "cross":
+        assert rw.bucket in ("cross_right", "cross_left")
+    else:
+        assert rw.bucket == expected_bucket
+
+
+def test_relative_wind_head_just_inside_44_9():
+    weather = _Weather(wind_speed_mph=10.0, wind_direction=44.9)
+    rw = relative_wind(weather, 0.0)
+    assert rw is not None
+    assert rw.bucket == "head"
