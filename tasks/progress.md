@@ -2007,3 +2007,40 @@ Open threads at pause:
 - Owner follow-ups outstanding: Clerk dashboard webhook (Svix) + signups-open confirm + SSO
   toggle; CLERK_SECRET_KEY to the box for self-sufficient canaries; lore for the 4 courses above.
 - Next bundle (open, unshipped): tree-severity calibration (landed @fed27c1).
+
+## CADDIE BENCH CYCLE 2 — diagnosis DONE, AWAITING fable plan (2026-07-23)
+Base origin/integration/next @8f55f70 (== origin/main merged, tree clean). Land on PR #154. NOT shipping/pinging.
+
+DELTA (on-box join, 136-case failing subset, runs 20260722-145448 vs 20260723-170704, delta.py):
+  numbers_coherence 27.2->30.1 (+2.9) | shot_reach 30.9->39.7 | miss_side 30.1->49.3 (+19.1)
+  club_corridor 72.8->75.7 | hazard_awareness 33.8->58.1 (+24.3) | wind 35.3->38.2 (+2.9 FLAT)
+  answers 56.6->66.9 | strategic_depth 24.3->37.5 | natural_speech 25.7->44.9 | non_repetitive 95.6->92.6 (-2.9)
+  WEIGHTED 41.4->51.5 (+10.1) | CRUX 50.6->60.5 (+9.9)
+  failure_class: wrong_numbers 66->71 (WORSE), vague 5->13 (WORSE +8), fabricated 5->7, missed_hazard 12->4, wrong_side 15->9
+  det numbers_close 87->78 (WORSE); DEGRADED 8.1%->19.9% (11->27; 21 new, 5 cleared).
+
+DEGRADE-SPIKE ROOT CAUSE (code+transcript verified — matches coordinator hypothesis):
+  `degraded` (harness.py:436) == run_strategy_turn fell back to compose_degraded_line because
+  strategy.validate_strategy_text REJECTED the model's narrative (strategy_turn.py:207-218).
+  On approach/positioning turns the model is shown the STILL-TEE-FRAMED hazards_line
+  ("bunker C 495y", strategy.py:323-342, nit-1 deferred) ALONGSIDE from-you carries — dual frame.
+  Model parrots a tee-frame number -> stricter approach-frame check_numbers_close (harness.py:274
+  strict_removal) / validator REDs it -> DEGRADE. The fallback compose_degraded_line emits the
+  mechanical "bunker right about 115 from you, bunker right about 130 from you, ..." list seen in
+  every new-degrade transcript -> tanks natural_speech/non_repetitive/strategic_depth (vague +8) and
+  on out-of-reach shots gives no landing-zone/leave (shot_reach 0) and can mismatch core numbers
+  (wrong_numbers +5). Fixing nit-1 (reframe hazards_line to from-you on approach turns) removes the
+  parroted tee number -> validator stops rejecting -> spike collapses (exactly the predicted ceiling).
+
+WIND FLAT ROOT CAUSE (transcript verified — PAYLOAD GAP, not judge-too-harsh):
+  ignored_wind cases are dominated by CROSSWINDS ("15 mph crosswind"). plays_like encodes only
+  head/tail+elevation MAGNITUDE, zero for crosswind. strategy.py:310-314 renders raw "wind from N
+  degrees" — the model must do compass math vs shot_bearing_deg (in resolved) and doesn't. Judge
+  (judge.py:59) legitimately expects crosswind to shape club/aim. FIX = surface wind RELATIVE to the
+  shot (head/tail/cross-left/cross-right + mph) in the spoken frame; extend payload where plays_like
+  can't. Rubric is fair — do NOT weaken the judge.
+
+AWAITING: fable Plan agent -> specs/caddie-bench-cycle2-plan.md. Then builder; fresh adversarial
+reviewer (frame correctness by execution, tee byte-identity, no judge weakening); qa (full gates).
+Resume: git log origin/integration/next; act on child verdicts, don't re-run finished children.
+On-box helper: scratchpad/ssm.sh (aws-cli SSM to i-0826ae70df62d9fe8); delta.py/diag.py staged.
