@@ -991,11 +991,22 @@ def _tree_runs(yards: list[int]) -> list[tuple[int, int]]:
     return runs
 
 
-def format_hazards_line(hole_number: int, hazards: list[Hazard]) -> str:
+def format_hazards_line(hole_number: int, hazards: list[Hazard], *, from_you: bool = False) -> str:
     """Compact spoken-style hazard line for a hole, e.g.:
 
         "Hole 4 hazards: bunker L 245y, water R 190-230y, trees R 220-300y"
         "Hole 1 hazards: trees L 265-480y, trees R 385-475y"
+
+    ``from_you`` (default `False`, byte-for-byte today's output — caddie-
+    bench-cycle2-plan.md §1.2) changes ONLY the prefix, to ``"Hole {n}
+    hazards from you: ..."``. All grouping/span/tree-run logic below runs
+    UNCHANGED on the ``hazards`` list the caller passes in — the caller
+    (`tools.conditions_payload`) is responsible for already having
+    transformed each hazard's `carry_yards` to the from-you frame before
+    calling this with `from_you=True`; near-tee suppression becomes
+    near-player suppression for free once the carries are already
+    player-relative. No aim_point import here (would create an import
+    cycle) — the offset math lives entirely in tools.py.
 
     Hazards sharing a (type, line_side) are merged into one entry. Bunker/
     water groups ALWAYS render as one min-max span (single -> ``bunker L
@@ -1076,7 +1087,8 @@ def format_hazards_line(hole_number: int, hazards: list[Hazard]) -> str:
             run_strs = [f"{lo}y" if lo == hi else f"{lo}-{hi}y" for lo, hi in rendered[key]]
             parts.append(f"{ftype} {abbrev} " + " and ".join(run_strs))
 
-    return f"Hole {hole_number} hazards: " + ", ".join(parts)
+    prefix = f"Hole {hole_number} hazards from you: " if from_you else f"Hole {hole_number} hazards: "
+    return prefix + ", ".join(parts)
 
 
 # ── Corridor profile (specs/corridor-width-club-selection-plan.md §2) ──────

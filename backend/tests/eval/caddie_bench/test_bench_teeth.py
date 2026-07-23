@@ -157,6 +157,19 @@ def test_numbers_close_goes_green_on_approach_turn_speaking_the_from_here_carry(
     assert result.passed, f"the from-here carry must PASS ({result.detail})"
 
 
+def test_numbers_close_goes_green_on_the_from_you_hazards_line_number():
+    """caddie-bench-cycle2-plan.md §3.1 new pair: the degrade-spike mechanism
+    was the model parroting the ground-truth HAZARDS-LINE number (not just
+    the CARRIES section) — once conditions_payload/format_hazards_line
+    render the SAME rounded from-you number (160, §1.1), an answer that
+    parrots THAT phrasing ("hazards from you: bunker ... 160y") must also
+    PASS, not just the carries-section phrasing tested above."""
+    rec = _FakeApproachRec(raw_yards=182)
+    good_answer = "7 iron. Hole hazards from you: bunker C 160y — that's the complete list between you and the green."
+    result = harness.check_numbers_close(good_answer, _APPROACH_HAZARDS, rec, {}, hole_yards=517)
+    assert result.passed, f"the from-you hazards-line number must PASS ({result.detail})"
+
+
 # B1 fix (eng-lead/fable review) — positioning turns ALSO get from-you
 # carries (tools.carries_payload re-frames on PURE GEOMETRY, any shot_kind),
 # so the validator must accept them there too — never gated on shot_kind ==

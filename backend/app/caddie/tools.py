@@ -49,7 +49,7 @@ from app.caddie.club_selection import (
 from app.caddie.green_geometry import green_read
 from app.caddie.hazards import format_hazards_line
 from app.caddie.session import RoundSession, ShotRecord, sessions
-from app.caddie.types import HoleIntelligence
+from app.caddie.types import Hazard, HoleIntelligence
 from app.caddie import memory as memory_mod
 from app.db.engine import async_session
 from app.db.models import Shot
@@ -488,12 +488,37 @@ def session_status_payload(session: RoundSession) -> dict:
     }
 
 
-def conditions_payload(session: RoundSession, hole_number: Optional[int] = None) -> dict:
+def conditions_payload(
+    session: RoundSession, hole_number: Optional[int] = None, *, from_distance_yards: Optional[int] = None,
+) -> dict:
     """Deterministic conditions read — pure; lifted from ``/conditions``.
 
     Honest by design: holes without cached intel return plays_like=None /
     empty hazards rather than a guess — the model is instructed to never
     invent numbers a tool didn't return.
+
+    ``from_distance_yards`` (caddie-bench-cycle2-plan.md §1.1 — the
+    degrade-spike root cause: on approach/positioning turns the ground truth
+    used to show the SAME hazard at TWO numbers, tee-anchored here and
+    from-you in the CARRIES section, so the model sometimes parroted the
+    tee number and validation rejected). Mirrors `carries_payload`'s gate
+    EXACTLY (same expression, same rounding) so a hazard rendered in both
+    sections renders the SAME rounded from-you number:
+
+      - `None` (every existing caller — routes, `resolve_tool`'s realtime
+        `get_conditions`, the golden-set harness) -> byte-identical to
+        today, no frame key.
+      - approach-framed (`offset >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS`):
+        hazards already behind/cleared (`carry_yards - offset <
+        EN_ROUTE_CLEARED_SUPPRESS_YDS`, RAW comparison — carries_payload
+        parity, not aim_point's rounded-then-compared variant) are dropped;
+        survivors get `carry_yards` REPLACED with the rounded from-you
+        number (`round(raw_from_you / 5) * 5`, the exact carries_payload
+        expression) before `format_hazards_line` ever sees them, and the
+        returned dict gains `"hazards_line_frame": "from_you"` (key-
+        presence signaling, like `carries_payload`'s `carry_from_you_yards`)
+        — the raw `"hazards"` list stays TEE-ANCHORED always; validators
+        and the bench derive frames from raw carries + offset themselves.
     """
     hn = hole_number or session.current_hole
     intel = session.hole_intel.get(hn)
@@ -506,14 +531,31 @@ def conditions_payload(session: RoundSession, hole_number: Optional[int] = None)
             "elevation_change_ft": intel.elevation_change_ft,
         }
 
+    approach_framed = False
+    offset = 0
+    if from_distance_yards is not None and intel is not None and intel.yards is not None:
+        offset = max(0, intel.yards - from_distance_yards)
+        approach_framed = offset >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS
+
     # Real bunker/water hazards for the hole, honest by design: empty (not
     # invented) when the hole has none mapped. HAZARD_GROUNDING_RULE tells the
     # model never to name a hazard absent from this list.
     hazards_payload: list[dict] = []
     hazards_line = None
+    hazards_line_frame: Optional[str] = None
     if intel is not None and intel.hazards:
         hazards_payload = [h.model_dump() for h in intel.hazards]
-        hazards_line = format_hazards_line(hn, intel.hazards)
+        if approach_framed:
+            hazards_line_frame = "from_you"
+            transformed: list[Hazard] = []
+            for hz in intel.hazards:
+                raw_from_you = hz.carry_yards - offset
+                if raw_from_you < EN_ROUTE_CLEARED_SUPPRESS_YDS:
+                    continue  # already behind/effectively cleared — never spoken
+                transformed.append(hz.model_copy(update={"carry_yards": round(raw_from_you / 5) * 5}))
+            hazards_line = format_hazards_line(hn, transformed, from_you=True)
+        else:
+            hazards_line = format_hazards_line(hn, intel.hazards)
 
     # Honest by design, same discipline as hazards: no slope data mapped for
     # this hole → None, never a guessed break.
@@ -526,7 +568,7 @@ def conditions_payload(session: RoundSession, hole_number: Optional[int] = None)
     # a different kind of "no bend" (see bend_payload).
     bend = intel.bend.model_dump() if intel is not None and intel.bend is not None else None
 
-    return {
+    out = {
         "round_id": session.round_id,
         "hole_number": hn,
         "weather": session.weather.model_dump() if session.weather else None,
@@ -536,6 +578,9 @@ def conditions_payload(session: RoundSession, hole_number: Optional[int] = None)
         "green_slope": green_slope,
         "bend": bend,
     }
+    if hazards_line_frame is not None:
+        out["hazards_line_frame"] = hazards_line_frame
+    return out
 
 
 def green_read_payload(session: RoundSession, hole_number: Optional[int] = None) -> dict:

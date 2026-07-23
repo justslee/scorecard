@@ -239,7 +239,11 @@ async def build_strategy_payload(
             "hole_number": hole_number,
             "recommendation": recommendation,
             "wind_relative": wind_relative,
-            "conditions": conditions_payload(session, hole_number),
+            # from_distance_yards (cycle-2 plan §1.3): the SAME resolved_yards
+            # `carries_payload` below is fed — conditions and carries can
+            # never disagree about the frame (identical gate + identical
+            # input by construction).
+            "conditions": conditions_payload(session, hole_number, from_distance_yards=resolved_yards),
             # from_distance_yards (approach-solve plan §1.5): the SAME
             # resolved_yards recommend_payload just solved against — carries
             # ahead of the player render a `carry_from_you_yards` frame once
@@ -374,24 +378,21 @@ def format_strategy_ground_truth(payload: dict) -> str:
             f"elevation change {plays_like.get('elevation_change_ft')}ft)."
         )
     hazards_line = conditions.get("hazards_line")
-    if hazards_line:
-        # KNOWN LIMITATION (approach-solve plan §1.4/1.5, cycle-1 scope call
-        # — eng-lead review nit 1): `hazards_line` (`app.caddie.hazards.
-        # format_hazards_line`, fed by `conditions_payload`) is STILL always
-        # tee-anchored here, even on an approach-framed turn — so the brain
-        # can still be SHOWN a raw tee-frame carry (e.g. "bunker C 495y")
-        # right above the from-you CARRIES section below, even though
-        # `check_numbers_close` now REDs parroting it. NOT re-framed this
-        # cycle: `format_hazards_line`/`conditions_payload` are shared with
-        # the tool-loop hazard-grounding subsystem (`app.caddie.tools.
-        # get_conditions`, routes/caddie.py logging, the golden-set eval
-        # harness `tests/eval/checks.py` + `test_harness_has_teeth.py`) —
-        # unlike `carries_payload`, there's no single natural "current
-        # player distance" already threaded through every caller, and
-        # touching it risks that unrelated subsystem's own pinned behavior.
-        # Deferred to cycle 2 (thread `from_distance_yards` through
-        # `conditions_payload` the same way, scoped to ONLY this ground-
-        # truth render path).
+    hazards_line_frame = conditions.get("hazards_line_frame")
+    if hazards_line_frame == "from_you":
+        # cycle-2 fix (§1 — the degrade-spike root cause): once `conditions`
+        # is fed the SAME `from_distance_yards` as `carries` (above), this
+        # line and the CARRIES section below render the SAME frame, so
+        # parroting either passes — the old tee-anchored/from-you mismatch
+        # that made validation reject truthful from-you answers is gone.
+        if hazards_line:
+            lines.append(f"  {hazards_line} — the COMPLETE list between you and the green — there are NO others.")
+        else:
+            # Every mapped hazard was suppressed (behind/cleared) — a TRUE
+            # statement, distinct from "NONE mapped" (which would be false:
+            # hazards exist, just not ahead of the player).
+            lines.append("  Hazards: every mapped hazard is behind you — nothing between you and the green.")
+    elif hazards_line:
         lines.append(f"  {hazards_line} — the COMPLETE list — there are NO others.")
     else:
         lines.append("  Hazards: NONE mapped. Do not name any specific hazard.")

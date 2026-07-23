@@ -742,6 +742,27 @@ class TestFormatHazardsLine:
         line = format_hazards_line(4, hazards)
         assert line == "Hole 4 hazards: bunker L 245y, water R 190-230y"
 
+    def test_from_you_default_false_is_byte_identical(self):
+        """caddie-bench-cycle2-plan.md §1.2 — `from_you` defaults to False;
+        the kwarg omitted is byte-identical to explicitly passing False."""
+        hazards = [Hazard(type="bunker", side="left", carry_yards=245, line_side="left")]
+        assert format_hazards_line(4, hazards) == format_hazards_line(4, hazards, from_you=False)
+
+    def test_from_you_true_changes_only_the_prefix(self):
+        hazards = [
+            Hazard(type="bunker", side="left", carry_yards=245, line_side="left"),
+            Hazard(type="water", side="right", carry_yards=190, line_side="right"),
+            Hazard(type="water", side="right", carry_yards=230, line_side="right"),
+        ]
+        line = format_hazards_line(4, hazards, from_you=True)
+        assert line == "Hole 4 hazards from you: bunker L 245y, water R 190-230y"
+        # Same suffix as the tee-frame render — only the prefix changed.
+        tee_line = format_hazards_line(4, hazards)
+        assert line.split(": ", 1)[1] == tee_line.split(": ", 1)[1]
+
+    def test_from_you_true_empty_list_returns_empty_string(self):
+        assert format_hazards_line(4, [], from_you=True) == ""
+
     def test_bunker_sorts_before_water_even_if_farther(self):
         hazards = [
             Hazard(type="water", side="right", carry_yards=100, line_side="right"),

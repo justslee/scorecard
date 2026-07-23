@@ -18,7 +18,7 @@ from app.caddie.aim_point import (
 )
 from app.caddie.guide_writer import _has_side_flip
 from app.caddie.session import RoundSession
-from app.caddie.tools import carries_payload
+from app.caddie.tools import carries_payload, conditions_payload
 from app.caddie.types import (
     Hazard,
     HoleIntelligence,
@@ -382,3 +382,159 @@ def test_b1_positioning_carries_from_you_repro_matches_check_numbers_close():
     hazards_payload = [h.model_dump() for h in hole.hazards]
     result = bench_harness.check_numbers_close(good_answer, hazards_payload, rec, bag, hole_yards=600)
     assert result.passed, f"a faithful from-you carry on a positioning turn must PASS ({result.detail})"
+
+
+# ── §1.1 conditions_payload(from_distance_yards=...) — hazards_line reframe
+# (caddie-bench-cycle2-plan.md §1, the degrade-spike root-cause fix) ───────
+
+
+def _conditions_session(hazards, yards=517) -> RoundSession:
+    intel = _make_hole(par=5, yards=yards, hazards=hazards)
+    return RoundSession(round_id="r1", user_id="u1", current_hole=1, hole_intel={1: intel}, club_distances={})
+
+
+def test_conditions_payload_default_arg_byte_identical():
+    hazards = [_carry_hazard("bunker", "center", 495, severity="moderate", distance=22.0)]
+    session = _conditions_session(hazards)
+    without = conditions_payload(session, 1)
+    with_none = conditions_payload(session, 1, from_distance_yards=None)
+    assert without == with_none
+    assert "hazards_line_frame" not in without
+    assert without["hazards_line"] == "Hole 1 hazards: bunker C 495y"
+
+
+def test_conditions_payload_no_intel_honest_empty():
+    """Edge case 1: no hole_intel at all -> tee-frame output (empty), no
+    crash, no frame key."""
+    session = RoundSession(round_id="r1", user_id="u1", current_hole=1, hole_intel={}, club_distances={})
+    out = conditions_payload(session, 1, from_distance_yards=180)
+    assert "hazards_line_frame" not in out
+    assert out["hazards_line"] is None
+
+
+def test_conditions_payload_intel_yards_none_honest_empty():
+    """Edge case 1b: intel present but yards unmapped -> tee-frame, no crash."""
+    hazards = [_carry_hazard("bunker", "center", 250)]
+    session = _conditions_session(hazards, yards=None)
+    out = conditions_payload(session, 1, from_distance_yards=180)
+    assert "hazards_line_frame" not in out
+    assert out["hazards_line"] == "Hole 1 hazards: bunker C 250y"
+
+
+def test_conditions_payload_zero_hazard_hole_stays_none_regardless_of_framing():
+    session = _conditions_session([])
+    out = conditions_payload(session, 1, from_distance_yards=182)  # offset 335, approach-framed
+    assert out["hazards_line"] is None
+    assert "hazards_line_frame" not in out  # `if intel.hazards:` gate never entered
+
+
+def test_conditions_payload_offset_boundary_24_tee_25_framed():
+    """Edge case 2: same APPROACH_FRAME_MIN_TEE_OFFSET_YDS boundary as
+    carries_payload — offset 24 stays tee-framed (byte-identical), offset 25
+    frames."""
+    hazards = [_carry_hazard("bunker", "center", 250, distance=50.0)]
+    session = _conditions_session(hazards)
+    below = conditions_payload(session, 1, from_distance_yards=493)  # offset 24
+    at = conditions_payload(session, 1, from_distance_yards=492)  # offset 25
+    assert "hazards_line_frame" not in below
+    assert below["hazards_line"] == "Hole 1 hazards: bunker C 250y"
+    assert at.get("hazards_line_frame") == "from_you"
+
+
+def test_conditions_payload_gps_beyond_the_card_clamps_to_tee_frame():
+    """Edge case 3: from_distance_yards > intel.yards -> max(0, ...) clamps
+    offset to 0 -> tee frame (mirrors carries_payload)."""
+    hazards = [_carry_hazard("bunker", "center", 250, distance=50.0)]
+    session = _conditions_session(hazards)
+    out = conditions_payload(session, 1, from_distance_yards=600)  # beyond the 517y card
+    assert "hazards_line_frame" not in out
+    assert out["hazards_line"] == "Hole 1 hazards: bunker C 250y"
+
+
+def test_conditions_payload_suppression_and_rounding_parity_with_carries():
+    """Edge cases 4+5: the SAME raw-comparison suppression boundary and the
+    SAME round(raw/5)*5 expression as carries_payload — a hazard rendered in
+    both sections renders the SAME number."""
+    hazards = [
+        _carry_hazard("bunker", "center", 354, distance=22.0),  # from-here 19 -> dropped (raw < 20)
+        _carry_hazard("water", "left", 355, distance=180.0),  # from-here 20 -> kept, rounds to 20
+        _carry_hazard("trees", "right", 495, distance=15.0),  # from-here 160 -> rounds to 160
+    ]
+    session = _conditions_session(hazards)
+    offset = 335
+    conditions = conditions_payload(session, 1, from_distance_yards=517 - offset)
+    carries = carries_payload(session, 1, from_distance_yards=517 - offset)
+
+    assert conditions["hazards_line_frame"] == "from_you"
+    assert "bunker" not in conditions["hazards_line"]  # the 19y hazard suppressed
+    assert "water L 20y" in conditions["hazards_line"]
+    assert "trees R 160y" in conditions["hazards_line"]
+
+    carry_by_type = {c["type"]: c["carry_from_you_yards"] for c in carries["carries"]}
+    assert carry_by_type == {"water": 20, "trees": 160}  # bunker also dropped from carries — parity
+
+
+def test_conditions_payload_all_hazards_suppressed_true_statement():
+    """Edge case 6: every mapped hazard suppressed -> hazards_line "" + frame
+    key -> the honest "every mapped hazard is behind you" render (via
+    format_strategy_ground_truth), never the false "NONE mapped"."""
+    hazards = [_carry_hazard("bunker", "center", 340, distance=20.0)]  # from-here 5 -> dropped
+    session = _conditions_session(hazards)
+    out = conditions_payload(session, 1, from_distance_yards=182)  # offset 335
+    assert out["hazards_line_frame"] == "from_you"
+    assert out["hazards_line"] == ""
+
+    from app.caddie.strategy import format_strategy_ground_truth
+
+    payload = {
+        "recommendation": {"error": "n/a"},
+        "wind_relative": None,
+        "conditions": out,
+        "carries": {},
+        "bend": {},
+        "green_read": {},
+        "player": {},
+        "local_knowledge": "",
+        "local_lore": [],
+    }
+    block = format_strategy_ground_truth(payload)
+    assert "every mapped hazard is behind you — nothing between you and the green" in block
+    assert "NONE mapped" not in block
+
+
+def test_conditions_payload_raw_hazards_list_stays_tee_anchored_always():
+    """The raw `hazards` list (Hazard.model_dump()s) is NEVER transformed —
+    only `hazards_line` reframes. Validators/the bench derive frames from
+    raw carries + offset themselves (§1.1)."""
+    hazards = [_carry_hazard("bunker", "center", 495, distance=22.0)]
+    session = _conditions_session(hazards)
+    out = conditions_payload(session, 1, from_distance_yards=182)
+    assert out["hazards"][0]["carry_yards"] == 495  # raw, unchanged
+
+
+def test_ground_truth_tee_turn_hazards_line_byte_identical_no_frame():
+    """Tee-turn sibling of the CARRIES byte-identity pin — no
+    `hazards_line_frame` key -> today's exact bytes, both branches."""
+    from app.caddie.strategy import format_strategy_ground_truth
+
+    hazards = [_carry_hazard("bunker", "center", 250, distance=50.0)]
+    session = _conditions_session(hazards)
+    tee_conditions = conditions_payload(session, 1)  # no from_distance_yards -> tee turn
+    payload = {
+        "recommendation": {"error": "n/a"},
+        "wind_relative": None,
+        "conditions": tee_conditions,
+        "carries": {},
+        "bend": {},
+        "green_read": {},
+        "player": {},
+        "local_knowledge": "",
+        "local_lore": [],
+    }
+    block = format_strategy_ground_truth(payload)
+    assert "Hole 1 hazards: bunker C 250y — the COMPLETE list — there are NO others." in block
+
+    empty_session = _conditions_session([])
+    empty_payload = {**payload, "conditions": conditions_payload(empty_session, 1)}
+    empty_block = format_strategy_ground_truth(empty_payload)
+    assert "Hazards: NONE mapped. Do not name any specific hazard." in empty_block
