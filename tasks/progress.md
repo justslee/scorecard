@@ -73,7 +73,22 @@ results.jsonl on box i-0826ae70df62d9fe8 via read-only SSM). Written to
 - DEFECT 3 (wind 38%): plays-like computed but not spoken; +63y magnitude suspect (physics.py, tee-parity risk).
 - MEASUREMENT CONFOUND: judge.py:44/84 conflates approach with positioning -> depresses shot_reachability
   (34%)+miss_side. Judge-clarity fix must re-score baseline to stay apples-to-apples; land engine first.
-## AWAITING (2026-07-23) — builder B1 fix (reviewer BLOCK) on caddie approach-solve
+## DONE (2026-07-23) — caddie approach-shot engine LANDED on integration/next @6eaa174
+Cycle-1 bench fix (sub-item d of caddie-bench-eval-framework). Diagnosis (specs/caddie-approach-solve-
+diagnosis.md) -> Fable plan (specs/caddie-approach-solve-plan.md) -> builder (da1c25e) -> qa PASS ->
+Fable reviewer BLOCK on B1 -> builder fix (a8633f3) -> Fable re-confirm SHIP -> ff into integration/next,
+pushed origin @6eaa174. PR #154 updated (NOTICEABLE "caddie: approach-shot engine"), backlog item
+caddie-approach-shot-engine added (done-on-bundle). What shipped: approach-frame gate re-frames en-route
+hazard carries to the player's own position + suppression + per-side greenside miss evidence + wind
+plays-like binding + carries_payload from-you frame; bench validators extended (check_numbers_close
+frame-correction + APPROACH_MISS_SIDE_PIN). Byte-identical tee behavior (752 pins). ruff clean, 3178/3178.
+PENDING (cycle ends only when measured): on-box before/after DELTA — coordinator executes the SSM leg.
+PACKAGED COMMAND (hand to coordinator): on box i-0826ae70df62d9fe8, in the bench checkout, git pull the
+new integration/next, then run the failing-subset re-run + delta report (see final report for exact cmd).
+CYCLE-2 CEILING (deferred, measurement-safe): hazards_line tee-frame reframe (nit 1). Judge-clarity fix
+(approach vs positioning) deferred to a separate re-scored PR per plan section 5.
+
+## SUPERSEDED (2026-07-23) — builder B1 fix (reviewer BLOCK) on caddie approach-solve
 qa PASS (ruff clean; 3203 passed; 8 test_green_slope_ingest failures = pre-existing asyncio flake,
 confirmed identical on base 6f83247; both DEFECT repros reproduced independently; wind band 30.6%<40%).
 reviewer(fable) = BLOCK on ONE finding B1 + accepted the rest as sound (carry math, tee parity,
