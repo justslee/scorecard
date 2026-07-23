@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-23) — caddie approach-solve B1 fix + nits (builder, lane worktree-agent-a332d46ac24fb510d)
+Fixed the ONE BLOCKING fable-review finding + nits, commit `a8633f3` on top of `c96e529`.
+B1: `check_numbers_close` (harness.py) only learned from-you carry numbers when
+`shot_kind == "approach"`, but `carries_payload` re-frames on pure geometry for ANY shot_kind —
+so a faithful positioning-turn answer went falsely RED (reviewer repro: 600y hole, 320 out,
+water carry 400 -> "about 120 from you" -> falsely REDed). Fixed per reviewer's option (a): gate
+the from-here ADDITION on the geometric predicate only (drop shot_kind check) so positioning
+turns are accepted too. Audited the positioning path first (per eng-lead's caution): `decade_
+advice.cross_hazard_line`/`decade_landing_advice` still legitimately speak the RAW tee-frame
+carry on positioning turns (untouched by this plan) — so the raw-carry REMOVAL stays scoped to
+APPROACH turns only; positioning turns only ever ADD the from-here number, never remove the raw
+one. Pinned both with new tests (`test_numbers_close_goes_green_on_positioning_turn_...`,
+`test_numbers_close_still_accepts_the_raw_tee_frame_carry_on_a_positioning_turn`, and an
+end-to-end repro `test_b1_positioning_carries_from_you_repro_matches_check_numbers_close`).
+Nits: 2 (front/back -> "short of the green"/"long" in `_SPOKEN_SIDE_WORD`), 3 (don't add
+suppressed <20y-from-here carries to the known set), 4 (miss-evidence join uses ". " + trailing
+period; "guards the X" clause fixed to "the front"/"the back", no more doubled article). Nit 1
+(tee-framed `hazards_line` still feeds raw carries to approach turns) — DEFERRED to cycle 2 with
+a code comment: `format_hazards_line`/`conditions_payload` are shared with the tool-loop
+hazard-grounding subsystem + the golden-set eval harness, no natural distance-threading point
+like `carries_payload` had; not a clean parallel, so left for its own scoped change.
+Gates: ruff clean; 752/752 tee-parity pins byte-identical; full non-DB suite 3178/3178 passing
+(same pre-existing `test_green_slope_ingest.py` flake, unchanged, unrelated).
+Handoff: back to reviewer/qa for a quick confirm of B1, then ff into `integration/next`.
+
 ## DONE (2026-07-23) — caddie approach-shot solve ENGINE FIX (builder, lane worktree-agent-a332d46ac24fb510d)
 Implemented `specs/caddie-approach-solve-plan.md` sections 0-4 + section 6 tests, commit
 `da1c25e` on top of `68ce5e0`/`f1f3cc9`. Scope matched the eng-lead brief exactly (judge-clarity
