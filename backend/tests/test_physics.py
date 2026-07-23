@@ -426,3 +426,37 @@ def test_shot_result_is_frozen_and_assumption_rich():
 
 def test_wood_clubs_match_club_selection_keys():
     assert WOOD_CLUBS <= set(DEFAULT_CLUB_DISTANCES)
+
+
+# ── Approach-solve plan §1.4 — FLAGGED diagnostic, verify-only ─────────────
+#
+# The Black-4/Pebble-3 diagnosis measured a mid-iron approach into strong
+# wind adding ~35% (vs a rule-of-thumb ~1%/mph, i.e. ~20% at 20mph) — this
+# test is a DIAGNOSTIC band, not a retuning: it asserts the isolated wind
+# delta stays within a generous upper bound so the approach-solve wind-
+# binding P1 line (aim_point.py) has a sane number to bind to, WITHOUT
+# touching any physics.py constant (those are SHARED with tee shots —
+# test_plays_like_150_into_10mph_headwind pins the tee-parity band). If this
+# ever fails, that is a finding for a SEPARATE `caddie-wind-calibration`
+# task, never a license to retune physics.py here (tee totals would move).
+
+
+def test_wind_adjustment_diagnostic_band_180_into_20mph():
+    """Diagnostic only (see comment above) — records the measured magnitude
+    rather than asserting a tight rule-of-thumb match. Do NOT retune
+    physics.py constants to move this number; open `caddie-wind-calibration`
+    instead if the band below is ever too tight to pass honestly."""
+    from app.caddie.club_selection import compute_adjustments
+
+    weather = _Weather(wind_speed_mph=20.0, wind_direction=0)  # dead into
+    adjusted, adjustments = compute_adjustments(
+        raw_distance=180, elevation_change_ft=0.0, weather=weather,
+        shot_bearing=0.0, club_distances=DEFAULT_CLUB_DISTANCES,
+    )
+    wind_adj = next((a for a in adjustments if a.type == "wind"), None)
+    assert wind_adj is not None
+    assert wind_adj.yards > 0  # into-wind adds distance played
+    # Generous upper bound (~40%) — comfortably covers the diagnosis's
+    # measured ~35% on 179y without pinning today's exact figure.
+    assert wind_adj.yards <= 0.40 * 180
+    assert adjusted == 180 + wind_adj.yards

@@ -36,7 +36,11 @@ from typing import Optional
 from sqlalchemy import select, func as sqlfunc
 
 from app.caddie import physics
-from app.caddie.aim_point import generate_recommendation
+from app.caddie.aim_point import (
+    APPROACH_FRAME_MIN_TEE_OFFSET_YDS,
+    EN_ROUTE_CLEARED_SUPPRESS_YDS,
+    generate_recommendation,
+)
 from app.caddie.club_selection import (
     CLUB_DISPLAY_NAMES,
     canonical_club as _canonical_club,
@@ -620,7 +624,9 @@ async def player_profile_payload(session: RoundSession, user_id: str) -> dict:
     }
 
 
-def carries_payload(session: RoundSession, hole_number: int) -> dict:
+def carries_payload(
+    session: RoundSession, hole_number: int, *, from_distance_yards: Optional[int] = None,
+) -> dict:
     """Real along-path carries for a hole (plan D3) — pure.
 
     Combines the hole's mapped hazards' along-path ``carry_yards`` (computed
@@ -636,6 +642,18 @@ def carries_payload(session: RoundSession, hole_number: int) -> dict:
       - ``carry_yards == 0`` entries (degenerate chord/polyline projection)
         are filtered out — a zero carry is placeholder noise, not a number
         to speak.
+
+    ``from_distance_yards`` (specs/caddie-approach-solve-plan.md §1.5),
+    when given AND the hole's yardage is known AND the resulting tee_offset
+    is approach-framed (``>= APPROACH_FRAME_MIN_TEE_OFFSET_YDS``): entries
+    already behind/effectively cleared from the player's own position
+    (``carry_yards - offset < EN_ROUTE_CLEARED_SUPPRESS_YDS``) are dropped,
+    and surviving entries carry an additional ``carry_from_you_yards``
+    (round-to-5) key — ``clubs_that_clear``/``clubs_short_of_it`` are then
+    computed against THAT number (the actionable mid-hole question), never
+    the raw tee-anchored one. Default `None` -> byte-identical to today for
+    every existing caller (routes, `resolve_tool`'s realtime `get_carries`
+    tool — which has no live player distance and stays tee-framed by design).
     """
     base = {"round_id": session.round_id, "hole_number": hole_number}
     intel = session.hole_intel.get(hole_number)
@@ -650,23 +668,39 @@ def carries_payload(session: RoundSession, hole_number: int) -> dict:
         reverse=True,
     )
 
+    approach_framed = False
+    offset = 0
+    if from_distance_yards is not None and intel.yards is not None:
+        offset = max(0, intel.yards - from_distance_yards)
+        approach_framed = offset >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS
+
     carries: list[dict] = []
     for hz in sorted(intel.hazards, key=lambda h: h.carry_yards):
         if hz.carry_yards <= 0:
             continue  # degenerate projection — placeholder noise, never spoken
+        carry_from_you: Optional[int] = None
+        if approach_framed:
+            raw_from_you = hz.carry_yards - offset
+            if raw_from_you < EN_ROUTE_CLEARED_SUPPRESS_YDS:
+                continue  # already behind/effectively cleared — never spoken
+            carry_from_you = round(raw_from_you / 5) * 5
+        reference_yards = carry_from_you if carry_from_you is not None else hz.carry_yards
         if club_yards:
-            clubs_that_clear = [name for name, dist in club_yards if dist >= hz.carry_yards]
-            clubs_short_of_it = [name for name, dist in club_yards if dist < hz.carry_yards][:3]
+            clubs_that_clear = [name for name, dist in club_yards if dist >= reference_yards]
+            clubs_short_of_it = [name for name, dist in club_yards if dist < reference_yards][:3]
         else:
             clubs_that_clear = None
             clubs_short_of_it = None
-        carries.append({
+        entry = {
             "type": hz.type,
             "side": hz.line_side,
             "carry_yards": hz.carry_yards,
             "clubs_that_clear": clubs_that_clear,
             "clubs_short_of_it": clubs_short_of_it,
-        })
+        }
+        if carry_from_you is not None:
+            entry["carry_from_you_yards"] = carry_from_you
+        carries.append(entry)
 
     return {
         **base,

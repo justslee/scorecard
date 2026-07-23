@@ -22,7 +22,8 @@ import time
 from typing import Callable, Optional
 
 from app.caddie import strategy as strategy_mod
-from app.caddie.aim_point import generate_recommendation
+from app.caddie import verdict as verdict_mod
+from app.caddie.aim_point import APPROACH_FRAME_MIN_TEE_OFFSET_YDS, generate_recommendation
 from app.caddie.club_selection import normalize_club_distances
 from app.caddie.guide_writer import GUIDE_INJECTION_PATTERN, _HAZARD_PATTERNS, _has_side_flip
 from app.caddie.routing import classify_intent
@@ -209,15 +210,54 @@ def check_club_matches_engine(
 
 def check_numbers_close(
     answer: str, hazards: list[dict], engine_ref: CaddieRecommendation, club_distances: dict[str, int],
-    *, tolerance: int = 5,
+    *, tolerance: int = 5, hole_yards: Optional[int] = None,
 ) -> DetCheckResult:
     substance = substance_mod.extract_substance(answer, club_distances)
     known = _known_numbers(engine_ref)
+
+    # Frame correction (approach-solve plan §4.1). On an approach-framed
+    # turn (shot_kind == "approach", tee_offset >= APPROACH_FRAME_MIN_TEE_
+    # OFFSET_YDS) an en-route hazard is spoken in the PLAYER'S frame
+    # (carry - offset), never the raw tee-anchored carry_yards — so the
+    # known set must LEARN the from-here number and FORGET the raw one for
+    # those same en-route hazards (stricter where it matters). `hole_yards
+    # is None` or offset < 25 or a non-approach shot: no-op, byte-identical
+    # known set — never looser on a tee turn.
+    offset = (hole_yards - engine_ref.raw_yards) if hole_yards is not None else None
+    approach_framed = (
+        engine_ref.shot_kind == "approach"
+        and offset is not None
+        and offset >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS
+    )
+    en_route_carry_yards: set[int] = set()
+    if approach_framed:
+        for hz in hazards:
+            carry = hz.get("carry_yards")
+            if not carry:
+                continue
+            carry = int(carry)
+            if offset < carry < hole_yards:
+                en_route_carry_yards.add(carry)
+                from_here = carry - offset
+                known.add(from_here)
+                known.add(round(from_here / 5) * 5)
+
     # The degraded-line composer (compose_degraded_line) also states hazard
     # carry yards from the hole's full mapped hazard list (not just the
     # recommendation's own carries) — those are equally "bound to the
-    # per-turn engine solve" (they come straight off intel.hazards).
-    known |= {int(hz["carry_yards"]) for hz in hazards if hz.get("carry_yards")}
+    # per-turn engine solve" (they come straight off intel.hazards). Raw
+    # tee-frame carries of en-route hazards are REMOVED from the known set
+    # once approach-framed (parroting the tee-anchored number is no longer
+    # allowed to pass); carries outside the en-route window are unaffected.
+    for hz in hazards:
+        carry = hz.get("carry_yards")
+        if not carry:
+            continue
+        carry = int(carry)
+        if approach_framed and carry in en_route_carry_yards:
+            continue
+        known.add(carry)
+
     if not known:
         return DetCheckResult(check=DetCheckName.NUMBERS_CLOSE, passed=True, detail="engine has no reference numbers to bind to")
     bad = [y for y in substance.yardages if min(abs(y - k) for k in known) > tolerance]
@@ -227,6 +267,28 @@ def check_numbers_close(
             detail=f"answer number(s) {bad} not within {tolerance}y of any engine number {sorted(known)}",
         )
     return DetCheckResult(check=DetCheckName.NUMBERS_CLOSE, passed=True)
+
+
+def check_approach_miss_side_pin(
+    answer: str, hazards: list[dict], engine_ref: CaddieRecommendation, club_distances: dict[str, int],
+    *, hole_yards: Optional[int] = None,
+) -> DetCheckResult:
+    """approach-solve plan §4.2 — on an approach shot the spoken favor/miss
+    side (reused, never forked: `app.caddie.verdict.extract_favor_side`, the
+    same discipline as the existing verdict-pin machinery in `app.caddie.
+    strategy._verdict_pin_reject_reason`) must be None (no lateral claim) or
+    agree with the engine's own `miss_side.preferred`."""
+    if engine_ref.shot_kind != "approach":
+        return DetCheckResult(check=DetCheckName.APPROACH_MISS_SIDE_PIN, passed=True, detail="not an approach shot")
+    flat = " ".join((answer or "").split())
+    spoken = verdict_mod.extract_favor_side(flat)
+    engine_side = engine_ref.miss_side.preferred if engine_ref.miss_side else None
+    if spoken is None or spoken == engine_side:
+        return DetCheckResult(check=DetCheckName.APPROACH_MISS_SIDE_PIN, passed=True)
+    return DetCheckResult(
+        check=DetCheckName.APPROACH_MISS_SIDE_PIN, passed=False,
+        detail=f"answer favors {spoken!r}, engine miss_side.preferred={engine_side!r}",
+    )
 
 
 def check_positioning_no_pin_language(
@@ -262,22 +324,39 @@ _DET_CHECK_FNS: dict[DetCheckName, Callable[[str, list[dict], CaddieRecommendati
     DetCheckName.NUMBERS_CLOSE: check_numbers_close,
     DetCheckName.POSITIONING_NO_PIN_LANGUAGE: check_positioning_no_pin_language,
     DetCheckName.LENGTH_CAPS: check_length_caps,
+    DetCheckName.APPROACH_MISS_SIDE_PIN: check_approach_miss_side_pin,
 }
 
 # FACT-class cases get a reduced rubric (§3: "FACT answers judged with a
 # reduced rubric") — club/side/positioning checks don't apply to a pure
-# distance readout.
+# distance readout. APPROACH_MISS_SIDE_PIN is likewise skipped: a FACT
+# distance readout makes no favor/miss claim to pin.
 _REDUCED_DET_CHECKS: tuple[DetCheckName, ...] = (
     DetCheckName.INJECTION, DetCheckName.NUMBERS_CLOSE, DetCheckName.LENGTH_CAPS,
 )
 
+# Check names that need the hole's yardage (approach-frame math) in addition
+# to the standard (answer, hazards, engine_ref, club_distances) signature —
+# every other check ignores it, so this stays a small special case rather
+# than forcing a `hole_yards` kwarg onto every registered check fn.
+_NEEDS_HOLE_YARDS: frozenset[DetCheckName] = frozenset({
+    DetCheckName.NUMBERS_CLOSE, DetCheckName.APPROACH_MISS_SIDE_PIN,
+})
+
 
 def run_det_checks(
     answer: str, hazards: list[dict], engine_ref: CaddieRecommendation, club_distances: dict[str, int],
-    *, reduced: bool = False,
+    *, reduced: bool = False, hole_yards: Optional[int] = None,
 ) -> list[DetCheckResult]:
     names = _REDUCED_DET_CHECKS if reduced else tuple(_DET_CHECK_FNS)
-    return [_DET_CHECK_FNS[name](answer, hazards, engine_ref, club_distances) for name in names]
+    results = []
+    for name in names:
+        fn = _DET_CHECK_FNS[name]
+        if name in _NEEDS_HOLE_YARDS:
+            results.append(fn(answer, hazards, engine_ref, club_distances, hole_yards=hole_yards))
+        else:
+            results.append(fn(answer, hazards, engine_ref, club_distances))
+    return results
 
 
 # ── The seam driver ──────────────────────────────────────────────────────
@@ -334,7 +413,9 @@ async def run_case(
         degraded = bool(result.get("degraded"))
         cost_usd = float(getattr(synth, "last_cost_usd", 0.0) or 0.0)
 
-    det_checks = run_det_checks(answer, hazards_payload, engine_ref, bag.clubs, reduced=reduced_checks)
+    det_checks = run_det_checks(
+        answer, hazards_payload, engine_ref, bag.clubs, reduced=reduced_checks, hole_yards=intel.yards,
+    )
 
     return CaseResult(
         case_id=case.id, resolved=resolved, intent=intent.value, answer=answer, degraded=degraded,

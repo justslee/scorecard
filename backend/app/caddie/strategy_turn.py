@@ -91,12 +91,20 @@ def compose_degraded_line(rec: dict, green_read: dict, carries: dict) -> str:
         parts.append(" Favor long.")
     # "center" / falsy -> omit (never "no trouble" / "no strong side").
 
-    # 3. Hazard clause from the drive-zone/frame carries.
+    # 3. Hazard clause from the drive-zone/frame carries. Prefers the
+    # player-relative `carry_from_you_yards` frame (approach-solve plan
+    # §1.5) when the turn is approach-framed — the raw tee-anchored
+    # `carry_yards` otherwise (tee turns: key absent, byte-identical).
     hz = [c for c in (carries.get("carries") or []) if c.get("carry_yards")]
     if hz:
         parts.append(
             " Watch "
-            + ", ".join(f"{c['type']} {c['side']} at {c['carry_yards']}" for c in hz)
+            + ", ".join(
+                (f"{c['type']} {c['side']} about {c['carry_from_you_yards']} from you"
+                 if c.get("carry_from_you_yards") is not None
+                 else f"{c['type']} {c['side']} at {c['carry_yards']}")
+                for c in hz
+            )
             + "."
         )
     # empty / carries unavailable -> omit (no "no trouble" ever).
@@ -161,7 +169,12 @@ async def run_strategy_turn(
         "plays_like": conditions.get("plays_like"),
         "hazards_line": conditions.get("hazards_line"),
         "carries": [
-            {"type": c.get("type"), "side": c.get("side"), "carry_yards": c.get("carry_yards")}
+            {
+                "type": c.get("type"), "side": c.get("side"), "carry_yards": c.get("carry_yards"),
+                # Player-relative frame (approach-solve plan §1.5), additive —
+                # `None` on every tee-framed turn, byte-identical there.
+                "carry_from_you_yards": c.get("carry_from_you_yards"),
+            }
             for c in (carries.get("carries") or [])
         ],
         "green_read": {

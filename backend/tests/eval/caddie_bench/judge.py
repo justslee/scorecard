@@ -252,6 +252,8 @@ def should_second_pass(
         # the judge nonetheless PASSES on club_corridor is exactly the kind
         # of det-check/judge disagreement this overlap map exists to catch.
         DetCheckName.CLUB_MATCHES_ENGINE: JudgeDimension.CLUB_CORRIDOR,
+        # approach-solve plan §4.2 — mirrors SIDE_FLIP's own overlap pairing.
+        DetCheckName.APPROACH_MISS_SIDE_PIN: JudgeDimension.MISS_SIDE_EVIDENCE,
     }
     det_by_name = {d.check: d for d in det_checks}
     for det_name, dim in overlap.items():

@@ -164,6 +164,84 @@ async def test_ground_truth_no_recommendation_renders_honest_error():
     assert "Not available:" in block
 
 
+# ── Approach-frame ground truth (specs/caddie-approach-solve-plan.md) ─────
+
+
+def _hole7_intel_approach(hazards=None) -> dict[int, HoleIntelligence]:
+    # hole 400, resolved distance 150 (see _fixture_payload_approach) ->
+    # tee_offset 250. carry_yards=320 is still AHEAD of the player
+    # (250 < 320 < 400) -> from-here 70, survives EN_ROUTE_CLEARED_SUPPRESS.
+    return {
+        7: HoleIntelligence(
+            hole_number=7, par=4, yards=400,
+            hazards=hazards if hazards is not None else [
+                Hazard(type="bunker", side="left", line_side="left", carry_yards=320, penalty_severity="moderate"),
+            ],
+            green_slope=GreenSlope(description="back-to-front, moderate"),
+        )
+    }
+
+
+async def _fixture_payload_approach(*, hazards=None, distance=150, wind_mph=6.0) -> dict:
+    session = _session(
+        hole_intel=_hole7_intel_approach(hazards),
+        club_distances={"driver": 300, "7iron": 160, "9iron": 140},
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=wind_mph, wind_direction=210),
+    )
+    return await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=distance,
+    )
+
+
+async def test_ground_truth_approach_turn_renders_from_you_carries_and_miss_evidence():
+    """Approach-framed (hole 400, dist 150 -> offset 250): the CARRIES
+    section renders the from-you frame, and the RECOMMENDATION line binds
+    the miss description/avoid evidence, never a bare preferred-only word."""
+    payload = await _fixture_payload_approach()
+    rec = payload["recommendation"]
+    assert rec.get("error") is None
+    assert rec.get("shot_kind") == "approach"
+
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "CARRIES (from your position," in block
+    assert "from you to carry" in block
+    assert "320" not in block.split("CARRIES")[1].split("SHAPE:")[0]  # raw tee-frame carry never in the CARRIES section
+
+    miss = rec.get("miss_side") or {}
+    assert miss.get("description")
+    assert miss["description"] in block or miss.get("avoid") in block
+
+
+async def test_ground_truth_approach_turn_renders_adjustments_clause_when_wind_present():
+    payload = await _fixture_payload_approach(wind_mph=20.0)
+    rec = payload["recommendation"]
+    assert rec.get("adjustments")
+
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "SPEAK THIS NUMBER for the shot" in block
+    assert f"Plays-like target {rec.get('target_yards')}y" in block
+    assert f"raw {rec.get('raw_yards')}y" in block
+
+
+async def test_ground_truth_tee_turn_byte_identical_no_carries_from_you_frame():
+    """466y hole, always a positioning/tee_shot_numbers turn (existing
+    fixture) — the approach-frame changes must never touch this arm."""
+    payload = await _fixture_payload(None)
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "CARRIES (from your position," not in block
+    assert "from you to carry" not in block
+    assert "CARRIES:" in block
+
+
+async def test_ground_truth_approach_turn_still_byte_identical_across_two_calls():
+    payload_a = await _fixture_payload_approach()
+    payload_b = await _fixture_payload_approach()
+    assert (
+        strategy_mod.format_strategy_ground_truth(payload_a)
+        == strategy_mod.format_strategy_ground_truth(payload_b)
+    )
+
+
 # ── System prompt contract pins ──────────────────────────────────────────
 
 

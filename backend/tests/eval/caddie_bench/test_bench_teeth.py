@@ -92,6 +92,89 @@ def test_numbers_close_goes_red_on_off_by_40_leave():
     assert not mutant_result.passed, "an off-by-40 leave number must go RED"
 
 
+# ── approach-solve plan §4.3 teeth ──────────────────────────────────────
+
+
+class _FakeMissSide:
+    def __init__(self, preferred: str):
+        self.preferred = preferred
+
+
+class _FakeApproachRec:
+    """Mirrors the `_FakeRec` pattern above — the four attributes `check_
+    numbers_close`/`check_approach_miss_side_pin` actually read, never a
+    real `CaddieRecommendation` construction (keeps these teeth independent
+    of any specific fixture's live geometry, same discipline as
+    `test_side_flip_goes_red_on_a_flipped_side_claim`)."""
+
+    def __init__(self, raw_yards: int, miss_preferred: str = "left"):
+        self.club = "7iron"
+        self.raw_yards = raw_yards
+        self.target_yards = raw_yards
+        self.shot_kind = "approach"
+        self.leave_yards = None
+        self.tee_shot_numbers = None
+        self.miss_side = _FakeMissSide(miss_preferred)
+
+
+# Black-4 evidence case: hole 517, player 182y out (offset 335), bunker
+# carry_yards 495 (tee-frame) -> from-here 495 - 335 = 160.
+_APPROACH_HAZARDS = [{"type": "bunker", "side": "front", "line_side": "center", "carry_yards": 495, "distance_from_green": 22.0}]
+
+
+def test_numbers_close_goes_red_on_approach_turn_speaking_the_raw_tee_frame_carry():
+    """(a) speaking the OLD wiring's raw tee-frame carry (495) on an
+    approach-framed turn must go RED — proves DEFECT 1 is enforced by the
+    validator, not just by the engine's own (possibly regressed) wording."""
+    rec = _FakeApproachRec(raw_yards=182)
+    mutant_answer = "7 iron, carry the bunker at 495 between you and the green."
+    result = harness.check_numbers_close(mutant_answer, _APPROACH_HAZARDS, rec, {}, hole_yards=517)
+    assert not result.passed, "the raw tee-frame carry must never pass on an approach-framed turn"
+
+
+def test_numbers_close_goes_green_on_approach_turn_speaking_the_from_here_carry():
+    """(b) the corrected from-here carry (160) must PASS — the fix, not just
+    the mutant, is proven by this test."""
+    rec = _FakeApproachRec(raw_yards=182)
+    good_answer = "7 iron, carry the bunker about 160 from you."
+    result = harness.check_numbers_close(good_answer, _APPROACH_HAZARDS, rec, {}, hole_yards=517)
+    assert result.passed, f"the from-here carry must PASS ({result.detail})"
+
+
+def test_approach_miss_side_pin_goes_red_on_a_flipped_favor_side():
+    """(c) the engine's own miss_side.preferred="left" contradicted by a
+    spoken "favor right" on an approach shot must go RED."""
+    rec = _FakeApproachRec(raw_yards=182, miss_preferred="left")
+    good_answer = "7 iron, favor the left side, plenty of green to work with."
+    mutant_answer = "7 iron, favor the right side, plenty of green to work with."
+
+    good_result = harness.check_approach_miss_side_pin(good_answer, [], rec, {})
+    mutant_result = harness.check_approach_miss_side_pin(mutant_answer, [], rec, {})
+    assert good_result.passed, f"sanity: agreeing favor-side must PASS ({good_result.detail})"
+    assert not mutant_result.passed, "a flipped favor-side on an approach shot must go RED"
+
+
+def test_should_second_pass_fires_on_approach_miss_side_pin_vs_miss_side_evidence_disagreement():
+    """(d) overlap-map disagreement: det FAILED (flipped side), judge PASSED
+    miss_side_evidence -> must trigger a second pass."""
+    case = BenchCase(
+        id="x", hole_fixture="x_h1", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.GREENSIDE, seed=1), question_type=QuestionType.MISS_SIDE_BAIL,
+        phrasing_id="p1",
+    )
+    scores = {d: 2 for d in JudgeDimension}
+    confidence = {d: 0.95 for d in JudgeDimension}
+    first = JudgeScores(scores=scores, confidence=confidence, failure_class=FailureClass.GOOD, engine_looks_wrong=False, reason="x")
+
+    from tests.eval.caddie_bench.schema import DetCheckName, DetCheckResult
+
+    det_checks_mismatch = [DetCheckResult(check=DetCheckName.APPROACH_MISS_SIDE_PIN, passed=False)]
+    det_checks_agree = [DetCheckResult(check=DetCheckName.APPROACH_MISS_SIDE_PIN, passed=True)]
+
+    assert judge_mod.should_second_pass(first, det_checks_mismatch, case) is True
+    assert judge_mod.should_second_pass(first, det_checks_agree, case) is False
+
+
 def test_hazard_only_from_input_goes_red_on_ungrounded_hazard():
     fx = _fixture("pebble_beach_h3.json")
     resolved, engine_ref, hazards, clubs = _engine_and_hazards(fx, LieCategory.TEE)

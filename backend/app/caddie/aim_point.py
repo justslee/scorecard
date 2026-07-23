@@ -171,6 +171,74 @@ def _governing_center_carry(en_route: list[Hazard]) -> Optional[Hazard]:
                                       h.carry_yards, h.type))
 
 
+# ── Approach-frame player-relative carries (specs/caddie-approach-solve-
+# plan.md §1.1) — the tee-anchored `carry_yards` frame (`en_route_carry_
+# hazards` above) is correct for a TEE shot, but on a genuine mid-hole
+# approach turn a hazard "at 495" (the tee->hazard distance) is not the
+# number a player standing 182y out needs; they need the CARRY FROM THEM.
+# `en_route_from_player` wraps the unchanged tee-frame predicate and adds
+# the player-relative correction ONLY once the turn is provably approach-
+# framed (§0) — every offset-0 pinned test stays on the tee-frame path,
+# byte-identical.
+class EnRouteFromPlayer(NamedTuple):
+    en_route: Optional[list[Hazard]]   # verbatim en_route_carry_hazards result (approach-framed: cleared hazards dropped)
+    tee_offset: int                    # 0 when not approach-framed
+    approach_framed: bool
+    # True only when approach-framed suppression actually DROPPED >=1 hazard
+    # the raw tee-frame predicate found ahead of the player (Pebble-3: raw
+    # en_route non-empty, from-here < EN_ROUTE_CLEARED_SUPPRESS_YDS). Distinct
+    # from "en_route is genuinely empty" (no mapped carry evidence, or every
+    # carry hazard is already behind/past per en_route_carry_hazards' own
+    # predicate) — that case is a TRUE "no trouble ahead" and must still say
+    # so. Callers use this to decide whether resurrecting "green light, no
+    # trouble" would be a NEW false claim (suppressed=True) or remains
+    # accurate (suppressed=False).
+    suppressed: bool = False
+
+    def from_here(self, h: Hazard) -> int:
+        """Round-to-5 of (h.carry_yards - tee_offset); == h.carry_yards
+        verbatim when the turn is not approach-framed — the honesty label
+        (NORTHSTAR: no fake precision) for composing two measurement frames
+        (card/tee-geom hole yardage vs live GPS distance)."""
+        if not self.approach_framed:
+            return h.carry_yards
+        return round((h.carry_yards - self.tee_offset) / 5) * 5
+
+
+def en_route_from_player(hole: HoleIntelligence, distance_yards: int) -> EnRouteFromPlayer:
+    """Player-relative view of `en_route_carry_hazards` — the ONE helper both
+    the aim-point description (Site A) and the P1 reasoning line (Site B) use
+    so they can never disagree about the corrected number (deterministic,
+    pure — computing it more than once in a turn always yields the same
+    result by construction).
+
+    Below `APPROACH_FRAME_MIN_TEE_OFFSET_YDS` tee_offset (every shipped tee/
+    reachable pin — all offset 0) this is a pure pass-through: `tee_offset`
+    is 0, `approach_framed` is False, `from_here(h) == h.carry_yards`, and
+    the returned list is exactly `en_route_carry_hazards`'s own result —
+    byte-identical downstream. Once approach-framed, hazards the player has
+    already effectively cleared (from-here carry < `EN_ROUTE_CLEARED_
+    SUPPRESS_YDS` — within GPS-jitter/rounding noise of the player's own
+    position) are dropped BEFORE `_governing_center_carry` runs, so a
+    cleared hazard can never govern the spoken line (Pebble-3 evidence case:
+    carry 230, tee_offset ~225 -> from-here 5 -> dropped, the line doesn't
+    fire at all).
+    """
+    en_route = en_route_carry_hazards(hole.hazards, hole.yards, distance_yards)
+    tee_offset = max(0, hole.yards - distance_yards) if hole.yards is not None else 0
+    approach_framed = hole.yards is not None and tee_offset >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS
+    if not approach_framed:
+        return EnRouteFromPlayer(en_route=en_route, tee_offset=0, approach_framed=False)
+    unfiltered = EnRouteFromPlayer(en_route=en_route, tee_offset=tee_offset, approach_framed=True)
+    if not en_route:
+        return unfiltered
+    filtered = [h for h in en_route if unfiltered.from_here(h) >= EN_ROUTE_CLEARED_SUPPRESS_YDS]
+    return EnRouteFromPlayer(
+        en_route=filtered, tee_offset=tee_offset, approach_framed=True,
+        suppressed=len(filtered) < len(en_route),
+    )
+
+
 def compute_aim_point(
     hole: HoleIntelligence,
     player_stats: Optional[PlayerStatistics],
@@ -196,9 +264,10 @@ def compute_aim_point(
     miss_dir = player_stats.tendencies.miss_direction if player_stats else "balanced"
 
     if distance_yards is not None:
-        en_route = en_route_carry_hazards(hole.hazards, hole.yards, distance_yards)
+        erp = en_route_from_player(hole, distance_yards)
     else:
-        en_route = []   # no positional evidence -> legacy behavior
+        erp = EnRouteFromPlayer(en_route=[], tee_offset=0, approach_framed=False)   # no positional evidence -> legacy behavior
+    en_route = erp.en_route
 
     if pin_light == "green":
         if en_route is None:
@@ -206,12 +275,28 @@ def compute_aim_point(
             # neither claim clean nor fabricate a carry we can't anchor.
             description = "Aim at the flag"
         elif not en_route:
-            description = "Aim at the flag — green light, no trouble"   # verbatim today
+            if erp.suppressed:
+                # There WAS carry evidence ahead of the player (the raw
+                # tee-frame predicate found it) but it's already effectively
+                # cleared (Pebble-3: from-here < EN_ROUTE_CLEARED_SUPPRESS_
+                # YDS) — claiming "green light, no trouble" would be a NEW
+                # false claim never made before this fix; the honest bare
+                # form stands instead.
+                description = "Aim at the flag"
+            else:
+                # Genuinely nothing ahead (no carry evidence at all, or every
+                # carry hazard is already behind/past per en_route_carry_
+                # hazards' own predicate) — "no trouble" remains accurate
+                # regardless of frame.
+                description = "Aim at the flag — green light, no trouble"   # verbatim today
         else:
             governing = _governing_center_carry(en_route)
             if governing is not None:
                 noun = _HAZARD_NOUNS.get(governing.type.lower(), "trouble")
-                description = f"Aim at the flag — carry the {noun} at {governing.carry_yards}"
+                if erp.approach_framed:
+                    description = f"Aim at the flag — carry the {noun} about {erp.from_here(governing)} from you"
+                else:
+                    description = f"Aim at the flag — carry the {noun} at {governing.carry_yards}"
             else:
                 # Lateral-only en-route trouble.
                 worst = max(en_route, key=lambda h: (_SEVERITY_RANK.get(h.penalty_severity, 0),
@@ -222,15 +307,19 @@ def compute_aim_point(
                     safe_side = miss.preferred
                 else:
                     safe_side = "right" if worst.line_side.lower() == "left" else "left"
+                carry_phrase = (
+                    f"about {erp.from_here(worst)} from you" if erp.approach_framed
+                    else f"at {worst.carry_yards}"
+                )
                 if safe_side != worst.line_side.lower():
                     description = (f"Aim at the flag — {noun} {worst.line_side.lower()} "
-                                   f"at {worst.carry_yards}, favor the {safe_side} side")
+                                   f"{carry_phrase}, favor the {safe_side} side")
                 else:
                     # Miss verdict says the hazard's own side is still the lesser
                     # evil — name the fact, let miss_side carry the verdict, never
                     # a contradicting side instruction.
                     description = (f"Aim at the flag — {noun} {worst.line_side.lower()} "
-                                   f"at {worst.carry_yards}")
+                                   f"{carry_phrase}")
     elif pin_light == "yellow":
         description = "Aim between the pin and center of green"          # unchanged
     else:
@@ -254,13 +343,28 @@ def compute_aim_point(
     return AimPoint(description=description)
 
 
+_SPOKEN_SIDE_WORD: dict[str, str] = {
+    "left": "left", "right": "right", "short": "short of the green", "long": "long",
+}  # never "front"/"back" — those are internal side_hazard_desc keys, not spoken words
+
+
 def compute_miss_side(
     hole: HoleIntelligence,
     player_stats: Optional[PlayerStatistics],
+    *,
+    distance_yards: Optional[int] = None,
 ) -> MissSide:
     """Determine the preferred miss side and what to avoid.
 
     DECADE principle: identify the "recovery side" vs "death side"
+
+    `distance_yards`, when provided AND the turn is provably approach-framed
+    (§0 — the player has advanced tee_offset >= APPROACH_FRAME_MIN_TEE_
+    OFFSET_YDS past the tee), enriches `description` with the per-side
+    hazard EVIDENCE that drove the pick (DEFECT 2, specs/caddie-approach-
+    solve-plan.md §1.3) — it never changes `preferred`/`avoid` SELECTION or
+    the `avoid` text's prefix. `None` (every existing direct caller) or a
+    tee-framed turn -> today's text verbatim, byte-identical.
     """
     if not hole.hazards:
         return MissSide(
@@ -268,6 +372,12 @@ def compute_miss_side(
             description="No major trouble — miss short for an easy chip",
             avoid="Avoid going long — harder to get up and down",
         )
+
+    approach_framed = (
+        hole.yards is not None
+        and distance_yards is not None
+        and max(0, hole.yards - distance_yards) >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS
+    )
 
     # Classify each side's penalty
     side_severity: dict[str, list[str]] = {
@@ -352,9 +462,32 @@ def compute_miss_side(
     pref_label = {"short": "Short", "long": "Long", "left": "Left", "right": "Right"}
 
     if preferred_desc_suffix == "open":
-        pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — safe side, easy recovery"
+        if approach_framed and avoid_desc_suffix != "open":
+            # Name the evidence that drove the pick: the AVOID side's own
+            # hazard, never a new claim (side_hazard_desc is the same
+            # grounded lookup used by avoid_text below). Evidence-first
+            # phrasing (hazard word immediately followed by its OWN side
+            # word) matters here, not just style: `guide_writer._has_side_
+            # flip`'s nearest-side-word scan would otherwise anchor the
+            # hazard on the earlier "Miss {pref}" side word (the opposite,
+            # wrong side) purely by word proximity.
+            avoid_word = _SPOKEN_SIDE_WORD.get(avoid_side, avoid_side)
+            pref_word = _SPOKEN_SIDE_WORD.get(preferred, preferred)
+            pref_text = (
+                f"{avoid_desc_suffix.capitalize()} guards the {avoid_word} — "
+                f"miss {pref_word}"
+            )
+        else:
+            pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — safe side, easy recovery"
     else:
-        pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — {preferred_desc_suffix} but manageable"
+        if approach_framed:
+            pref_word = _SPOKEN_SIDE_WORD.get(preferred, preferred)
+            pref_text = (
+                f"Miss {pref_label.get(preferred, preferred).lower()} — "
+                f"{preferred_desc_suffix} {pref_word} but manageable"
+            )
+        else:
+            pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — {preferred_desc_suffix} but manageable"
 
     avoid_text = f"Don't miss {avoid_side} — {avoid_desc_suffix}"
 
@@ -363,6 +496,30 @@ def compute_miss_side(
         description=pref_text,
         avoid=avoid_text,
     )
+
+
+def _greenside_hazards_line(hazards: list[Hazard]) -> Optional[str]:
+    """P2 hazard-awareness seed (approach-solve plan §1.3), reachable branch
+    only, gated on `approach_framed` by the caller: types+sides only, no
+    numbers — reads the exact same greenside population `compute_miss_side`
+    does (`distance_from_green <= 20`). `None` when nothing is mapped near
+    the green (never a placeholder line)."""
+    near = [h for h in hazards if h.distance_from_green <= 20]
+    if not near:
+        return None
+    parts: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for h in near:
+        noun = _HAZARD_NOUNS.get(h.type.lower(), "trouble")
+        side_word = _SPOKEN_SIDE_WORD.get(h.side, h.side)
+        key = (noun, side_word)
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(f"{noun} {side_word}")
+    if not parts:
+        return None
+    return "Around the green: " + ", ".join(parts)
 
 
 # ── Reachability classification (positioning shots) ────────────────────────
@@ -378,6 +535,18 @@ def compute_miss_side(
 # finishing on the front edge has still reached it. Half a typical green
 # depth; overridden by the hole's real measured depth when mapped.
 GREEN_REACH_MARGIN_YDS: int = 15
+
+# ── Approach frame (specs/caddie-approach-solve-plan.md §0) ────────────────
+#
+# A turn only re-frames tee-anchored carry_yards into the player's own frame
+# when the player has provably advanced past the tee by more than combined
+# GPS jitter + carry rounding. Below this the tee frame stands — which is
+# what keeps every shipped reachable/tee test (all offset ~0) byte-identical.
+APPROACH_FRAME_MIN_TEE_OFFSET_YDS: int = 25
+# A from-here carry below this is "already effectively cleared" (hazards.py
+# rounds carries to 5; GPS is a +/-10y-class instrument) — the carry line is
+# SUPPRESSED, never spoken as a 5-yard carry (Pebble-3 evidence case).
+EN_ROUTE_CLEARED_SUPPRESS_YDS: int = 20
 
 
 def is_green_reachable(
@@ -1059,8 +1228,13 @@ def generate_recommendation(
     pin_light: Optional[str] = None
     if reachable:
         aim = compute_aim_point(hole, player_stats, handicap, distance_yards=distance_yards)
-        miss = compute_miss_side(hole, player_stats)
+        miss = compute_miss_side(hole, player_stats, distance_yards=distance_yards)
         pin_light = classify_pin_position(hole)
+        # ONE en-route/approach-frame solve for the whole reachable branch
+        # (approach-solve plan §1.1) — the P1 hazard-carry reasoning line, the
+        # wind-binding P1 line, and the greenside P2 line all key off this
+        # SAME computation so they can never disagree within a turn.
+        erp = en_route_from_player(hole, distance_yards)
     else:
         # ONE authoritative numbers block (specs/caddie-numbers-coherence-plan
         # .md §2.2) — everything downstream (leave, aim, landing advice, the
@@ -1256,12 +1430,29 @@ def generate_recommendation(
         elif pin_light == "yellow":
             _r.append((1, "Yellow light pin — aim between pin and center"))
         elif pin_light == "green":
-            en_route = en_route_carry_hazards(hole.hazards, hole.yards, distance_yards)
-            governing = _governing_center_carry(en_route) if en_route else None
+            governing = _governing_center_carry(erp.en_route) if erp.en_route else None
             if governing is not None:
                 noun = _HAZARD_NOUNS.get(governing.type.lower(), "trouble")
-                _r.append((1, f"{noun.capitalize()} at {governing.carry_yards} between you and "
-                              f"the green — take enough club to carry it"))
+                if erp.approach_framed:
+                    _r.append((1, f"{noun.capitalize()} about {erp.from_here(governing)} out between you "
+                                  f"and the green — take enough club to carry it"))
+                else:
+                    _r.append((1, f"{noun.capitalize()} at {governing.carry_yards} between you and "
+                                  f"the green — take enough club to carry it"))
+        # P1 — approach-framed wind binding (DEFECT 3, approach-solve plan
+        # §1.4): the plays-like number is already IN adjusted_yards/
+        # adjustments, but on an approach turn it never surfaced prominently
+        # enough for the caddie's mouth. Competition-legal turns have
+        # `adjustments == []` -> structurally can't fire (test_competition_
+        # legal.py stays green).
+        if erp.approach_framed:
+            wind_adj = next((a for a in adjustments if a.type == "wind"), None)
+            if wind_adj is not None and abs(wind_adj.yards) >= 10:
+                _r.append((
+                    1,
+                    f"Wind is real here: plays about {adjusted_yards}, not "
+                    f"{distance_yards} — {wind_adj.description}",
+                ))
     else:
         # P1 — positioning-shot call-out (the fix for the incident: never a
         # pin-relative aim when the green is out of reach on this swing).
@@ -1305,6 +1496,15 @@ def generate_recommendation(
             f"Your miss tendency is {player_stats.tendencies.miss_direction}"
             " — aim point accounts for this",
         ))
+
+    # P2 — greenside hazard-awareness seed (DEFECT 2 continued, approach-solve
+    # plan §1.3): reachable + approach-framed only — types+sides, no numbers.
+    # Gating on `approach_framed` keeps every par-3-tee/positioning pin
+    # byte-identical (all offset 0) and avoids reasoning-cap eviction there.
+    if reachable and erp.approach_framed:
+        greenside_line = _greenside_hazards_line(hole.hazards)
+        if greenside_line:
+            _r.append((2, greenside_line))
 
     # P4 — player history on this hole (color / motivational)
     if hole.player_history and hole.player_history.times_played >= 3:

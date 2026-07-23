@@ -103,6 +103,9 @@ class DetCheckName(str, Enum):
     NUMBERS_CLOSE = "numbers_close"
     POSITIONING_NO_PIN_LANGUAGE = "positioning_no_pin_language"
     LENGTH_CAPS = "length_caps"
+    # approach-solve plan §4.2 — approach-shot favor/miss side must agree
+    # with (or say nothing about) the engine's own miss_side.preferred.
+    APPROACH_MISS_SIDE_PIN = "approach_miss_side_pin"
 
 
 # ── Position / case / result shapes (§1) ─────────────────────────────────────

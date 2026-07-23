@@ -201,7 +201,12 @@ async def build_strategy_payload(
             "hole_number": hole_number,
             "recommendation": recommendation,
             "conditions": conditions_payload(session, hole_number),
-            "carries": carries_payload(session, hole_number),
+            # from_distance_yards (approach-solve plan §1.5): the SAME
+            # resolved_yards recommend_payload just solved against — carries
+            # ahead of the player render a `carry_from_you_yards` frame once
+            # the turn is approach-framed, never a second, independently
+            # resolved distance.
+            "carries": carries_payload(session, hole_number, from_distance_yards=resolved_yards),
             "bend": bend_payload(session, hole_number),
             "green_read": green_read_payload(session, hole_number),
             "player": await player_profile_payload(session, user_id),
@@ -260,12 +265,36 @@ def format_strategy_ground_truth(payload: dict) -> str:
         if tee_numbers:
             lines.append("  " + format_tee_numbers_line(TeeShotNumbers.model_validate(tee_numbers)))
         else:
+            # Reachable/approach arm (specs/caddie-approach-solve-plan.md
+            # §1.4 DEFECT 3 + §1.3 DEFECT 2): bind the RECOMMENDATION line to
+            # the actual plays-like number and the per-side miss EVIDENCE, so
+            # the synth brain can't parrot the raw distance or a bare "left"/
+            # "right" with nothing behind it. This arm is also hit by
+            # reachable par-3 TEE turns (adjustments == [] there whenever
+            # conditions are calm) — a ground-truth wording improvement, not
+            # an engine-number change; no shipped test pins this arm's bytes.
             aim = (rec.get("aim_point") or {}).get("description") or "unknown"
-            miss = (rec.get("miss_side") or {}).get("preferred") or "unknown"
-            lines.append(
-                f"  Club: {rec.get('club', 'unknown')}. Target {rec.get('target_yards')}y "
-                f"(raw {rec.get('raw_yards')}y). Aim: {aim}. Miss: {miss}."
-            )
+            miss_dict = rec.get("miss_side") or {}
+            miss_evidence = " ".join(
+                part for part in (miss_dict.get("description"), miss_dict.get("avoid")) if part
+            ) or (miss_dict.get("preferred") or "unknown")
+            adjustments = rec.get("adjustments") or []
+            target_yards = rec.get("target_yards")
+            raw_yards = rec.get("raw_yards")
+            if adjustments:
+                adj_clause = "; ".join(
+                    a.get("description", "") for a in adjustments if a.get("description")
+                )
+                lines.append(
+                    f"  Club: {rec.get('club', 'unknown')}. Plays-like target {target_yards}y — "
+                    f"SPEAK THIS NUMBER for the shot (raw {raw_yards}y; {adj_clause}). "
+                    f"Aim: {aim}. Miss: {miss_evidence}"
+                )
+            else:
+                lines.append(
+                    f"  Club: {rec.get('club', 'unknown')}. Target {target_yards}y "
+                    f"(raw {raw_yards}y). Aim: {aim}. Miss: {miss_evidence}"
+                )
 
     conditions = payload.get("conditions") or {}
     lines.append("")
@@ -294,13 +323,27 @@ def format_strategy_ground_truth(payload: dict) -> str:
         lines.append(f"  Green slope: {green_slope['description']}.")
 
     carries = payload.get("carries") or {}
+    carry_list = carries.get("carries") or []
+    # approach-solve plan §1.5: once the turn is approach-framed, surviving
+    # carries payload entries carry an ADDITIONAL `carry_from_you_yards` key
+    # (never REPLACING `carry_yards`) — its presence is the signal to render
+    # the from-you frame instead of the raw tee-anchored one. Tee turns
+    # (key absent on every entry): byte-identical.
+    approach_framed_carries = any(c.get("carry_from_you_yards") is not None for c in carry_list)
     lines.append("")
-    lines.append("CARRIES:")
+    if approach_framed_carries:
+        lines.append(f"CARRIES (from your position, {rec.get('raw_yards')}y out):")
+    else:
+        lines.append("CARRIES:")
     if carries.get("available"):
-        carry_list = carries.get("carries") or []
         if carry_list:
             for c in carry_list:
-                lines.append(f"  {c['type']} {c['side']} carry {c['carry_yards']}y")
+                if c.get("carry_from_you_yards") is not None:
+                    lines.append(
+                        f"  {c['type']} {c['side']} — about {c['carry_from_you_yards']}y from you to carry"
+                    )
+                else:
+                    lines.append(f"  {c['type']} {c['side']} carry {c['carry_yards']}y")
         else:
             lines.append(f"  {carries.get('note') or 'No mapped bunkers, water, or tree lines in play.'}")
     else:
