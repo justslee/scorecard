@@ -82,9 +82,24 @@ caddie-approach-shot-engine added (done-on-bundle). What shipped: approach-frame
 hazard carries to the player's own position + suppression + per-side greenside miss evidence + wind
 plays-like binding + carries_payload from-you frame; bench validators extended (check_numbers_close
 frame-correction + APPROACH_MISS_SIDE_PIN). Byte-identical tee behavior (752 pins). ruff clean, 3178/3178.
-PENDING (cycle ends only when measured): on-box before/after DELTA — coordinator executes the SSM leg.
-PACKAGED COMMAND (hand to coordinator): on box i-0826ae70df62d9fe8, in the bench checkout, git pull the
-new integration/next, then run the failing-subset re-run + delta report (see final report for exact cmd).
+PENDING (cycle ends only when measured): on-box before/after DELTA — coordinator executes the SSM leg
+(owner-authorized venue). Failing subset = 136/150 cases (non-good), ~$0.042/case -> ~$5.7 expected
+(a bit over the ~$5 estimate; wrong_numbers alone = 66). PACKAGED COMMAND (coordinator, on box
+i-0826ae70df62d9fe8 as ubuntu):
+  cd /tmp/benchwt_1784730879 && git fetch origin \
+    && git checkout --detach 3d5e1dc5360d958f029cfb1d8bf7bdf320ff15d9 \
+    && git rev-parse --short HEAD   # must== 3d5e1dc \
+    && grep -c 'def en_route_from_player' backend/app/caddie/aim_point.py   # must== 1  (proves new code before $)
+  cd /tmp/benchwt_1784730879/backend \
+    && set -a && . /home/ubuntu/scorecard/backend/.env && set +a && export CADDIE_EVAL_LIVE=1 \
+    && /home/ubuntu/scorecard/backend/.venv/bin/python3 -m tests.eval.caddie_bench.run_caddie_bench \
+       --only-failures 20260722-145448 --render-mode vector --budget-usd 7 --min-weighted-correctness 0 \
+       2>&1 | tee /tmp/bench_delta.log \
+    && ls -1dt tests/eval/caddie_bench/runs/*/ | head -1   # <- report this NEW run id back
+runs/ is gitignored so the baseline 20260722-145448 survives the checkout; vector needs NO maps key.
+Then DELTA (eng-lead, read-only): scratchpad/delta.py joins new-vs-baseline results.jsonl on case_id
+(per-dim before/after ON THE SUBSET + weighted/crux + numbers_close det + failure_class Pareto + fixed/
+still-bad; --only-failures can't see regressions on previously-GOOD cases -> follow with a full 150).
 CYCLE-2 CEILING (deferred, measurement-safe): hazards_line tee-frame reframe (nit 1). Judge-clarity fix
 (approach vs positioning) deferred to a separate re-scored PR per plan section 5.
 
