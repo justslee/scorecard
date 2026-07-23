@@ -23,7 +23,11 @@ from typing import Callable, Optional
 
 from app.caddie import strategy as strategy_mod
 from app.caddie import verdict as verdict_mod
-from app.caddie.aim_point import APPROACH_FRAME_MIN_TEE_OFFSET_YDS, generate_recommendation
+from app.caddie.aim_point import (
+    APPROACH_FRAME_MIN_TEE_OFFSET_YDS,
+    EN_ROUTE_CLEARED_SUPPRESS_YDS,
+    generate_recommendation,
+)
 from app.caddie.club_selection import normalize_club_distances
 from app.caddie.guide_writer import GUIDE_INJECTION_PATTERN, _HAZARD_PATTERNS, _has_side_flip
 from app.caddie.routing import classify_intent
@@ -215,20 +219,21 @@ def check_numbers_close(
     substance = substance_mod.extract_substance(answer, club_distances)
     known = _known_numbers(engine_ref)
 
-    # Frame correction (approach-solve plan §4.1). On an approach-framed
-    # turn (shot_kind == "approach", tee_offset >= APPROACH_FRAME_MIN_TEE_
-    # OFFSET_YDS) an en-route hazard is spoken in the PLAYER'S frame
-    # (carry - offset), never the raw tee-anchored carry_yards — so the
-    # known set must LEARN the from-here number and FORGET the raw one for
-    # those same en-route hazards (stricter where it matters). `hole_yards
-    # is None` or offset < 25 or a non-approach shot: no-op, byte-identical
-    # known set — never looser on a tee turn.
+    # Frame correction (approach-solve plan §4.1, B1 fix — fable/eng-lead
+    # review). The ground-truth CARRIES section (`tools.carries_payload`)
+    # re-frames to from-you carries on PURE GEOMETRY — tee_offset >=
+    # APPROACH_FRAME_MIN_TEE_OFFSET_YDS — for ANY shot_kind, approach OR
+    # positioning (a from-you carry is the correct, honest number mid-hole
+    # regardless of reachability). The validator's frame-learning must key
+    # off that SAME geometric predicate, never `shot_kind == "approach"`
+    # alone — gating on shot_kind let a faithful positioning-turn from-you
+    # answer (e.g. "about 120 from you") go falsely RED (repro: 600y hole,
+    # 320y out -> positioning, water carry 400 -> ground truth renders
+    # "about 120y from you to carry"). `hole_yards is None` or offset < 25:
+    # no-op, byte-identical known set — never looser on a tee turn.
     offset = (hole_yards - engine_ref.raw_yards) if hole_yards is not None else None
-    approach_framed = (
-        engine_ref.shot_kind == "approach"
-        and offset is not None
-        and offset >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS
-    )
+    approach_framed = offset is not None and offset >= APPROACH_FRAME_MIN_TEE_OFFSET_YDS
+
     en_route_carry_yards: set[int] = set()
     if approach_framed:
         for hz in hazards:
@@ -237,24 +242,42 @@ def check_numbers_close(
                 continue
             carry = int(carry)
             if offset < carry < hole_yards:
-                en_route_carry_yards.add(carry)
                 from_here = carry - offset
+                # Nit 3: a hazard the engine SUPPRESSES (from-here < EN_
+                # ROUTE_CLEARED_SUPPRESS_YDS) is never spoken as a from-you
+                # number at all (tools.carries_payload drops it outright,
+                # same as aim_point's en_route_from_player) — learning it
+                # here would let a confabulated "about 5" pass.
+                if from_here < EN_ROUTE_CLEARED_SUPPRESS_YDS:
+                    continue
                 known.add(from_here)
                 known.add(round(from_here / 5) * 5)
+                en_route_carry_yards.add(carry)
 
     # The degraded-line composer (compose_degraded_line) also states hazard
     # carry yards from the hole's full mapped hazard list (not just the
     # recommendation's own carries) — those are equally "bound to the
-    # per-turn engine solve" (they come straight off intel.hazards). Raw
-    # tee-frame carries of en-route hazards are REMOVED from the known set
-    # once approach-framed (parroting the tee-anchored number is no longer
-    # allowed to pass); carries outside the en-route window are unaffected.
+    # per-turn engine solve" (they come straight off intel.hazards).
+    #
+    # Raw tee-frame carries of en-route hazards are REMOVED from the known
+    # set ONLY on approach-framed APPROACH turns: the reachable path (aim_
+    # point.py Site A/B + the CARRIES section) never legitimately speaks the
+    # raw tee-frame number anymore once approach-framed, so parroting it
+    # (e.g. 495 on a 182y shot) must now FAIL. On POSITIONING turns the raw
+    # number is STILL legitimately spoken elsewhere — `cross_hazard_line`/
+    # `decade_landing_advice` (decade_advice.py, untouched by this plan)
+    # read `drive_zone_hazards`' tee-anchored `carry_yards` directly (e.g.
+    # "Water crosses at ~400 — driver brings it in play") — so removing it
+    # there would false-red an honest positioning answer (B1's exact bug
+    # class). Positioning turns therefore only ever ADD the from-here number
+    # above; the raw number is never removed from the known set for them.
+    strict_removal = approach_framed and engine_ref.shot_kind == "approach"
     for hz in hazards:
         carry = hz.get("carry_yards")
         if not carry:
             continue
         carry = int(carry)
-        if approach_framed and carry in en_route_carry_yards:
+        if strict_removal and carry in en_route_carry_yards:
             continue
         known.add(carry)
 

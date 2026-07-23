@@ -141,6 +141,49 @@ def test_numbers_close_goes_green_on_approach_turn_speaking_the_from_here_carry(
     assert result.passed, f"the from-here carry must PASS ({result.detail})"
 
 
+# B1 fix (eng-lead/fable review) — positioning turns ALSO get from-you
+# carries (tools.carries_payload re-frames on PURE GEOMETRY, any shot_kind),
+# so the validator must accept them there too — never gated on shot_kind ==
+# "approach" alone. Reviewer's repro: 600y hole, player 320y out (offset
+# 280) -> positioning (green out of reach); water carry_yards 400 (tee-
+# frame) -> from-here 400 - 280 = 120.
+_POSITIONING_HAZARDS = [{"type": "water", "side": "left", "line_side": "left", "carry_yards": 400, "distance_from_green": 200.0}]
+
+
+class _FakePositioningRec:
+    def __init__(self, raw_yards: int):
+        self.club = "3wood"
+        self.raw_yards = raw_yards
+        self.target_yards = raw_yards
+        self.shot_kind = "positioning"
+        self.leave_yards = 150
+        self.tee_shot_numbers = None
+        self.miss_side = _FakeMissSide("left")
+
+
+def test_numbers_close_goes_green_on_positioning_turn_speaking_the_from_here_carry():
+    """B1 — a positioning turn's from-you carry (carries_payload re-frames
+    on pure geometry regardless of shot_kind) must PASS, never falsely RED
+    just because shot_kind != "approach"."""
+    rec = _FakePositioningRec(raw_yards=320)
+    good_answer = "3 wood, lay up short, water about 120 from you to carry."
+    result = harness.check_numbers_close(good_answer, _POSITIONING_HAZARDS, rec, {}, hole_yards=600)
+    assert result.passed, f"a faithful from-you carry on a positioning turn must PASS ({result.detail})"
+
+
+def test_numbers_close_still_accepts_the_raw_tee_frame_carry_on_a_positioning_turn():
+    """B1 audit finding: on a positioning turn the RAW tee-frame carry is
+    STILL legitimately spoken elsewhere (`decade_advice.cross_hazard_line` /
+    `decade_landing_advice` read the same hazard's tee-anchored carry_yards
+    directly, untouched by this plan) — so, unlike an approach turn, the
+    validator must NOT remove it from the known set on a positioning turn
+    (removing it would false-red an honest answer, B1's exact bug class)."""
+    rec = _FakePositioningRec(raw_yards=320)
+    answer = "3 wood, water crosses at 400, lay up short of it."
+    result = harness.check_numbers_close(answer, _POSITIONING_HAZARDS, rec, {}, hole_yards=600)
+    assert result.passed, f"the raw carry must still PASS on a positioning turn ({result.detail})"
+
+
 def test_approach_miss_side_pin_goes_red_on_a_flipped_favor_side():
     """(c) the engine's own miss_side.preferred="left" contradicted by a
     spoken "favor right" on an approach shot must go RED."""

@@ -345,7 +345,12 @@ def compute_aim_point(
 
 _SPOKEN_SIDE_WORD: dict[str, str] = {
     "left": "left", "right": "right", "short": "short of the green", "long": "long",
-}  # never "front"/"back" — those are internal side_hazard_desc keys, not spoken words
+    # `Hazard.side` itself uses "front"/"back" (hazards.py) — `_greenside_
+    # hazards_line` reads it RAW, so these must be spoken words too, never
+    # "bunker front" verbatim. Same mapping compute_miss_side's own
+    # {"short": "front", "long": "back"} lookup uses in reverse.
+    "front": "short of the green", "back": "long",
+}
 
 
 def compute_miss_side(
@@ -461,6 +466,18 @@ def compute_miss_side(
 
     pref_label = {"short": "Short", "long": "Long", "left": "Left", "right": "Right"}
 
+    # Article-aware wording for the "{hazard} guards {X}" clause specifically
+    # (nit 4, eng-lead review) — `_SPOKEN_SIDE_WORD`'s "short of the green"/
+    # "long" already carry their own preposition/no-article convention for
+    # the MISS instruction ("miss short of the green"); baking a leading
+    # "the" onto them here produced "guards the short of the green" (a
+    # doubled/misplaced article). "the front"/"the back" read naturally
+    # after "guards" and are still the honest, un-new-claiming Hazard.side
+    # vocabulary (hazards.py).
+    _guard_side_word: dict[str, str] = {
+        "left": "the left", "right": "the right", "short": "the front", "long": "the back",
+    }
+
     if preferred_desc_suffix == "open":
         if approach_framed and avoid_desc_suffix != "open":
             # Name the evidence that drove the pick: the AVOID side's own
@@ -471,11 +488,10 @@ def compute_miss_side(
             # flip`'s nearest-side-word scan would otherwise anchor the
             # hazard on the earlier "Miss {pref}" side word (the opposite,
             # wrong side) purely by word proximity.
-            avoid_word = _SPOKEN_SIDE_WORD.get(avoid_side, avoid_side)
-            pref_word = _SPOKEN_SIDE_WORD.get(preferred, preferred)
+            avoid_word = _guard_side_word.get(avoid_side, avoid_side)
             pref_text = (
-                f"{avoid_desc_suffix.capitalize()} guards the {avoid_word} — "
-                f"miss {pref_word}"
+                f"{avoid_desc_suffix.capitalize()} guards {avoid_word} — "
+                f"miss {preferred}"
             )
         else:
             pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — safe side, easy recovery"

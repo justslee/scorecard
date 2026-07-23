@@ -348,3 +348,37 @@ def test_carries_payload_tee_framed_offset_below_threshold_omits_from_you_key():
     payload = carries_payload(session, 1, from_distance_yards=495)
     assert "carry_from_you_yards" not in payload["carries"][0]
     assert payload["carries"][0]["carry_yards"] == 250
+
+
+# ── B1 fix (eng-lead/fable review) — positioning turns get from-you carries
+# too, and the validator must not falsely RED a faithful one ──────────────
+
+
+def test_b1_positioning_carries_from_you_repro_matches_check_numbers_close():
+    """Reviewer's repro: 600y hole, player 320y out -> green out of reach
+    (shot_kind="positioning"), water carry_yards 400 (tee-frame) -> the
+    ground-truth CARRIES section renders "about 120y from you to carry"
+    (carries_payload re-frames on PURE GEOMETRY, any shot_kind). The
+    det-check must PASS a faithful "120" answer — before the fix it falsely
+    REDed here because `check_numbers_close` only learned from-here numbers
+    when `shot_kind == "approach"`."""
+    from tests.eval.caddie_bench import harness as bench_harness
+
+    hazards = [_carry_hazard("water", "left", 400, severity="severe", distance=200.0)]
+    hole = _make_hole(par=5, yards=600, hazards=hazards)
+    bag = {"driver": 260, "3wood": 240, "5iron": 190}
+
+    rec = generate_recommendation(hole, 320, bag, handicap=15)
+    assert rec.shot_kind == "positioning", "sanity: this repro requires an out-of-reach turn"
+
+    session = RoundSession(
+        round_id="r1", user_id="u1", current_hole=1, hole_intel={1: hole}, club_distances=bag,
+    )
+    carries = carries_payload(session, 1, from_distance_yards=320)
+    from_you = next(c["carry_from_you_yards"] for c in carries["carries"] if c["type"] == "water")
+    assert from_you == 120  # 400 - (600 - 320) = 120, matches the reviewer's repro exactly
+
+    good_answer = f"3 wood, lay up short — water about {from_you} from you to carry."
+    hazards_payload = [h.model_dump() for h in hole.hazards]
+    result = bench_harness.check_numbers_close(good_answer, hazards_payload, rec, bag, hole_yards=600)
+    assert result.passed, f"a faithful from-you carry on a positioning turn must PASS ({result.detail})"

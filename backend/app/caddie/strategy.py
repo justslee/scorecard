@@ -275,9 +275,16 @@ def format_strategy_ground_truth(payload: dict) -> str:
             # an engine-number change; no shipped test pins this arm's bytes.
             aim = (rec.get("aim_point") or {}).get("description") or "unknown"
             miss_dict = rec.get("miss_side") or {}
-            miss_evidence = " ".join(
-                part for part in (miss_dict.get("description"), miss_dict.get("avoid")) if part
-            ) or (miss_dict.get("preferred") or "unknown")
+            # nit 4 (eng-lead review): `description`/`avoid` are each a bare
+            # clause with no trailing punctuation of their own ("Bunker
+            # guards the left — miss right", "Don't miss right — open") —
+            # join with ". " (never a bare space, which ran two clauses
+            # together with no sentence break) and always end the line with
+            # a period, so this arm reads as clean sentences.
+            miss_parts = [p for p in (miss_dict.get("description"), miss_dict.get("avoid")) if p]
+            miss_evidence = ". ".join(miss_parts) if miss_parts else (miss_dict.get("preferred") or "unknown")
+            if miss_evidence and not miss_evidence.endswith((".", "!", "?")):
+                miss_evidence += "."
             adjustments = rec.get("adjustments") or []
             target_yards = rec.get("target_yards")
             raw_yards = rec.get("raw_yards")
@@ -315,6 +322,23 @@ def format_strategy_ground_truth(payload: dict) -> str:
         )
     hazards_line = conditions.get("hazards_line")
     if hazards_line:
+        # KNOWN LIMITATION (approach-solve plan §1.4/1.5, cycle-1 scope call
+        # — eng-lead review nit 1): `hazards_line` (`app.caddie.hazards.
+        # format_hazards_line`, fed by `conditions_payload`) is STILL always
+        # tee-anchored here, even on an approach-framed turn — so the brain
+        # can still be SHOWN a raw tee-frame carry (e.g. "bunker C 495y")
+        # right above the from-you CARRIES section below, even though
+        # `check_numbers_close` now REDs parroting it. NOT re-framed this
+        # cycle: `format_hazards_line`/`conditions_payload` are shared with
+        # the tool-loop hazard-grounding subsystem (`app.caddie.tools.
+        # get_conditions`, routes/caddie.py logging, the golden-set eval
+        # harness `tests/eval/checks.py` + `test_harness_has_teeth.py`) —
+        # unlike `carries_payload`, there's no single natural "current
+        # player distance" already threaded through every caller, and
+        # touching it risks that unrelated subsystem's own pinned behavior.
+        # Deferred to cycle 2 (thread `from_distance_yards` through
+        # `conditions_payload` the same way, scoped to ONLY this ground-
+        # truth render path).
         lines.append(f"  {hazards_line} — the COMPLETE list — there are NO others.")
     else:
         lines.append("  Hazards: NONE mapped. Do not name any specific hazard.")
