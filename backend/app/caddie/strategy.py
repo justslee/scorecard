@@ -48,6 +48,7 @@ from app.caddie.guide_writer import (
     validate_lore,
 )
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
+from app.caddie.physics import relative_wind
 from app.caddie.session import RoundSession
 from app.caddie.tools import (
     bend_payload,
@@ -120,6 +121,7 @@ async def build_strategy_payload(
     distance_to_green_yards: Optional[int] = None,
     hole_yards: Optional[int] = None,
     yardage_basis: Optional[str] = None,
+    shot_bearing_deg: Optional[float] = None,
 ) -> dict:
     """Assemble the full grounded engine payload for one hole.
 
@@ -129,6 +131,20 @@ async def build_strategy_payload(
     beats the cached hole's own yardage — never a fabricated default. `None`
     when nothing is known; `recommend_payload` returns an honest `{"error":
     ...}` in that case rather than solving a guessed number.
+
+    `shot_bearing_deg` (caddie-bench-cycle2-plan.md §2.2 — a live-vs-bench
+    physics mismatch the planner found): the live engine solve used to call
+    `recommend_payload` with NO bearing at all, decomposing wind against due
+    north (0.0) while the bench oracle always solves with the true shot
+    bearing — a structural disagreement on any windy non-north hole. The
+    caller-supplied bearing wins; falling back to the cached tee->green
+    `intel.approach_bearing_deg` (honest None on an unmapped hole) when the
+    caller doesn't have one. `None` end to end (today's every existing
+    fixture) omits the kwarg entirely, so `recommend_payload` keeps its own
+    0.0 default and every current test stays byte-identical. A live GPS
+    player-bearing doesn't reach the server today, so mid-hole this is the
+    tee->green approximation, not the true player->green bearing — honest
+    and bounded (plan §8.5).
 
     Side effect (intended, inherited from `recommend_payload`):
     `sessions.set_recommendation` persists, so both mouths' "Last
@@ -159,6 +175,16 @@ async def build_strategy_payload(
             resolved_yards = intel.yards if intel is not None else None
             resolved_basis = None
 
+        bearing_used = (
+            shot_bearing_deg
+            if shot_bearing_deg is not None
+            else (intel.approach_bearing_deg if intel is not None else None)
+        )
+
+        recommend_kwargs: dict = {}
+        if bearing_used is not None:
+            recommend_kwargs["shot_bearing"] = bearing_used
+
         recommendation = await recommend_payload(
             session,
             round_id,
@@ -166,6 +192,7 @@ async def build_strategy_payload(
             par=intel.par if intel is not None else 4,
             yards=resolved_yards,
             yardage_basis=resolved_basis,
+            **recommend_kwargs,
         )
 
         # Read-time verdict gate (specs/caddie-two-tier-routing-plan.md §5) —
@@ -197,9 +224,21 @@ async def build_strategy_payload(
                 guide.local_lore, intel.hazards if intel is not None else []
             )
 
+        # Wind-vs-shot-line frame (caddie-bench-cycle2-plan.md §2.2), computed
+        # ONCE here — `conditions_payload` is shared with several other
+        # callers (§1.4) and is NOT touched for wind. Honest by design: `None`
+        # when there's no weather, no resolvable bearing, or the wind is calm
+        # (`relative_wind`'s own gates) — never a fabricated frame.
+        wind_relative: Optional[dict] = None
+        if session.weather is not None and bearing_used is not None:
+            rw = relative_wind(session.weather, bearing_used)
+            if rw is not None:
+                wind_relative = rw._asdict()
+
         return {
             "hole_number": hole_number,
             "recommendation": recommendation,
+            "wind_relative": wind_relative,
             "conditions": conditions_payload(session, hole_number),
             # from_distance_yards (approach-solve plan §1.5): the SAME
             # resolved_yards recommend_payload just solved against — carries
@@ -227,6 +266,7 @@ async def build_strategy_payload(
             "recommendation": {
                 "error": "Strategy engine hit an unexpected error putting this hole's numbers together.",
             },
+            "wind_relative": None,
             "conditions": {},
             "carries": {},
             "bend": {},
@@ -314,6 +354,19 @@ def format_strategy_ground_truth(payload: dict) -> str:
         )
     else:
         lines.append("  Weather: not available.")
+    wind_relative = payload.get("wind_relative")
+    if wind_relative:
+        # Wind decomposed against the SHOT LINE (caddie-bench-cycle2-plan.md
+        # §2.3) — the raw compass Weather line above is zero-signal for
+        # crosswind since the model is never shown the bearing to do trig
+        # against; this embedded-directive line hands it the ANSWER instead
+        # (same pattern as "SPEAK THIS NUMBER" / the COMPLETE-list hazard
+        # line). Omitted entirely when None (calm / no weather / no
+        # resolvable bearing) — never a fabricated frame.
+        lines.append(
+            f"  Wind for this shot: {wind_relative['spoken']}. "
+            "State how it shapes the club, target, or aim."
+        )
     plays_like = conditions.get("plays_like")
     if plays_like:
         lines.append(

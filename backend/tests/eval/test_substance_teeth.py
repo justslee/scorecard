@@ -41,6 +41,26 @@ def test_extract_substance_parses_club_yardage_and_hazard():
     assert substance.hazards == frozenset({"bunker"})
 
 
+def test_extract_substance_does_not_extract_mph_as_yardage():
+    """caddie-bench-cycle2-plan.md §3.2: wind speed ("15 mph") must never
+    false-positive as a yardage — the exact "3-digit wind heading" false-
+    positive class the README already flags, now hit for real once wind-
+    aware answers speak mph. The real distance (160) is still extracted."""
+    answer = "needs 160, wind is 15 mph"
+    substance = extract_substance(answer, _CLUB_DISTANCES)
+    assert substance.yardages == (160,)
+
+
+def test_extract_substance_still_extracts_bare_compass_heading():
+    """A bare 3-digit compass heading (no "mph" suffix) is unchanged — the
+    lookahead only excludes the mph-suffixed case."""
+    answer = "wind is coming from 210 degrees at 15 mph, needs 160"
+    substance = extract_substance(answer, _CLUB_DISTANCES)
+    assert 210 in substance.yardages
+    assert 160 in substance.yardages
+    assert 15 not in substance.yardages
+
+
 def test_extract_substance_club_recognizes_spelled_out_forms_not_just_endorsed():
     """Pin (P4, caddie-consistency-probe-substance-coverage part a): the
     digit-word aliasing (checks.py `_DIGIT_WORDS`) already handles spelled

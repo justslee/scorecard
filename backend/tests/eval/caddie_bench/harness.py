@@ -430,6 +430,10 @@ async def run_case(
             result = await run_strategy_turn(
                 session, "bench", "bench-user", fx.hole_number,
                 distance_to_green_yards=distance, yardage_basis=None,
+                # caddie-bench-cycle2-plan.md §2.2: thread the SAME bearing
+                # engine_ref above solved with, so the live-path solve and
+                # the bench oracle agree by construction on windy holes.
+                shot_bearing_deg=resolved.shot_bearing_deg,
             )
         latency_ms = (time.monotonic() - start) * 1000
         answer = result.get("strategy") or ""

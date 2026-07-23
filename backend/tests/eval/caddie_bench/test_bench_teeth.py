@@ -92,6 +92,22 @@ def test_numbers_close_goes_red_on_off_by_40_leave():
     assert not mutant_result.passed, "an off-by-40 leave number must go RED"
 
 
+def test_numbers_close_ignores_mph_wind_speed_never_false_reds_on_it():
+    """caddie-bench-cycle2-plan.md §3.2: a wind-aware answer ("15 mph
+    headwind") must never false-RED check_numbers_close just because a
+    2-3 digit mph figure isn't near any engine number — proven by adding
+    the wind clause to an otherwise-grounded answer and confirming it still
+    PASSES."""
+    fx = _fixture("bethpage_black_h5.json")
+    resolved, engine_ref, hazards, clubs = _engine_and_hazards(fx, LieCategory.TEE)
+    real_leave = engine_ref.tee_shot_numbers.leave_yards if engine_ref.tee_shot_numbers else engine_ref.leave_yards
+    assert real_leave is not None, "sanity: need a real leave number"
+
+    good_answer = f"{engine_ref.club} off the tee, leaves about {real_leave} in. 15 mph headwind — into you."
+    result = harness.check_numbers_close(good_answer, hazards, engine_ref, clubs)
+    assert result.passed, f"a wind-mph clause must never false-RED numbers_close ({result.detail})"
+
+
 # ── approach-solve plan §4.3 teeth ──────────────────────────────────────
 
 

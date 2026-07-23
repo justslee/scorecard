@@ -242,6 +242,99 @@ async def test_ground_truth_approach_turn_still_byte_identical_across_two_calls(
     )
 
 
+# ── Wind-relative ground truth (caddie-bench-cycle2-plan.md §2) ──────────
+# Fix B: raw-compass Weather was zero-signal for crosswind (the model is
+# never shown the bearing to do trig against). Every existing fixture above
+# never sets `HoleIntelligence.approach_bearing_deg`, so `bearing_used`
+# resolves to None and these lines stay absent — the byte-identity claim is
+# exercised by the existing tests above continuing to pass unmodified; these
+# new tests exercise the OPT-IN path explicitly.
+
+
+def _hole7_intel_with_bearing(bearing_deg: float) -> dict[int, HoleIntelligence]:
+    return {
+        7: HoleIntelligence(
+            hole_number=7, par=4, yards=400, approach_bearing_deg=bearing_deg,
+            hazards=[], green_slope=GreenSlope(description="flat"),
+        )
+    }
+
+
+async def test_ground_truth_wind_line_present_when_bearing_and_wind_both_known():
+    """A hole with a mapped tee->green bearing + a non-calm wind renders the
+    from-the-shot-line wind directive right after the (unchanged) Weather
+    line — the whole point of Fix B."""
+    session = _session(
+        hole_intel=_hole7_intel_with_bearing(0.0),
+        club_distances={"driver": 300, "7iron": 160},
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=20.0, wind_direction=0),
+    )
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150,
+    )
+    assert payload["wind_relative"] is not None
+    assert payload["wind_relative"]["bucket"] == "head"
+
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    weather_idx = block.index("Weather:")
+    wind_idx = block.index("Wind for this shot:")
+    assert wind_idx > weather_idx  # ADDED after, never replacing
+    assert (
+        "Wind for this shot: 20 mph headwind — into you. "
+        "State how it shapes the club, target, or aim."
+    ) in block
+
+
+async def test_ground_truth_wind_line_omitted_when_bearing_unmapped():
+    """Every existing fixture never sets `approach_bearing_deg` — the wind
+    line must stay absent (byte-identical to today) even with a real wind."""
+    payload = await _fixture_payload_approach(wind_mph=20.0)
+    assert payload["wind_relative"] is None
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Wind for this shot:" not in block
+
+
+async def test_ground_truth_wind_line_omitted_when_calm():
+    session = _session(
+        hole_intel=_hole7_intel_with_bearing(0.0),
+        club_distances={"driver": 300, "7iron": 160},
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=0.0, wind_direction=0),
+    )
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150,
+    )
+    assert payload["wind_relative"] is None
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Wind for this shot:" not in block
+
+
+async def test_ground_truth_wind_line_omitted_when_no_weather_at_all():
+    session = _session(hole_intel=_hole7_intel_with_bearing(0.0), club_distances={}, weather=None)
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150,
+    )
+    assert payload["wind_relative"] is None
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Wind for this shot:" not in block
+
+
+async def test_build_strategy_payload_threads_explicit_shot_bearing_over_intel_fallback():
+    """The caller-supplied `shot_bearing_deg` wins over the cached tee->green
+    `intel.approach_bearing_deg` fallback — pins the ladder order."""
+    session = _session(
+        hole_intel=_hole7_intel_with_bearing(0.0),  # intel says due-north
+        club_distances={"driver": 300, "7iron": 160},
+        # Wind FROM 90 relative to a due-north shot is a pure crosswind, but
+        # relative to a 90-degree shot bearing (the CALLER's value) it's a
+        # headwind — proves the caller value was actually used.
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=15.0, wind_direction=90),
+    )
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150, shot_bearing_deg=90.0,
+    )
+    assert payload["wind_relative"]["bucket"] == "head"
+
+
 # ── System prompt contract pins ──────────────────────────────────────────
 
 
@@ -879,6 +972,32 @@ def test_compose_degraded_line_competition_legal_none_carry_uses_stored_phrasing
     assert "None" not in line
     assert "plays like" not in line
     assert line == "Driver off the tee — 430 to the green; 285 stored, leaves about 145 in. Favor the right."
+
+
+def test_compose_degraded_line_omits_wind_clause_by_default():
+    """`wind_relative` defaults to None — every existing call site above
+    stays byte-identical (proven by the pins above being unmodified)."""
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, _CLEAN_APPROACH_CARRIES)
+    assert "Wind:" not in line
+    assert line == "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
+
+
+def test_compose_degraded_line_appends_wind_clause_when_present():
+    """caddie-bench-cycle2-plan.md §2.4 — a degraded answer used to auto-fail
+    WIND_AWARENESS with zero wind language; the clause is fields-only and
+    appended after the hazard clause, before the green-read clause."""
+    wind_relative = {
+        "speed_mph": 15.0, "head_mph": 0.0, "cross_mph": 15.0,
+        "bucket": "cross_right", "spoken": "15 mph crosswind off the right — pushes it left",
+    }
+    line = compose_degraded_line(
+        _CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, _CLEAN_APPROACH_CARRIES, wind_relative,
+    )
+    assert "Wind: 15 mph crosswind off the right — pushes it left." in line
+    assert line == (
+        "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
+        " Wind: 15 mph crosswind off the right — pushes it left."
+    )
 
 
 # ── Route-level tests: POST /session/strategy (Task A, QA-found gap) ───────
