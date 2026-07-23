@@ -48,7 +48,20 @@ results.jsonl on box i-0826ae70df62d9fe8 via read-only SSM). Written to
 - DEFECT 3 (wind 38%): plays-like computed but not spoken; +63y magnitude suspect (physics.py, tee-parity risk).
 - MEASUREMENT CONFOUND: judge.py:44/84 conflates approach with positioning -> depresses shot_reachability
   (34%)+miss_side. Judge-clarity fix must re-score baseline to stay apples-to-apples; land engine first.
-Fable plan DONE @f1f3cc9 (specs/caddie-approach-solve-plan.md). AWAITING BUILDER on lane
+## AWAITING (2026-07-23) — reviewer(fable)+qa on caddie approach-solve engine @ba06409
+Builder DONE (da1c25e code, ba06409 progress) on lane worktree-agent-a332d46ac24fb510d: plan
+sections 0-4+6; ruff clean, 3175 passed/0 failed (test_green_slope_ingest pre-existing asyncio
+flake, verified on base); DEFECT 1 proven RED->GREEN (Black-4 495->"about 160 from you"), Pebble-3
+suppressed; tee parity byte-identical. One accepted deviation: EnRouteFromPlayer got a 4th field
+`suppressed` (plan said 3) to distinguish no-trouble vs cleared — fixed a pin the plan wrongly
+assumed offset-0 (test_passed_hazard_on_approach_not_carry_relevant, offset 250). AWAITING fresh
+reviewer(FABLE, correctness-critical carry math) + qa (gates + bench offline). On return: iterate on
+BLOCKING only -> ff lane into integration/next -> update PR #154 (NOTICEABLE "caddie: approach-shot
+engine") -> on-box failing-subset delta re-run (--only-failures 20260722-145448 --render-mode vector,
+~$5, SSM boto3 uv run python, i-0826ae70df62d9fe8, /tmp/benchwt_1784730879/...). On resume reconcile
+from lane (git log), do NOT re-run a finished child.
+
+## SUPERSEDED — Fable plan DONE @f1f3cc9 (specs/caddie-approach-solve-plan.md). Builder on lane
 branch worktree-agent-a332d46ac24fb510d (worktree agent-a332d46ac24fb510d) implementing plan
 sections 0-4 + tests (ENGINE PR: DEFECT 1/2/3 + carries_payload from-you frame + bench validator
 extensions incl. APPROACH_MISS_SIDE_PIN). EXCLUDED this pass: judge-clarity fix (plan section 5 step 2,
