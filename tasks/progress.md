@@ -2088,3 +2088,18 @@ offline gates, already green above) before this is ready to fold into the next o
 ship. This is a SILENT change on its own (bench/eval infra + prompt-text/physics-accuracy fix, no new
 user-facing capability) unless the owner wants to be pinged that caddie wind/hazard answers changed.
 Resume: git log origin/integration/next @4e8bf1a; the next step is review, not more building.
+
+## AWAITING — reviewer(fable) + qa on caddie-bench cycle2 @2eb5e65 (2026-07-23)
+Builder landed 4 commits (55f7bf2 physics.relative_wind, 0179785 wind-bearing threading, 6d057b1
+hazards_line from-you reframe, 4e8bf1a degraded cap/dedupe) on origin/integration/next @2eb5e65.
+Offline gates green: ruff clean, pytest 3220 passed / 154 skipped(DB) / 36 deselected (green_slope
+flake), tsc clean, voice smoke 278/0. +19 tests, zero regressions. One noted deviation: relative_wind
+uses >=135 for tail to satisfy plan §4 edge-case-9 pin (135->tail), resolving an internal §2.1/§4
+inconsistency — reviewer verify.
+Review diff = 2eb5e65 vs 1d13684 (the plan commit's child; i.e. the 4 builder commits).
+AWAITING: reviewer (fable, adversarial — frame correctness BY EXECUTION, tee/default byte-identity,
+NO judge weakening, the boundary deviation, the shot_bearing live-solve change) + qa (full offline
+gates rerun; NO live bench). On reviewer SHIP + qa PASS with no BLOCKING: update PR #154 checklist
+(silent item) + backlog + progress; then package the two on-box run commands for the coordinator; do
+NOT ship/ping. BLOCKING -> re-dispatch builder. Resume: git log origin/integration/next; act on
+verdicts, don't re-run finished children.
