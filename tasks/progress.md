@@ -3,6 +3,39 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-23) — caddie approach-shot solve ENGINE FIX (builder, lane worktree-agent-a332d46ac24fb510d)
+Implemented `specs/caddie-approach-solve-plan.md` sections 0-4 + section 6 tests, commit
+`da1c25e` on top of `68ce5e0`/`f1f3cc9`. Scope matched the eng-lead brief exactly (judge-clarity
+fix and lie plumbing correctly left out). Files: `backend/app/caddie/aim_point.py` (§0 constants,
+`EnRouteFromPlayer`/`en_route_from_player`, DEFECT 1 at both call sites, DEFECT 2
+`compute_miss_side(distance_yards=)` + "Around the green" P2 line, DEFECT 3 wind P1 line),
+`backend/app/caddie/strategy.py` (RECOMMENDATION ground-truth binds plays-like+adjustments+miss
+evidence, CARRIES section from-you frame), `backend/app/caddie/tools.py`
+(`carries_payload(from_distance_yards=)`), `backend/app/caddie/strategy_turn.py`
+(`compose_degraded_line` + `numbers.carries` prefer from-you), bench harness/schema/judge
+(`check_numbers_close` frame correction, new `APPROACH_MISS_SIDE_PIN` det-check + teeth), plus
+new `backend/tests/test_approach_frame.py` (Black-4 + Pebble-3 repros, offset 24/25 boundary,
+miss-side matrix, wind binding, carries from-you frame) and a physics wind-band diagnostic in
+`test_physics.py` (measured ~30% at 20mph/180y, inside the flagged <=40% band — no physics.py
+constants touched).
+One deviation from the literal plan, noted in the commit message: `EnRouteFromPlayer` needed a
+4th field `suppressed: bool` (the plan specified only 3) to distinguish "genuinely no trouble
+ahead" from "trouble existed but got suppressed as cleared" — without it,
+`test_passed_hazard_on_approach_not_carry_relevant` (a pinned offset-250 test, contradicting the
+plan's claim that all pinned tests are offset-0) broke. Fixed, then it and all 747 tee-parity
+tests pass byte-identical.
+Verified RED->GREEN for DEFECT 1 by running the Black-4 case against the checked-out OLD
+`aim_point.py` (git show 68ce5e0): old wiring speaks "Bunker at 495 between you and the green" —
+495 is the tee-frame carry, wrong. New wiring speaks "about 160 ... from you" in both the aim
+description and the reasoning line, same number.
+Gates: `ruff check .` clean; `pytest tests/ -q --deselect tests/test_green_slope_ingest.py` ->
+3175 passed / 154 skipped / 0 failed. `test_green_slope_ingest.py` (8 tests) has a pre-existing,
+order-dependent asyncio-event-loop flake unrelated to this change — reproduces identically on the
+unmodified base commit (verified via `git stash`) and passes 100% in isolation; not touched, not
+this PR's to fix. Did NOT run the on-box bench or SSM delta measurement (eng-lead owns per brief).
+Handoff: reviewer (fresh, ideally fable for the carry-math correctness) + qa next, then ff into
+`integration/next`, then the on-box `--only-failures 20260722-145448` re-run.
+
 ## AWAITING (2026-07-23) — caddie approach-shot solve, cycle-1 fix loop (fable plan next)
 Diagnosis VERIFIED from prod run `20260722-145448` (pulled engine_ref + judge reasons from
 results.jsonl on box i-0826ae70df62d9fe8 via read-only SSM). Written to
