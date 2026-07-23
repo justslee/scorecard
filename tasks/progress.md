@@ -15,11 +15,17 @@ results.jsonl on box i-0826ae70df62d9fe8 via read-only SSM). Written to
 - DEFECT 3 (wind 38%): plays-like computed but not spoken; +63y magnitude suspect (physics.py, tee-parity risk).
 - MEASUREMENT CONFOUND: judge.py:44/84 conflates approach with positioning -> depresses shot_reachability
   (34%)+miss_side. Judge-clarity fix must re-score baseline to stay apples-to-apples; land engine first.
-NEXT: Fable Plan (specs/caddie-approach-solve-plan.md) -> builder on integration/next -> reviewer
-(fresh, adversarial: numbers close, no tee regression, honest heuristics) -> qa (gates + bench offline)
--> re-run failing subset on-box (--only-failures 20260722-145448 --render-mode vector, ~$5) + delta.
-On resume: reconcile from lane branch (reset to integration/next tip 6f83247, then continue);
-do NOT re-run a finished child. Bundle PR #154 checklist item = NOTICEABLE "caddie: approach-shot engine".
+Fable plan DONE @f1f3cc9 (specs/caddie-approach-solve-plan.md). AWAITING BUILDER on lane
+branch worktree-agent-a332d46ac24fb510d (worktree agent-a332d46ac24fb510d) implementing plan
+sections 0-4 + tests (ENGINE PR: DEFECT 1/2/3 + carries_payload from-you frame + bench validator
+extensions incl. APPROACH_MISS_SIDE_PIN). EXCLUDED this pass: judge-clarity fix (plan section 5 step 2,
+separate re-scored PR) and lie plumbing (1.6, cycle 2). Builder commits on the lane, does NOT push
+main / open PR / run on-box bench. On builder return: reviewer(fresh, fable for the correctness-critical
+carry math) + qa(gates + bench offline) in parallel -> iterate -> ff lane into integration/next ->
+update PR #154 checklist NOTICEABLE "caddie: approach-shot engine" -> on-box failing-subset delta re-run
+(--only-failures 20260722-145448 --render-mode vector, ~$5) via SSM boto3 (uv run python), instance
+i-0826ae70df62d9fe8, run dir /tmp/benchwt_1784730879/... On resume: reconcile from lane
+(git log worktree branch), do NOT re-run a finished child.
 
 ## DONE (2026-07-22) — live-synth wrapper recursion FIXED (builder, silent rider)
 Fixed the BLOCKING bug from the AWAITING entry below. Seam: `run_caddie_bench.py`'s
