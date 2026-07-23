@@ -3,6 +3,24 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (2026-07-23) — caddie approach-shot solve, cycle-1 fix loop (fable plan next)
+Diagnosis VERIFIED from prod run `20260722-145448` (pulled engine_ref + judge reasons from
+results.jsonl on box i-0826ae70df62d9fe8 via read-only SSM). Written to
+`specs/caddie-approach-solve-diagnosis.md`. Root cause is IN THE ENGINE, not the brain:
+- DEFECT 1 (dominant, ~all wrong_numbers): `aim_point.py:1263` speaks a hazard's TEE-anchored
+  `carry_yards` as if it were a from-here carry ("Bunker at 495 between you and the green" on a
+  182y approach). Fix = speak player-relative carry (carry_yards - tee_offset) + suppress trivial.
+- DEFECT 2 (miss_side_evidence 33%): `compute_miss_side` picks the right side but its description
+  never NAMES the per-side hazard evidence -> brain says "favor right" with no "because bunker left".
+- DEFECT 3 (wind 38%): plays-like computed but not spoken; +63y magnitude suspect (physics.py, tee-parity risk).
+- MEASUREMENT CONFOUND: judge.py:44/84 conflates approach with positioning -> depresses shot_reachability
+  (34%)+miss_side. Judge-clarity fix must re-score baseline to stay apples-to-apples; land engine first.
+NEXT: Fable Plan (specs/caddie-approach-solve-plan.md) -> builder on integration/next -> reviewer
+(fresh, adversarial: numbers close, no tee regression, honest heuristics) -> qa (gates + bench offline)
+-> re-run failing subset on-box (--only-failures 20260722-145448 --render-mode vector, ~$5) + delta.
+On resume: reconcile from lane branch (reset to integration/next tip 6f83247, then continue);
+do NOT re-run a finished child. Bundle PR #154 checklist item = NOTICEABLE "caddie: approach-shot engine".
+
 ## DONE (2026-07-22) — live-synth wrapper recursion FIXED (builder, silent rider)
 Fixed the BLOCKING bug from the AWAITING entry below. Seam: `run_caddie_bench.py`'s
 `_LiveSynth.__call__` did `from app.caddie.strategy import synthesize_strategy as
