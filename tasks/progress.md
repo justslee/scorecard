@@ -2103,3 +2103,20 @@ gates rerun; NO live bench). On reviewer SHIP + qa PASS with no BLOCKING: update
 (silent item) + backlog + progress; then package the two on-box run commands for the coordinator; do
 NOT ship/ping. BLOCKING -> re-dispatch builder. Resume: git log origin/integration/next; act on
 verdicts, don't re-run finished children.
+
+## DONE this cycle — caddie-bench CYCLE 2 landed @2eb5e65 (reviewer SHIP + qa PASS) (2026-07-23)
+Two scoped fixes for cycle-1's regression (degrade spike 8->20%, wind flat): (A) hazards_line from-you
+reframe -> single hazard frame (kills the tee/from-you dual-frame -> validator-reject -> robotic
+compose_degraded_line fallback chain), cap+dedupe the degraded line; (B) physics.relative_wind
+head/tail/cross spoken frame + shot_bearing_deg threading (also fixes a live-vs-bench shot_bearing=0.0
+mismatch the planner found). 4 commits (55f7bf2/0179785/6d057b1/4e8bf1a). Fable reviewer SHIP — proved
+by execution: hazards_line<->carries number+suppression parity (517y hole), tee/default byte-identity vs
+1d13684, CROSS_15->cross_right + INTO_20->head on real presets, 3600-sample bucket partition exact,
+judge.py + bench fixtures EMPTY-diff, mph lookahead extracts a strict subset. qa PASS: ruff clean,
+pytest 3220 passed / 154 DB-skip / 36 deselected, tsc clean, voice 278/0, +19 tests zero regressions.
+752 tee-parity pins byte-identical; judge unchanged, no det-check weakened. 3 non-blocking nits filed
+(case-sensitive mph lookahead; wind_dir `or 0` unreachable; aim_point RECOMMENDATION-line rounded-vs-raw
+suppression divergence -> cycle-3). Records: backlog caddie-approach-shot-engine resolution += CYCLE-2;
+PR #154 checklist += cycle-2 noticeable + silent lines + follow-up updated. NOT shipped/pinged (per
+directive). Coordinator gets the two packaged on-box run commands (failing-subset + fresh full-150) as
+the headline before/after evidence; the cycle-2 ceiling is now fixed so the delta measures the real gain.
