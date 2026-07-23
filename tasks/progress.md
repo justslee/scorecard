@@ -48,7 +48,28 @@ results.jsonl on box i-0826ae70df62d9fe8 via read-only SSM). Written to
 - DEFECT 3 (wind 38%): plays-like computed but not spoken; +63y magnitude suspect (physics.py, tee-parity risk).
 - MEASUREMENT CONFOUND: judge.py:44/84 conflates approach with positioning -> depresses shot_reachability
   (34%)+miss_side. Judge-clarity fix must re-score baseline to stay apples-to-apples; land engine first.
-## AWAITING (2026-07-23) — reviewer(fable)+qa on caddie approach-solve engine @ba06409
+## AWAITING (2026-07-23) — builder B1 fix (reviewer BLOCK) on caddie approach-solve
+qa PASS (ruff clean; 3203 passed; 8 test_green_slope_ingest failures = pre-existing asyncio flake,
+confirmed identical on base 6f83247; both DEFECT repros reproduced independently; wind band 30.6%<40%).
+reviewer(fable) = BLOCK on ONE finding B1 + accepted the rest as sound (carry math, tee parity,
+validator teeth all held under attack; suppressed 4th field sound; scope clean, no security surface).
+B1: carries_payload re-frames on GEOMETRY (offset>=25, any shot_kind) so the ground-truth prompt speaks
+"about N from you" on mid-hole POSITIONING turns too, but check_numbers_close only learns from-here
+numbers when shot_kind=="approach" -> a faithful positioning answer goes falsely RED (repro: 600y hole,
+320 out, water carry 400 -> prompt "about 120 from you" -> RED). Biases the bench AGAINST the change on
+the measured Pareto. FIX = reviewer option (a): gate check_numbers_close frame-correction on the same
+geometric predicate (hole_yards-raw_yards>=25), drop the shot_kind test (keeps from-you carries correct
+on positioning turns; tee offset-0 = no-op so never looser on tee); audit that the positioning prompt
+path (cross_hazard_line/decade_landing_advice) doesn't legitimately still feed a raw tee-frame carry
+before removing it; add a positioning-turn teeth/unit test. ALSO fix cheap nits 2 (_greenside_hazards_line
+front/back -> "short of the green"/"long" per plan 1.3), 3 (don't add suppressed <20 carries to known
+set), 4 (miss-evidence join grammar/period). Nit 1 (tee-framed hazards_line "COMPLETE list" still feeds
+495 to approach turns) -> builder ASSESSES: reframe if a clean parallel to carries_payload, else defer
+cycle-2 with a flag. Builder = agentId a73c324b8f5cb87b7 (SendMessage, keeps context). On builder return:
+re-run qa on the delta + quick reviewer confirm of B1 -> ff lane into integration/next -> PR #154 -> on-box
+delta. On resume reconcile from lane (git log), do NOT re-run finished children.
+
+## SUPERSEDED — reviewer(fable)+qa on caddie approach-solve engine @ba06409
 Builder DONE (da1c25e code, ba06409 progress) on lane worktree-agent-a332d46ac24fb510d: plan
 sections 0-4+6; ruff clean, 3175 passed/0 failed (test_green_slope_ingest pre-existing asyncio
 flake, verified on base); DEFECT 1 proven RED->GREEN (Black-4 495->"about 160 from you"), Pebble-3
