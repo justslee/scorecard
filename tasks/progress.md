@@ -41,9 +41,22 @@ instance i-0826ae70df62d9fe8, doc AWS-RunShellScript, helper scratchpad/ssm.sh).
 5. **JUDGE NOISE contested 40.1%** — re-judge ~30-case double-pass on-box (~$1.5) → per-dim variance →
    implied score CEILING (frames owner's 100% goal; never tune judge toward agreement).
 
-### AWAITING: Fable Plan agent (specs/caddie-bench-cycle3-plan.md). On return → dispatch builder on
-integration/next. Nothing committed by children yet. Reconcile from branch on resume: `git log
-origin/integration/next`; the diagnosis above is the contract for the plan.
+### Fable plan DONE → saved to `specs/caddie-bench-cycle3-plan.md` (committed). 5-commit sequence:
+(1) shot_reachability N/A off positioning [report.py aggregation + judge.py prompt/rubric/gloss +
+should_second_pass guard] — the +4.7pt centerpiece, zero behavior change; (2) degrade-reason
+instrumentation [strategy.py validate_with_reason + strategy_turn.py degrade_reason key OFF the wire
++ schema.py/harness.py/run_caddie_bench.py CaseResult fields + report.py degrade section]; (3)
+judge_noise.py double-pass measurement tool; (4) compute_miss_side honest front/back (gated on
+approach_framed+both-open, byte-identity elsewhere); (5) drive_zone_hazards roll-segment window fix
+(decade_advice.py:458) — rides ONLY if the 138-case engine_ref diff audit is clean, else defers.
+Root cause for #5 traced by Fable: `long_edge = min(carry, total)+30` structurally excludes the
+roll segment (carry+30, total], hiding a bunker-at-215 inside a 229 landing zone.
+
+### AWAITING: builder implementing specs/caddie-bench-cycle3-plan.md on integration/next (its own
+worktree). On return: reviewer (fresh adversarial, prove the judge-clarity fix a correctness fix
+with case evidence) + qa (offline caddie_bench suite + named engine tests, zero deselects). Then
+package the 3 coordinator commands (report-regen, full-150 re-run, judge-noise). Reconcile from
+branch: `git log origin/integration/next` — builder commits land there directly.
 
 ## DONE (2026-07-23) — caddie approach-solve B1 fix + nits (builder, lane worktree-agent-a332d46ac24fb510d)
 Fixed the ONE BLOCKING fable-review finding + nits, commit `a8633f3` on top of `c96e529`.
