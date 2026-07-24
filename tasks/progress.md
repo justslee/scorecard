@@ -52,11 +52,25 @@ approach_framed+both-open, byte-identity elsewhere); (5) drive_zone_hazards roll
 Root cause for #5 traced by Fable: `long_edge = min(carry, total)+30` structurally excludes the
 roll segment (carry+30, total], hiding a bunker-at-215 inside a 229 landing zone.
 
-### AWAITING: builder implementing specs/caddie-bench-cycle3-plan.md on integration/next (its own
-worktree). On return: reviewer (fresh adversarial, prove the judge-clarity fix a correctness fix
-with case evidence) + qa (offline caddie_bench suite + named engine tests, zero deselects). Then
-package the 3 coordinator commands (report-regen, full-150 re-run, judge-noise). Reconcile from
-branch: `git log origin/integration/next` — builder commits land there directly.
+### Builder DONE — all 5 commits landed on integration/next: d880a13 (c1 shot_reachability N/A),
+94e9403 (c2 degrade instrumentation), 46b0486 (c3 judge_noise tool), 344a5e9 (c4 miss_side honest
+front/back), 0b9a5cb (c5 drive_zone roll-segment — RODE after a clean 138-case audit: only 2/138
+diffs, both h18/short_hitter miss_side-only). Head @ deecefd. Builder gate evidence all green
+(offline bench 81 passed, tests/eval 322, named engine suites green). Builder FLAGGED a
+plan-accuracy discrepancy on c5: the plan's h18/bunker-215 headline example was actually a
+SHORT-edge exclusion unrelated to c5's LONG-edge fix, and "carry ≤ total always" fails under
+headwind — builder says fix is still sound (fallback byte-identical there) but this is a reviewer
+scrutiny item: did c5 advance Target 2b or fix a real-but-different thing?
+
+### AWAITING: reviewer (opus, adversarial 223cb54..deecefd — special scrutiny on c1 correctness-vs-
+weakening proof + c5 flagged discrepancy) AND qa (sonnet, offline gates, zero deselects), both in
+flight. On BOTH returning:
+  - reviewer SHIP + qa GREEN → open the bundle PR (integration/next→main, NOTICEABLE "caddie bench
+    cycle 3"), update backlog, package the 3 coordinator commands (report-regen proof / full-150
+    re-run / judge-noise) for the coordinator to run on the box. Do NOT ship/ping (owner directive).
+  - BLOCKING findings → re-dispatch builder with the specifics, re-review. If reviewer says c5
+    doesn't help / adds risk → have builder revert c5 (git revert 0b9a5cb), keep c1-c4.
+Reconcile from branch on resume: `git log origin/integration/next`; children commit directly there.
 
 ## DONE (2026-07-24) — CADDIE BENCH CYCLE 3, all 5 commits landed on integration/next (builder,
 worktree agent-af9a7d851938e4ced). Head now `0b9a5cb`. All silent (no user-visible/TestFlight change
