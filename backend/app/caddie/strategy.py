@@ -717,9 +717,9 @@ def _verdict_pin_reject_reason(flat: str, recommendation: Optional[dict]) -> Opt
     return None
 
 
-def validate_strategy_text(
+def validate_strategy_text_with_reason(
     text: str, hazards: list[dict], recommendation: Optional[dict] = None,
-) -> Optional[str]:
+) -> tuple[Optional[str], Optional[str]]:
     """Deterministic, no-LLM, fail-CLOSED grounding pass — reuses `guide_
     writer`'s pure machinery (`_HAZARD_PATTERNS`, `_has_side_flip`) so the
     strategy narrative is held to the exact same anti-hallucination bar as a
@@ -734,35 +734,55 @@ def validate_strategy_text(
     `error`) the verdict pin (§6): favor-side agreement, positioning-shot
     reachability, and — on a tee-shot turn — the recommended club must be
     among any clubs named. `recommendation=None` is back-compat: byte-
-    identical to the pre-pin behavior. Returns the flattened, validated text
-    on PASS, `None` on REJECT (caller composes the degraded deterministic
-    line; [[no-fake-data-fallbacks]]) — never a partial/scrubbed edit of the
-    reply.
+    identical to the pre-pin behavior.
+
+    Returns `(validated_flat, None)` on PASS, `(None, reason)` on REJECT
+    (caller composes the degraded deterministic line;
+    [[no-fake-data-fallbacks]]) — never a partial/scrubbed edit of the
+    reply. `reason` is a CLOSED vocabulary keyed to the check order above:
+    "empty-or-overlong", "hazard-type", "side-flip", "injection", and the
+    verdict-pin reasons namespaced from `_verdict_pin_reject_reason`'s own
+    return strings: "pin:favor-side", "pin:reachability", "pin:club". This
+    is measurement instrumentation only — the DECISION (validated text or
+    None) is byte-identical to the pre-instrumentation behavior; see
+    `validate_strategy_text` below, the two-line wrapper every other caller
+    keeps using unchanged.
     """
     flat = " ".join((text or "").split())
     if not flat or len(flat) > _STRATEGY_MAX_CHARS:
-        return None
+        return None, "empty-or-overlong"
 
     lowered = flat.lower()
     allowed_types = {hz["type"] for hz in hazards}
     for canonical_type, pattern in _HAZARD_PATTERNS.items():
         if canonical_type not in allowed_types and pattern.search(lowered):
-            return None
+            return None, "hazard-type"
 
     hazards_by_type: dict[str, list[tuple[str, int]]] = {}
     for hz in hazards:
         hazards_by_type.setdefault(hz["type"], []).append((hz["line_side"], hz["carry_yards"]))
     if _has_side_flip([flat], hazards_by_type):
-        return None
+        return None, "side-flip"
 
     if GUIDE_INJECTION_PATTERN.search(flat):
-        return None
+        return None, "injection"
 
     if recommendation is not None and not recommendation.get("error"):
-        if _verdict_pin_reject_reason(flat, recommendation) is not None:
-            return None
+        pin_reason = _verdict_pin_reject_reason(flat, recommendation)
+        if pin_reason is not None:
+            return None, f"pin:{pin_reason}"
 
-    return flat
+    return flat, None
+
+
+def validate_strategy_text(
+    text: str, hazards: list[dict], recommendation: Optional[dict] = None,
+) -> Optional[str]:
+    """Byte-identical public behavior, unchanged for every other caller/test
+    — see `validate_strategy_text_with_reason` for the check order, the
+    grounding semantics, and (new) the reject-reason instrumentation."""
+    validated, _reason = validate_strategy_text_with_reason(text, hazards, recommendation)
+    return validated
 
 
 # ── Caching — in-process, module-level, keyed by payload hash ──────────────

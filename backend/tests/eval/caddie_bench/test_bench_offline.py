@@ -77,6 +77,46 @@ def test_bags_load_all_three():
     assert "driver" in bags[BagId.OWNER].clubs
 
 
+# ── cycle-3 commit 2: CaseResult schema round-trip (additive fields) ───────
+
+
+def test_case_result_old_format_line_loads_with_degrade_fields_defaulted_none(tmp_path):
+    """An old (pre-instrumentation) results.jsonl line — written before
+    `degrade_reason`/`raw_synth_text` existed — must still round-trip: the
+    two new fields default to None, `extra='forbid'` notwithstanding."""
+    old_line = json.dumps({
+        "case_id": "holeA__slot0__owner__x",
+        "resolved": {"lat": 1.0, "lng": 2.0, "lie": "tee", "distance_to_green_yards": 400.0, "shot_bearing_deg": 0.0},
+        "intent": "advice", "answer": "old-format answer", "degraded": True,
+        "engine_ref": {"club": "driver"}, "det_checks": [], "cost_usd": 0.0, "latency_ms": 100.0,
+    })
+    path = tmp_path / "old_run.jsonl"
+    path.write_text(old_line + "\n")
+
+    results = report.load_results(path)
+    assert len(results) == 1
+    assert results[0].degrade_reason is None
+    assert results[0].raw_synth_text is None
+
+
+def test_case_result_new_format_line_round_trips_degrade_fields(tmp_path):
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    result = CaseResult(
+        case_id="holeA__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1.0, lng=2.0, lie=LieCategory.TEE, distance_to_green_yards=400.0, shot_bearing_deg=0.0),
+        intent="advice", answer="new-format answer", degraded=True, engine_ref={"club": "driver"},
+        degrade_reason="validator:side-flip", raw_synth_text="the raw pre-validation text",
+    )
+    path = tmp_path / "new_run.jsonl"
+    path.write_text(result.model_dump_json() + "\n")
+
+    loaded = report.load_results(path)
+    assert len(loaded) == 1
+    assert loaded[0].degrade_reason == "validator:side-flip"
+    assert loaded[0].raw_synth_text == "the raw pre-validation text"
+
+
 # ── 2. Fixture load for all pilot holes ──────────────────────────────────
 
 
@@ -626,6 +666,54 @@ def test_det_check_weight_constant_was_removed():
     assert not hasattr(schema_mod, "DET_CHECK_WEIGHT")
 
 
+# ── cycle-3 commit 2: degrade_reason_counts headline ────────────────────────
+
+
+def test_compute_headline_degrade_reason_counts_categorizes_and_buckets_unknown():
+    """Two instrumented degrades (one validator, one exception), one
+    pre-instrumentation degrade (degraded=True, degrade_reason=None -- must
+    bucket under "unknown(pre-instrumentation)", never be silently dropped),
+    and one non-degraded case (must not appear at all)."""
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    def _r(case_id, degraded, degrade_reason):
+        return CaseResult(
+            case_id=case_id,
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="x", degraded=degraded, engine_ref={"club": "driver"},
+            degrade_reason=degrade_reason,
+        )
+
+    results = [
+        _r("holeA__slot0__owner__x", True, "validator:side-flip"),
+        _r("holeB__slot0__owner__x", True, "exception:RuntimeError"),
+        _r("holeC__slot0__owner__x", True, None),  # pre-instrumentation
+        _r("holeD__slot0__owner__x", False, None),  # not degraded at all
+    ]
+    headline = report.compute_headline(results)
+    assert headline.degrade_reason_counts == {
+        "validator:side-flip": 1, "exception:RuntimeError": 1, "unknown(pre-instrumentation)": 1,
+    }
+    assert sum(headline.degrade_reason_counts.values()) == sum(1 for r in results if r.degraded)
+
+
+def test_generate_report_includes_a_degrade_reasons_section():
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    results = [
+        CaseResult(
+            case_id="holeA__slot0__owner__x",
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="x", degraded=True, engine_ref={"club": "driver"},
+            degrade_reason="validator:hazard-type",
+        ),
+    ]
+    meta = report.RunMeta(run_id="degrade-reasons-test", case_count=len(results))
+    text = report.generate_report(results, meta)
+    assert "## Degrade reasons" in text
+    assert "validator:hazard-type" in text
+
+
 # ── 8. LIVE-synth recursion fix + real-call canary + --render-mode ─────────
 #
 # A live smoke test found `run_caddie_bench._LiveSynth` recursing into
@@ -690,6 +778,57 @@ async def test_live_synth_wrapper_delegates_to_the_saved_original_exactly_once_n
     assert cost_log[0]["model"] == "gpt-5.6-sol"
     assert synth.last_latency_ms >= 0.0
     assert synth.last_cost_usd > 0.0
+
+
+async def test_run_reconstruction_propagates_degrade_reason_and_raw_synth_text(monkeypatch, tmp_path):
+    """Teeth pin (cycle-3 commit 2): the explicit `CaseResult(...)`
+    reconstruction inside `run()` is the silent-drop trap — if a future edit
+    forgets to copy `degrade_reason`/`raw_synth_text` from `harness.run_case`'s
+    result onto `final`, this test goes RED (the JSONL line loses both
+    fields on a real degrade). End-to-end through the real `run()`, with the
+    synth + judge seams stubbed so it stays fully offline."""
+    import argparse
+
+    from app.caddie import strategy as strategy_mod
+
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.setattr(run_caddie_bench, "RUNS_DIR", tmp_path)
+
+    # A rejectable narrative: pebble_beach_h3 has no mapped water (sanity
+    # pinned by test_hazard_only_from_input_goes_red_on_ungrounded_hazard in
+    # test_bench_teeth.py), so naming "water" trips the hazard-type check
+    # deterministically -> degraded=True, degrade_reason="validator:hazard-type".
+    reject_text = "Driver off the tee, watch the water down the left, commit to the shot."
+
+    async def _stub_synth(ground_truth: str, *, model: str):
+        return reject_text, {"input_tokens": 10, "output_tokens": 10}
+
+    monkeypatch.setattr(strategy_mod, "synthesize_strategy", _stub_synth)
+
+    async def _stub_judge_case(*args, **kwargs):
+        return _canned_judge_scores("all_pass"), {"input_tokens": 5, "output_tokens": 5}
+
+    monkeypatch.setattr(run_caddie_bench.judge_mod, "judge_case", _stub_judge_case)
+
+    args = argparse.Namespace(
+        budget_usd=10.0, max_cases=1, only_failures=None, holes=["pebble_beach_h3"],
+        resume=None, min_weighted_correctness=0.0, report_out=None, render_mode="vector",
+    )
+    exit_code = await run_caddie_bench.run(args)
+    # This 1-case synthetic run is deliberately 100% degraded (that's the
+    # scenario under test) -- it correctly trips the UNRELATED real-call
+    # canary (report.py's own guard against a 100%-degraded run masquerading
+    # as real), which is irrelevant to what this test proves. Results are
+    # already written to disk by the time that check runs (see run()).
+    assert exit_code == run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID
+
+    results_path = next(tmp_path.glob("*/results.jsonl"))
+    loaded = report.load_results(results_path)
+    assert len(loaded) == 1
+    assert loaded[0].degraded is True
+    assert loaded[0].degrade_reason == "validator:hazard-type"
+    assert loaded[0].raw_synth_text == reject_text
 
 
 def test_check_real_call_canary_flags_a_synthetic_100pct_degraded_98ms_run_invalid():

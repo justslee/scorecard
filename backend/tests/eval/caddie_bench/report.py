@@ -76,6 +76,12 @@ class HeadlineStats:
     # `case_count`; without this a small positioning sample could masquerade
     # as a full-population rate in the report table.
     dimension_n: dict[str, int] = field(default_factory=dict)
+    # cycle-3 commit 2 — histogram of `CaseResult.degrade_reason` over every
+    # degraded result. Old (pre-instrumentation) results have `degraded=True`
+    # but `degrade_reason=None`, bucketed under "unknown(pre-instrumentation)"
+    # rather than silently dropped, so the count always reconciles with
+    # `degraded_rate`.
+    degrade_reason_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -172,6 +178,15 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
     degraded_rate = (sum(1 for r in results if r.degraded) / len(results)) if results else 0.0
     contested_rate = (sum(1 for r in judged if r.contested) / len(judged)) if judged else 0.0
 
+    # cycle-3 commit 2 — categorize every degraded case by its recorded
+    # `degrade_reason`; pre-instrumentation results (degraded=True,
+    # degrade_reason=None) bucket under "unknown(pre-instrumentation)" so the
+    # sum of this dict always equals the number of degraded results.
+    degrade_reason_counts: Counter = Counter(
+        r.degrade_reason if r.degrade_reason is not None else "unknown(pre-instrumentation)"
+        for r in results if r.degraded
+    )
+
     canary_results = [r for r in results if r.case_id.startswith("canary__")]
     canary_all_pass = any(
         r.judge is not None
@@ -230,6 +245,7 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
         latency_p95_ms=p95,
         failure_class_counts=dict(failure_counts),
         dimension_n=dim_n,
+        degrade_reason_counts=dict(degrade_reason_counts),
     )
 
 
@@ -329,6 +345,16 @@ def generate_report(
     lines.append("|---|---|")
     for check, rate in sorted(headline.det_check_pass_rate.items()):
         lines.append(f"| {check} | {rate:.1%} |")
+    lines.append("")
+
+    lines.append("## Degrade reasons")
+    lines.append("| Reason | Count |")
+    lines.append("|---|---|")
+    if headline.degrade_reason_counts:
+        for reason, n in sorted(headline.degrade_reason_counts.items(), key=lambda kv: -kv[1]):
+            lines.append(f"| {reason} | {n} |")
+    else:
+        lines.append("_No degraded cases._")
     lines.append("")
 
     lines.append("## Failure-class Pareto (count x lie x hole)")
