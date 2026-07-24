@@ -532,8 +532,9 @@ def test_canary_all_pass_gate_helper_matches_compute_headline():
 
 def test_run_caddie_bench_and_extract_fixtures_are_never_collected_by_pytest():
     import tests.eval.caddie_bench.extract_fixtures as extract_mod
+    import tests.eval.caddie_bench.judge_noise as judge_noise_mod
     import tests.eval.caddie_bench.run_caddie_bench as runner_mod
 
-    for mod in (extract_mod, runner_mod):
+    for mod in (extract_mod, runner_mod, judge_noise_mod):
         filename = pathlib.Path(mod.__file__).name
         assert not filename.startswith("test_"), f"{filename} must never match pytest's test_*.py glob"

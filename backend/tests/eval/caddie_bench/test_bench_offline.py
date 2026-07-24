@@ -22,7 +22,7 @@ os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 import pytest  # noqa: E402
 
 from tests.eval.caddie_bench import extract_fixtures, geometry as geo, harness  # noqa: E402
-from tests.eval.caddie_bench import questions as q  # noqa: E402
+from tests.eval.caddie_bench import judge_noise, questions as q  # noqa: E402
 from tests.eval.caddie_bench import render, report, run_caddie_bench  # noqa: E402
 from tests.eval.caddie_bench.geometry import GeometrySamplingError, _in_any, _point_in_polygon_feature  # noqa: E402
 from tests.eval.caddie_bench.schema import (  # noqa: E402
@@ -393,6 +393,152 @@ def test_extract_fixtures_refuses_without_env(monkeypatch):
 def test_pricing_table_refuses_unknown_model():
     with pytest.raises(RuntimeError, match="no pricing entry"):
         run_caddie_bench._cost_usd("not-a-real-model", 100, 10)
+
+
+# ── cycle-3 commit 3: judge_noise.py gate-refusal + filename-glob pin ──────
+
+
+def test_judge_noise_filename_does_not_match_pytest_test_glob():
+    filename = pathlib.Path(judge_noise.__file__).name
+    assert not filename.startswith("test_"), "judge_noise.py must never match pytest's test_*.py collection glob"
+
+
+def test_judge_noise_refuses_without_env(monkeypatch):
+    monkeypatch.delenv("CADDIE_EVAL_LIVE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert judge_noise.main(["--run-id", "whatever"]) == judge_noise._EXIT_GATE_REFUSAL
+
+
+def test_judge_noise_refuses_with_only_one_of_two_gates(monkeypatch):
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert judge_noise.main(["--run-id", "whatever"]) == judge_noise._EXIT_GATE_REFUSAL
+
+
+def test_judge_noise_requires_run_id_argument():
+    with pytest.raises(SystemExit):
+        judge_noise.main([])
+
+
+# ── cycle-3 commit 3: compute_noise_stats (pure, offline) ──────────────────
+
+
+def test_compute_noise_stats_respects_shot_reachability_na_and_computes_expected_arithmetic():
+    """Hand-computed double-pass sample: one positioning case (its
+    shot_reachability pair disagrees: first=2, second=0) and one approach
+    case (its OWN shot_reachability pair, first=0/second=1, must be
+    EXCLUDED entirely per Commit 1's N/A rule -- if it leaked in, it would
+    corrupt every downstream number). Every other dimension agrees cleanly
+    (2, 2) on both cases/both passes."""
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+
+    a_first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    a_second_scores = dict(all_two)
+    a_second_scores["shot_reachability"] = 0
+    a_second = JudgeScores(scores=a_second_scores, confidence=dict(all_conf), failure_class="good")
+
+    b_first_scores = dict(all_two)
+    b_first_scores["shot_reachability"] = 0  # must be EXCLUDED (case B is non-positioning)
+    b_first = JudgeScores(scores=b_first_scores, confidence=dict(all_conf), failure_class="good")
+    b_second_scores = dict(all_two)
+    b_second_scores["shot_reachability"] = 1  # must be EXCLUDED too
+    b_second = JudgeScores(scores=b_second_scores, confidence=dict(all_conf), failure_class="good")
+
+    pairs = [("caseA", a_first, a_second), ("caseB", b_first, b_second)]
+    engine_refs = {"caseA": {"shot_kind": "positioning"}, "caseB": {"shot_kind": "approach"}}
+
+    stats = judge_noise.compute_noise_stats(pairs, engine_refs)
+
+    sr = stats["per_dimension"]["shot_reachability"]
+    assert sr["n_applicable"] == 1, "only the positioning case's shot_reachability pair counts"
+    assert sr["exact_agreement_rate"] == pytest.approx(0.0)
+    assert sr["pass_flip_rate"] == pytest.approx(1.0)
+    assert sr["mean_abs_delta"] == pytest.approx(2.0)
+    assert sr["q_pass_repeat"] == pytest.approx(0.0)
+
+    nc = stats["per_dimension"]["numbers_coherence"]
+    assert nc["n_applicable"] == 2
+    assert nc["exact_agreement_rate"] == pytest.approx(1.0)
+    assert nc["pass_flip_rate"] == pytest.approx(0.0)
+    assert nc["mean_abs_delta"] == pytest.approx(0.0)
+    assert nc["q_pass_repeat"] == pytest.approx(1.0)
+
+    # Hand-computed (see docstring in judge_noise.compute_noise_stats for the
+    # formulas): shot_reachability contributes num=2*1.0=2.0/den=2*2=4 (its
+    # one true-pass case-dim scores [2, 0], mean 1.0); the other 5
+    # correctness dims (weight 2, both case-dims true-pass at 2.0 mean)
+    # contribute 5*(2*2.0)/5*(2*2)=20.0/20; the 4 crux dims (weight 1)
+    # contribute 4*(1*2.0)/4*(1*2)=8.0/8. Total 30.0/32 = 93.75%.
+    assert stats["ceiling_expected"] == pytest.approx(30 / 32)
+    # band_optimistic: every case-dim's max(a,b) -> shot_reachability's only
+    # pair maxes to 2 (perfect), everything else already 2 -> 60/60 = 100%.
+    assert stats["band_optimistic"] == pytest.approx(1.0)
+    # band_pessimistic: shot_reachability's only pair mins to 0 (num
+    # contribution drops from 4 to 0) -> (60-4)/60 = 56/60.
+    assert stats["band_pessimistic"] == pytest.approx(56 / 60)
+
+
+def test_compute_noise_stats_dimension_with_zero_applicable_pairs_reports_none_not_zero():
+    """An all-approach sample has zero applicable shot_reachability
+    case-dims — every per-dimension metric must be None (never a misleading
+    0.0/1.0), and the dimension must be excluded from ceiling/band, not
+    silently zeroed (a perfect all-2s sample still yields 100% everywhere)."""
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats([("caseA", first, second)], {"caseA": {"shot_kind": "approach"}})
+
+    sr = stats["per_dimension"]["shot_reachability"]
+    assert sr == {
+        "n_applicable": 0, "exact_agreement_rate": None, "pass_flip_rate": None,
+        "mean_abs_delta": None, "q_pass_repeat": None,
+    }
+    assert stats["ceiling_expected"] == pytest.approx(1.0)
+    assert stats["band_optimistic"] == pytest.approx(1.0)
+    assert stats["band_pessimistic"] == pytest.approx(1.0)
+
+
+def test_compute_noise_stats_stored_first_pass_agreement_bonus():
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    pairs = [("caseA", first, second), ("caseB", first, second)]
+    engine_refs = {"caseA": {"shot_kind": "positioning"}, "caseB": {"shot_kind": "approach"}}
+
+    stored_a = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    b_stored_scores = dict(all_two)
+    b_stored_scores["numbers_coherence"] = 0  # deliberate mismatch on case B only
+    stored_b = JudgeScores(scores=b_stored_scores, confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats(
+        pairs, engine_refs, stored_first={"caseA": stored_a, "caseB": stored_b},
+    )
+    agreement = stats["stored_first_pass_agreement"]
+    assert agreement["shot_reachability"] == pytest.approx(1.0), "only caseA counted -- SR is N/A on caseB"
+    assert agreement["numbers_coherence"] == pytest.approx(0.5), "caseA matches, caseB's stored verdict mismatches"
+    assert agreement["hazard_awareness"] == pytest.approx(1.0), "untouched dimension, both cases match"
+
+
+def test_compute_noise_stats_omits_stored_first_pass_agreement_key_when_not_given():
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats([("caseA", first, second)], {"caseA": {"shot_kind": "positioning"}})
+    assert "stored_first_pass_agreement" not in stats
 
 
 # ── 6. build_cases sanity (case-count math §2) ──────────────────────────
