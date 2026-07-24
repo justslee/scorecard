@@ -62,15 +62,37 @@ SHORT-edge exclusion unrelated to c5's LONG-edge fix, and "carry ≤ total alway
 headwind — builder says fix is still sound (fallback byte-identical there) but this is a reviewer
 scrutiny item: did c5 advance Target 2b or fix a real-but-different thing?
 
-### AWAITING: reviewer (opus, adversarial 223cb54..deecefd — special scrutiny on c1 correctness-vs-
-weakening proof + c5 flagged discrepancy) AND qa (sonnet, offline gates, zero deselects), both in
-flight. On BOTH returning:
-  - reviewer SHIP + qa GREEN → open the bundle PR (integration/next→main, NOTICEABLE "caddie bench
-    cycle 3"), update backlog, package the 3 coordinator commands (report-regen proof / full-150
-    re-run / judge-noise) for the coordinator to run on the box. Do NOT ship/ping (owner directive).
-  - BLOCKING findings → re-dispatch builder with the specifics, re-review. If reviewer says c5
-    doesn't help / adds risk → have builder revert c5 (git revert 0b9a5cb), keep c1-c4.
-Reconcile from branch on resume: `git log origin/integration/next`; children commit directly there.
+### CYCLE 3 COMPLETE (2026-07-24) — reviewer SHIP + qa GATES GREEN. All 5 commits green + clean on
+integration/next @deecefd; bundle PR **#155** opened (integration/next→main, NOTICEABLE). backlog
+caddie-bench-eval-framework updated with the CYCLE-3 resolution note (JSON re-validated). NOT
+shipped/pinged per directive.
+- reviewer (opus, Fable-grade): SHIP. Independently reproduced the c5 138-case audit (only 2/138 diffs,
+  both h18/short_hitter miss_side-only, more honest); confirmed c1 excludes both num AND den +
+  canary-safe + the should_second_pass skip is string-coupled to "not a positioning shot" and pinned;
+  c2 degrade decision byte-identical + degrade_reason off-wire + no stale-text leak; c4 byte-identical
+  off approach-frame. Two style nits only (redundant anchor ternary at decade_advice.py:474; a c5
+  commit-message accuracy note re aim_point moving on flipped cases via the center-coherence guard) —
+  non-gating, left as-is.
+- qa (sonnet): GATES GREEN. ruff clean; offline bench gate 81 passed (0 deselects/skips); whole eval
+  suite 322; the 9 named engine/validator suites 478; no new skips/deselects.
+
+### COORDINATOR HANDOFF — run these on the EC2 box (i-0826ae70df62d9fe8) to confirm the numbers before
+any ship (packaged in specs/caddie-bench-cycle3-plan.md "Packaged commands" section, verbatim):
+  (a) FREE report-regen of run 20260723-214457 under the c1 aggregation → proves weighted 77.0->81.7
+      on real data ($0).
+  (b) full-150 re-run (~$7, budget cap 12) → new headline + the Degrade-reasons section (c2) +
+      positioning-only shot_reachability (c1).
+  (c) judge_noise double-pass on the NEW run (~$1.5, seed 3, 30 cases) → per-dim variance + implied
+      ceiling for the owner's 100% goal. Run AFTER (b); measure on the post-c1 prompt (contested-rate
+      should have dropped — the pre-fix 40.1% was inflated by the reachability confusion).
+The bench needs OPENAI_API_KEY + GOOGLE_MAPS_KEY in backend/.env on the box (per the epic's unblock
+note). Owner ping only after (b) confirms the gain — the +4.7 is a projection until the re-run.
+
+### DEFERRED to a future cycle (not this pass): degrade-cause fixes (gated on the c2 reason histogram
+from the re-run — the reviewer-flagged suspects are aim_point rounded-vs-raw suppression divergence +
+residual two-frame leak); natural_speech prompt work (verify it rises with the degrade cut first);
+c5's separate SHORT-edge h18 bug the plan's worked example actually described (out of scope for the
+long-edge fix that shipped).
 
 ## DONE (2026-07-24) — CADDIE BENCH CYCLE 3, all 5 commits landed on integration/next (builder,
 worktree agent-af9a7d851938e4ced). Head now `0b9a5cb`. All silent (no user-visible/TestFlight change
