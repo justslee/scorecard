@@ -58,6 +58,38 @@ with case evidence) + qa (offline caddie_bench suite + named engine tests, zero 
 package the 3 coordinator commands (report-regen, full-150 re-run, judge-noise). Reconcile from
 branch: `git log origin/integration/next` — builder commits land there directly.
 
+## DONE (2026-07-24) — CADDIE BENCH CYCLE 3, all 5 commits landed on integration/next (builder,
+worktree agent-af9a7d851938e4ced). Head now `0b9a5cb`. All silent (no user-visible/TestFlight change
+— eval-tooling + engine-internal correctness fixes only).
+1. `d880a13` — shot_reachability N/A off positioning (judge.py gloss/rubric/second-pass guard +
+   report.py dim exclusion + `dimension_n`). Before/after reasoning packaged for the coordinator's
+   real-data reagg command (77.0%→81.7% projected); not re-run here (run JSONL lives on the box only).
+2. `94e9403` — degrade-reason instrumentation (strategy.py `validate_strategy_text_with_reason` +
+   strategy_turn.py threading + schema/harness/run_caddie_bench additive fields + report degrade
+   section). Decision-parity proven (5 run_strategy_turn pins + wrapper byte-parity + reason-vocab
+   matrix); `degrade_reason` deliberately kept off the `reason` wire key (code comment at the exact
+   line).
+3. `46b0486` — `judge_noise.py` new gated module (double-pass `compute_noise_stats` + gate-refusal);
+   pure function unit-tested only, never run live per the plan (coordinator's job).
+4. `344a5e9` — `compute_miss_side` honest front/back on approach both-open (gated on
+   `approach_framed`, byte-identical elsewhere; 6 new pins in test_approach_frame.py).
+5. `0b9a5cb` — `drive_zone_hazards` long edge reaches drive TOTAL not carry — **rode** (138-case
+   engine_ref diff audit clean: exactly 2/138 cases differ, both bethpage_black_h18/short_hitter, both
+   `miss_side` only, both degrade to a more-honest center/no-good-miss verdict). **Plan-accuracy note
+   for the reviewer:** the plan's own h18/owner/bunker-215 worked example turned out on reproduction to
+   be a SHORT-edge exclusion (unrelated pre-existing mechanism), not this commit's long-edge/roll-
+   segment fix, and the plan's "stored carry ≤ physics total always" claim doesn't hold under strong
+   headwind (verified) — the fix's fallback branch keeps that case byte-identical rather than
+   misbehaving; the roll-segment mechanism itself is real and is what the audit's 2 diffed cases hit.
+Gates (repeated per commit, final state): `ruff check .` clean; `test_bench_offline.py` +
+`test_bench_teeth.py` 81 passed; full `tests/eval` 322 passed; named engine suite (miss_side_grounding
++ aim_point + positioning_shot + approach_frame + decade_advice + tee_shot_numbers + red1_acceptance +
+tree_hazards + lore_acceptance_pinehurst) 404 passed, 1 pre-existing skip (live ANTHROPIC_API_KEY).
+Zero new deselects/skips; zero existing test assertions edited anywhere in the cycle.
+NEXT: reviewer (adversarial, esp. commit 5's audit + commit 1's before/after case evidence) + qa, then
+package the 3 coordinator commands (report-regen on the real run JSONL, full-150 re-run, judge-noise)
+for the box.
+
 ## DONE (2026-07-23) — caddie approach-solve B1 fix + nits (builder, lane worktree-agent-a332d46ac24fb510d)
 Fixed the ONE BLOCKING fable-review finding + nits, commit `a8633f3` on top of `c96e529`.
 B1: `check_numbers_close` (harness.py) only learned from-you carry numbers when
