@@ -478,6 +478,13 @@ def compute_miss_side(
         "left": "the left", "right": "the right", "short": "the front", "long": "the back",
     }
 
+    # cycle-3 commit 4: `avoid_text` is set explicitly only by the new
+    # both-open/approach-framed sub-branch below; every other branch leaves
+    # it `None` here and falls through to the SAME generic construction as
+    # before this change — byte-identical for every non-approach-framed (or
+    # avoid-side-has-evidence) caller.
+    avoid_text: Optional[str] = None
+
     if preferred_desc_suffix == "open":
         if approach_framed and avoid_desc_suffix != "open":
             # Name the evidence that drove the pick: the AVOID side's own
@@ -493,6 +500,24 @@ def compute_miss_side(
                 f"{avoid_desc_suffix.capitalize()} guards {avoid_word} — "
                 f"miss {preferred}"
             )
+        elif approach_framed:
+            # cycle-3 commit 4 (Target 2a): BOTH sides open on an
+            # approach-framed turn — the "safe side, easy recovery" claim in
+            # the `else` branch below is evidence-free (no side's own
+            # mapped hazard drove the pick), and on bethpage h18 the map
+            # shows short trouble just outside the `distance_from_green <=
+            # 20` evidence window, making the claim visibly wrong. Honest
+            # degrade (contract option 2): state there is no strong
+            # miss-side mapping instead of an unsupported "safe" claim.
+            # `preferred`/`avoid` SELECTION is untouched — only these two
+            # spoken clauses soften, and only on this sub-branch. Wording is
+            # deliberately hazard-noun-free (`_HAZARD_PATTERNS` would
+            # false-red a synth that echoes "no water") and side-word-free
+            # next to any hazard noun (`_has_side_flip`'s proximity scan —
+            # same trap the comment above already documents), with no
+            # "safe" claim anywhere.
+            pref_text = "No strong miss side mapped — middle of the green, two-putt range"
+            avoid_text = "No mapped trouble tight to the green"
         else:
             pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — safe side, easy recovery"
     else:
@@ -505,7 +530,8 @@ def compute_miss_side(
         else:
             pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — {preferred_desc_suffix} but manageable"
 
-    avoid_text = f"Don't miss {avoid_side} — {avoid_desc_suffix}"
+    if avoid_text is None:
+        avoid_text = f"Don't miss {avoid_side} — {avoid_desc_suffix}"
 
     return MissSide(
         preferred=preferred,
