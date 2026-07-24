@@ -204,6 +204,15 @@ class CaseResult(BaseModel):
     contested: bool = False
     cost_usd: float = 0.0
     latency_ms: float = 0.0
+    # cycle-3 commit 2 — additive, both default None: old JSONL lines
+    # (written before this instrumentation) lack these keys and load fine
+    # via the defaults, `extra='forbid'` above notwithstanding. Categorizes
+    # WHY a case degraded (`app.caddie.strategy_turn.run_strategy_turn`'s new
+    # `degrade_reason`) and captures the raw pre-validation synth text (only
+    # on degraded cases — see harness.py::run_case) so a degrade is locally
+    # replayable offline with zero live calls.
+    degrade_reason: Optional[str] = None
+    raw_synth_text: Optional[str] = None
 
 
 # ── Question bank (questions_v1.jsonl) ───────────────────────────────────────

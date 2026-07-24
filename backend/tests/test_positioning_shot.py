@@ -19,6 +19,7 @@ import re
 from app.caddie.aim_point import (
     GREEN_REACH_MARGIN_YDS,
     compute_aim_point,
+    compute_positioning_miss_side,
     generate_recommendation,
     is_green_reachable,
 )
@@ -389,6 +390,77 @@ def test_reach_cap_end_to_end():
     rec_approach = generate_recommendation(hole, 125, {"driver": 350, "9iron": 140}, handicap=15)
     assert rec_approach.shot_kind == "approach"
     assert "bunker" in rec_approach.miss_side.avoid.lower()
+
+
+# ── cycle-3 commit 2b (Target 2b) — the roll segment now visible ───────────
+#
+# caddie-bench-cycle3-plan.md — real bethpage_black_h18/short_hitter repro:
+# stored club yardage (expected_advance_yds) 210, physics drive total
+# (max_reach_yds) 225. Bunkers at carry 245 (right) and 255 (left) sit in
+# the roll segment `(expected_advance_yds + 30, max_reach_yds + 30]` =
+# `(240, 255]` — structurally invisible under the pre-fix window (long edge
+# pinned to `min(210, 225) + 30 = 240`) and now visible (long edge reaches
+# `max_reach_yds + 30 = 255`). Verified via the 138-case engine_ref diff
+# audit (caddie-bench-cycle3-plan.md's ride/defer criterion): exactly these
+# 2 real bench cases differ, both landing on this exact mechanism, both
+# degrading to a MORE honest verdict (center/no-good-miss) — the audit is
+# summarized in this commit's message.
+
+
+def test_drive_zone_hazards_roll_segment_now_visible():
+    hazard = Hazard(type="bunker", side="right", line_side="right", carry_yards=245, penalty_severity="moderate")
+    assert drive_zone_hazards([hazard], 210.0, max_reach_yds=225.0) == [hazard]
+
+
+def test_compute_positioning_miss_side_names_the_roll_segment_hazard():
+    """End-to-end: the newly-visible roll-segment hazard on the RIGHT, with
+    the LEFT clean, must now be named — 'favor left, right has trouble' —
+    rather than a falsely-clean right side."""
+    zone = drive_zone_hazards(
+        [Hazard(type="bunker", side="right", line_side="right", carry_yards=245, penalty_severity="moderate")],
+        210.0, max_reach_yds=225.0,
+    )
+    assert zone, "sanity: the roll-segment hazard must be in the zone for this test to mean anything"
+    miss = compute_positioning_miss_side(zone)
+    assert miss.preferred == "left"
+    assert "right" in miss.avoid.lower()
+
+
+def test_compute_positioning_miss_side_h18_repro_degrades_to_center():
+    """The exact bethpage-h18/short_hitter repro: TWO roll-segment hazards
+    (right 245, left 255) both newly enter the window — both sides now have
+    mapped trouble, so the honest verdict is 'no good miss', never a
+    confident one-sided favor (the exact real-bench behavior change the
+    audit found, reproduced here as a pinned unit fixture)."""
+    hazards = [
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=245, penalty_severity="moderate"),
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=255, penalty_severity="moderate"),
+    ]
+    zone = drive_zone_hazards(hazards, 210.0, max_reach_yds=225.0)
+    assert len(zone) == 2
+    miss = compute_positioning_miss_side(zone)
+    assert miss.preferred == "center"
+    assert "both sides" in miss.description.lower()
+
+
+def test_drive_zone_hazards_finding_c_regression_still_excludes_beyond_reach():
+    """Finding-C protection is unchanged by this commit: a hazard beyond
+    physical reach (`max_reach_yds + 30`) is still excluded, even in the NEW
+    anchor branch (`max_reach_yds >= expected_advance_yds`)."""
+    hazard = Hazard(type="bunker", side="left", line_side="left", carry_yards=300, penalty_severity="moderate")
+    # anchor = max_reach_yds (225 >= 210) -> long_edge = 255; 300 > 255 -> excluded.
+    assert drive_zone_hazards([hazard], 210.0, max_reach_yds=225.0) == []
+
+
+def test_drive_zone_hazards_max_reach_none_byte_identical_no_widening():
+    """`max_reach_yds=None` (every direct caller/test that never passes a
+    reach ceiling) is byte-identical to before this commit — the window's
+    long edge stays `expected_advance_yds + 30`, the new anchor branch never
+    applies at all."""
+    within_old_edge = Hazard(type="bunker", side="left", line_side="left", carry_yards=239, penalty_severity="moderate")
+    beyond_old_edge = Hazard(type="bunker", side="left", line_side="left", carry_yards=241, penalty_severity="moderate")
+    assert drive_zone_hazards([within_old_edge], 210.0) == [within_old_edge]
+    assert drive_zone_hazards([beyond_old_edge], 210.0) == []
 
 
 # ── is_green_reachable — direct unit coverage ────────────────────────────────

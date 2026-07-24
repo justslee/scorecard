@@ -41,9 +41,11 @@ _RUBRIC_TEXT: dict[JudgeDimension, str] = {
         "re-derived, never confabulated. FAIL if any number contradicts the ENGINE REFERENCE."
     ),
     JudgeDimension.SHOT_REACHABILITY: (
-        "On an out-of-reach tee/approach shot (ENGINE REFERENCE shot_kind=positioning) the "
-        "answer must reason landing-zone + leave-yardage, and must NEVER aim relative to the "
-        "flag/pin (the flag doesn't exist for this swing)."
+        "APPLIES ONLY when ENGINE REFERENCE shot_kind=positioning (out-of-reach shot): the "
+        "answer must reason landing-zone + leave-yardage and must NEVER aim relative to the "
+        "flag/pin (the flag doesn't exist for this swing). When shot_kind is anything else this "
+        "dimension is NOT APPLICABLE -- the green is reachable and flag-relative aim is correct "
+        "-- score it 2 with confidence 1.0."
     ),
     JudgeDimension.MISS_SIDE_EVIDENCE: (
         "A 'favor left/right' or 'safe miss' claim must be backed by per-side hazard evidence "
@@ -78,10 +80,15 @@ def _judge_model() -> str:
 
 def _format_engine_ref(engine_ref: dict) -> str:
     tsn = engine_ref.get("tee_shot_numbers") or {}
+    shot_kind = engine_ref.get("shot_kind")
+    if shot_kind == "positioning":
+        shot_kind_gloss = f"shot_kind: {shot_kind} (out of reach for THIS swing -- the flag is NOT the aim target)"
+    else:
+        shot_kind_gloss = f"shot_kind: {shot_kind} (the green IS reachable -- aiming at or relative to the flag is CORRECT for this shot)"
     lines = [
         f"club: {engine_ref.get('club')}",
         f"raw_yards: {engine_ref.get('raw_yards')} / target_yards (plays-like): {engine_ref.get('target_yards')}",
-        f"shot_kind: {engine_ref.get('shot_kind')} (positioning = out of reach; the flag is NOT the aim target)",
+        shot_kind_gloss,
         f"miss_side: preferred={((engine_ref.get('miss_side') or {}).get('preferred'))} "
         f"avoid={((engine_ref.get('miss_side') or {}).get('avoid'))}",
     ]
@@ -260,6 +267,14 @@ def should_second_pass(
         det = det_by_name.get(det_name)
         judge_score = first.scores.get(dim)
         if det is None or judge_score is None:
+            continue
+        # Commit-1 fix: on a non-positioning shot,
+        # `check_positioning_no_pin_language` auto-passes with this exact
+        # detail string (harness.py::check_positioning_no_pin_language) --
+        # shot_reachability is N/A there (report.py excludes it from
+        # aggregation), so a judge 0 against this auto-pass is not a real
+        # det/judge disagreement and must never trigger a paid second pass.
+        if det_name is DetCheckName.POSITIONING_NO_PIN_LANGUAGE and det.detail == "not a positioning shot":
             continue
         if (not det.passed) and judge_score == 2:
             return True

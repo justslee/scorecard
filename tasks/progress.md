@@ -3,6 +3,129 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## IN-PROGRESS (2026-07-24) — CADDIE BENCH CYCLE 3 (eng-lead lane, worktree agent-a451657e208406d24)
+Base `origin/integration/next` @ `0fd7c5b` (post-ship v1.1.21, bench floor 77.0). Landing new bundle
+work on `integration/next`; do NOT ship/ping. Full-150 run under diagnosis: on the box at
+`/tmp/benchwt_1784730879/backend/tests/eval/caddie_bench/runs/20260723-214457/` (read-only via SSM;
+instance i-0826ae70df62d9fe8, doc AWS-RunShellScript, helper scratchpad/ssm.sh).
+
+### DIAGNOSIS (quantified from results.jsonl, 142 judged advice cases)
+1. **shot_reachability 44.4% — CONFIRMED judge-clarity bug, NOT an engine gap.** Split by
+   engine_ref.shot_kind: positioning n=58 → 82.8% pass (dim works where it applies); approach n=84 →
+   17.9% pass (judge zeroes 68/84 reachable approaches). Root cause: `judge.py` `_format_engine_ref`
+   renders `shot_kind: approach (positioning = out of reach; the flag is NOT the aim target)` — the
+   parenthetical GLOSS misleads the judge into thinking the flag isn't the target even on reachable
+   approaches; and the SHOT_REACHABILITY rubric says "out-of-reach tee/**approach** shot" (word
+   "approach" wrongly pulls approach cases in). Judge then hallucinates engine_looks_wrong="reference
+   declares positioning" on 28/84 approach cases where shot_kind is literally "approach". FIX
+   (correctness, plan §5): shot_reachability is N/A on shot_kind!=positioning — exclude from report.py
+   dim aggregation + weighted score, AND fix prompt/rubric/gloss so judge isn't misled (also cuts
+   contested-rate + false engine_looks_wrong + judge cost). PROJECTED: weighted_correctness 77.0% →
+   81.7% (+4.7pts), zero caddie-behavior change (computed offline over the run). Real (a) engine gaps
+   are the small residual: 10/58 positioning imperfect, 6 engine_looks_wrong — minor, low-yield.
+2. **miss_side_evidence 51.4% (27×score0, 42×score1) — payload gap dominant.** Per-side evidence
+   enrichment (`aim_point.compute_miss_side`, cycle-1 DEFECT-2) only fires on the LEFT/RIGHT axis; when
+   the miss axis is front/back ("short/long") and mapped hazards are only left/right, it falls back to
+   evidence-free "Miss short — safe side, easy recovery" — unsupported, and on some holes (h18) the map
+   shows trouble short so the claim is WRONG. Plus a positioning payload bug: h18 slot0 favors right
+   while a bunker sits right at 215 inside the 229 landing window (compute_positioning_miss_side keys on
+   line_side only, not whether the hazard is in the preferred side's actual landing window).
+3. **Degrades 16.7% (25/150) → tanks natural_speech (degraded 32% vs non-degraded 63.2% pass).**
+   `degraded` = production `run_strategy_turn` validator REJECTED synth narrative → mechanical
+   `compose_degraded_line` fallback. Bench stores NO reject reason (all 25 reason=None) — plan must
+   INSTRUMENT bench to persist the validator reject class (verdict-pin vs aim_point suppression
+   divergence vs two-frame leak) so degrades auto-categorize. Suspects = reviewer cycle-3 nits
+   (aim_point rounded-vs-raw suppression divergence).
+4. **natural_speech 57.7%** — downstream of degrades; verify improves after degrade cut before any
+   prompt touch.
+5. **JUDGE NOISE contested 40.1%** — re-judge ~30-case double-pass on-box (~$1.5) → per-dim variance →
+   implied score CEILING (frames owner's 100% goal; never tune judge toward agreement).
+
+### Fable plan DONE → saved to `specs/caddie-bench-cycle3-plan.md` (committed). 5-commit sequence:
+(1) shot_reachability N/A off positioning [report.py aggregation + judge.py prompt/rubric/gloss +
+should_second_pass guard] — the +4.7pt centerpiece, zero behavior change; (2) degrade-reason
+instrumentation [strategy.py validate_with_reason + strategy_turn.py degrade_reason key OFF the wire
++ schema.py/harness.py/run_caddie_bench.py CaseResult fields + report.py degrade section]; (3)
+judge_noise.py double-pass measurement tool; (4) compute_miss_side honest front/back (gated on
+approach_framed+both-open, byte-identity elsewhere); (5) drive_zone_hazards roll-segment window fix
+(decade_advice.py:458) — rides ONLY if the 138-case engine_ref diff audit is clean, else defers.
+Root cause for #5 traced by Fable: `long_edge = min(carry, total)+30` structurally excludes the
+roll segment (carry+30, total], hiding a bunker-at-215 inside a 229 landing zone.
+
+### Builder DONE — all 5 commits landed on integration/next: d880a13 (c1 shot_reachability N/A),
+94e9403 (c2 degrade instrumentation), 46b0486 (c3 judge_noise tool), 344a5e9 (c4 miss_side honest
+front/back), 0b9a5cb (c5 drive_zone roll-segment — RODE after a clean 138-case audit: only 2/138
+diffs, both h18/short_hitter miss_side-only). Head @ deecefd. Builder gate evidence all green
+(offline bench 81 passed, tests/eval 322, named engine suites green). Builder FLAGGED a
+plan-accuracy discrepancy on c5: the plan's h18/bunker-215 headline example was actually a
+SHORT-edge exclusion unrelated to c5's LONG-edge fix, and "carry ≤ total always" fails under
+headwind — builder says fix is still sound (fallback byte-identical there) but this is a reviewer
+scrutiny item: did c5 advance Target 2b or fix a real-but-different thing?
+
+### CYCLE 3 COMPLETE (2026-07-24) — reviewer SHIP + qa GATES GREEN. All 5 commits green + clean on
+integration/next @deecefd; bundle PR **#155** opened (integration/next→main, NOTICEABLE). backlog
+caddie-bench-eval-framework updated with the CYCLE-3 resolution note (JSON re-validated). NOT
+shipped/pinged per directive.
+- reviewer (opus, Fable-grade): SHIP. Independently reproduced the c5 138-case audit (only 2/138 diffs,
+  both h18/short_hitter miss_side-only, more honest); confirmed c1 excludes both num AND den +
+  canary-safe + the should_second_pass skip is string-coupled to "not a positioning shot" and pinned;
+  c2 degrade decision byte-identical + degrade_reason off-wire + no stale-text leak; c4 byte-identical
+  off approach-frame. Two style nits only (redundant anchor ternary at decade_advice.py:474; a c5
+  commit-message accuracy note re aim_point moving on flipped cases via the center-coherence guard) —
+  non-gating, left as-is.
+- qa (sonnet): GATES GREEN. ruff clean; offline bench gate 81 passed (0 deselects/skips); whole eval
+  suite 322; the 9 named engine/validator suites 478; no new skips/deselects.
+
+### COORDINATOR HANDOFF — run these on the EC2 box (i-0826ae70df62d9fe8) to confirm the numbers before
+any ship (packaged in specs/caddie-bench-cycle3-plan.md "Packaged commands" section, verbatim):
+  (a) FREE report-regen of run 20260723-214457 under the c1 aggregation → proves weighted 77.0->81.7
+      on real data ($0).
+  (b) full-150 re-run (~$7, budget cap 12) → new headline + the Degrade-reasons section (c2) +
+      positioning-only shot_reachability (c1).
+  (c) judge_noise double-pass on the NEW run (~$1.5, seed 3, 30 cases) → per-dim variance + implied
+      ceiling for the owner's 100% goal. Run AFTER (b); measure on the post-c1 prompt (contested-rate
+      should have dropped — the pre-fix 40.1% was inflated by the reachability confusion).
+The bench needs OPENAI_API_KEY + GOOGLE_MAPS_KEY in backend/.env on the box (per the epic's unblock
+note). Owner ping only after (b) confirms the gain — the +4.7 is a projection until the re-run.
+
+### DEFERRED to a future cycle (not this pass): degrade-cause fixes (gated on the c2 reason histogram
+from the re-run — the reviewer-flagged suspects are aim_point rounded-vs-raw suppression divergence +
+residual two-frame leak); natural_speech prompt work (verify it rises with the degrade cut first);
+c5's separate SHORT-edge h18 bug the plan's worked example actually described (out of scope for the
+long-edge fix that shipped).
+
+## DONE (2026-07-24) — CADDIE BENCH CYCLE 3, all 5 commits landed on integration/next (builder,
+worktree agent-af9a7d851938e4ced). Head now `0b9a5cb`. All silent (no user-visible/TestFlight change
+— eval-tooling + engine-internal correctness fixes only).
+1. `d880a13` — shot_reachability N/A off positioning (judge.py gloss/rubric/second-pass guard +
+   report.py dim exclusion + `dimension_n`). Before/after reasoning packaged for the coordinator's
+   real-data reagg command (77.0%→81.7% projected); not re-run here (run JSONL lives on the box only).
+2. `94e9403` — degrade-reason instrumentation (strategy.py `validate_strategy_text_with_reason` +
+   strategy_turn.py threading + schema/harness/run_caddie_bench additive fields + report degrade
+   section). Decision-parity proven (5 run_strategy_turn pins + wrapper byte-parity + reason-vocab
+   matrix); `degrade_reason` deliberately kept off the `reason` wire key (code comment at the exact
+   line).
+3. `46b0486` — `judge_noise.py` new gated module (double-pass `compute_noise_stats` + gate-refusal);
+   pure function unit-tested only, never run live per the plan (coordinator's job).
+4. `344a5e9` — `compute_miss_side` honest front/back on approach both-open (gated on
+   `approach_framed`, byte-identical elsewhere; 6 new pins in test_approach_frame.py).
+5. `0b9a5cb` — `drive_zone_hazards` long edge reaches drive TOTAL not carry — **rode** (138-case
+   engine_ref diff audit clean: exactly 2/138 cases differ, both bethpage_black_h18/short_hitter, both
+   `miss_side` only, both degrade to a more-honest center/no-good-miss verdict). **Plan-accuracy note
+   for the reviewer:** the plan's own h18/owner/bunker-215 worked example turned out on reproduction to
+   be a SHORT-edge exclusion (unrelated pre-existing mechanism), not this commit's long-edge/roll-
+   segment fix, and the plan's "stored carry ≤ physics total always" claim doesn't hold under strong
+   headwind (verified) — the fix's fallback branch keeps that case byte-identical rather than
+   misbehaving; the roll-segment mechanism itself is real and is what the audit's 2 diffed cases hit.
+Gates (repeated per commit, final state): `ruff check .` clean; `test_bench_offline.py` +
+`test_bench_teeth.py` 81 passed; full `tests/eval` 322 passed; named engine suite (miss_side_grounding
++ aim_point + positioning_shot + approach_frame + decade_advice + tee_shot_numbers + red1_acceptance +
+tree_hazards + lore_acceptance_pinehurst) 404 passed, 1 pre-existing skip (live ANTHROPIC_API_KEY).
+Zero new deselects/skips; zero existing test assertions edited anywhere in the cycle.
+NEXT: reviewer (adversarial, esp. commit 5's audit + commit 1's before/after case evidence) + qa, then
+package the 3 coordinator commands (report-regen on the real run JSONL, full-150 re-run, judge-noise)
+for the box.
+
 ## DONE (2026-07-23) — caddie approach-solve B1 fix + nits (builder, lane worktree-agent-a332d46ac24fb510d)
 Fixed the ONE BLOCKING fable-review finding + nits, commit `a8633f3` on top of `c96e529`.
 B1: `check_numbers_close` (harness.py) only learned from-you carry numbers when
@@ -2150,3 +2273,38 @@ warnings from the broken helper are also gone). `ruff check .` clean repo-wide.
 Committed directly to `integration/next` (silent rider, no rebase needed — head was already
 `3097c9f`, same as when dispatched). Landed: see `git log -1` on `integration/next` for the commit hash;
 noted on PR #154. Never touched main; no force-push.
+
+## SHIPPED — bundle #154 -> main, v1.1.21 build 202607232201 (2026-07-23) (release-manager)
+Owner approval in-session, verbatim: "Ship it" — given for the bundle at `3097c9f`. Backend gate then
+failed on the pre-existing green_slope flake (deterministic, twice); fixed at the root as a test-only
+rider (`4f16980`, see entry above). Pinned head confirmed unmoved at `4f16980` throughout gate polling
+(Frontend/Backend/E2E-advisory all SUCCESS).
+Sequence run inline/foreground, no backgrounding:
+1. Gates SUCCESS on `4f16980` (verified via `gh pr checks 154 --json`, structured, not scraped).
+2. VERSION bumped 1.1.20 -> 1.1.21 (`7a50218`), pushed, gates SUCCESS again on the bump head.
+3. `gh pr merge 154 --merge` -> merge commit `d97be85c9fbd583f89adef41b24c50bec6830518`. Post-merge
+   `CI` + `Deploy backend (SSM)` workflows on `main` both SUCCESS.
+4. Key-free confirms via SSM Run-Command on the EC2 box (no secrets in output): `/health` = `{"status":
+   "ok"}`; deployed `git rev-parse HEAD` on box == `d97be85...` (matches merge SHA); `relative_wind`
+   present in deployed `backend/app/caddie/physics.py` (the live bearing-bug fix is the ship's
+   headline — confirmed live); `alembic current` = `018_hole_pins_per_user (head)`, unchanged;
+   `APP_ACCESS_MODE=open` in `.env` — multi-user stays live, untouched; `VOICE_BOOKING_ENABLED` unset
+   in `.env` (defaults false) — outbound caller confirmed inert.
+5. `bash ops/ios/ship.sh` run in the foreground from synced `main` @ `d97be85`. Build succeeded,
+   archived, distribution-signed, uploaded: "Uploaded v1.1.21 (build 202607232201) to TestFlight".
+   Polled the App Store Connect API directly (JWT-signed with the ASC key, key-free stdout) until the
+   build indexed and processed: `processingState` went not-yet-indexed -> `VALID` in ~4 polls
+   (~80s). v1.1.21 sorts above every prior TestFlight entry (last was 1.1.20) — no burial risk.
+6. `integration/next` recut off the merge SHA via a clean fast-forward push (no force; `main` is a
+   strict descendant of the old `integration/next` tip through the merge commit) — a cycle-3 bench
+   lane is in flight and will rebase onto this after.
+7. Records: `backlog.json` — `caddie-approach-shot-engine` status `done-on-bundle` -> `done` with a
+   SHIPPED note (SHA, TestFlight build, bench 53.4->77.0); top-level `note` field prepended with the
+   bundle #154 ship ledger entry (JSON-validated after edit, targeted string edits only, never
+   json.load/dump). `caddie-bench-eval-framework` left `in-progress` (epic continues: full-1000 run +
+   cycle-3 iteration not yet done) — no other backlog items qualified for a terminal mark this cycle.
+   Notion board card #154 + PushNotification to the owner handled separately per the release-manager
+   protocol (Notion MCP / push tool, not git).
+Verified, not asserted: every gate state read from `gh ... --json` structured fields; every prod fact
+read key-free off the box via SSM; TestFlight state read from the ASC REST API with a JWT this session
+minted itself. Nothing scraped from human-readable CLI text.

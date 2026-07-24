@@ -109,12 +109,20 @@ class _LiveSynth:
         self.case_id_ref = case_id_ref  # mutable 1-elem list holding the CURRENT case id
         self.last_cost_usd = 0.0
         self.last_latency_ms = 0.0
+        # cycle-3 commit 2 — the raw pre-validation synth text for the CURRENT
+        # in-flight case, reset at the top of every `__call__` (see there).
+        self.last_raw_text: Optional[str] = None
         # The REAL, un-patched synth — resolved once, before any patch exists.
         self._real_synthesize_strategy = real_synthesize_strategy
 
     async def __call__(self, ground_truth: str, *, model: str) -> tuple[str, dict]:
+        # Staleness guard (cycle-3 commit 2): cleared FIRST, before the real
+        # call — if the call raises, `last_raw_text` must never leak the
+        # PREVIOUS case's text onto this one.
+        self.last_raw_text = None
         start = time.monotonic()
         text, usage = await self._real_synthesize_strategy(ground_truth, model=model)
+        self.last_raw_text = text
         self.last_latency_ms = (time.monotonic() - start) * 1000
         self.last_cost_usd = _cost_usd(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
         self.cost_log.append({
@@ -268,6 +276,11 @@ async def run(args: argparse.Namespace) -> int:
             degraded=result.degraded, engine_ref=result.engine_ref, det_checks=result.det_checks,
             judge=first_scores, judge_second=second_scores, contested=contested,
             cost_usd=case_cost, latency_ms=result.latency_ms,
+            # cycle-3 commit 2 — this explicit constructor is the silent-drop
+            # trap: without copying these two fields from `result` (already
+            # populated by `harness.run_case`), they'd default to None here
+            # and every degrade would look uninstrumented. Teeth-tested.
+            degrade_reason=result.degrade_reason, raw_synth_text=result.raw_synth_text,
         )
         _append_jsonl(results_path, json.loads(final.model_dump_json()))
         for entry in cost_log:

@@ -238,6 +238,87 @@ def test_miss_side_enriched_text_passes_side_flip_check():
     assert not _has_side_flip([miss.description], hazards_by_type)
 
 
+# ── cycle-3 commit 4 (Target 2a) — honest front/back on approach-framed
+#    both-open (no evidence-free "safe side" claim) ─────────────────────────
+#
+# A hazard mapped on the hole but OUTSIDE the <=20y greenside evidence
+# window (e.g. bethpage h18's short trouble just past that window) makes
+# BOTH sides look "open" to the evidence-scanning code — the OLD
+# unconditional "safe side, easy recovery" claim there was evidence-free,
+# and can be visibly wrong. This must degrade honestly ONLY on an
+# approach-framed turn; a tee-framed/no-distance_yards call (every existing
+# caller) stays byte-identical to today.
+
+_FAR_HAZARD = Hazard(
+    type="bunker", side="left", line_side="left", penalty_severity="severe", distance_from_green=150.0,
+)
+
+
+def test_miss_side_both_open_tee_framed_stays_byte_identical_pre_change_text():
+    """(a) Pin FIRST, against CURRENT (pre- and post-commit-4) behavior: not
+    approach-framed (no distance_yards at all) -> the old unconditional
+    "safe side, easy recovery" text, untouched."""
+    hole = _make_hole(par=4, yards=400, hazards=[_FAR_HAZARD])
+    miss = compute_miss_side(hole, None)
+    assert miss.description == "Miss short — safe side, easy recovery"
+    assert miss.avoid == "Don't miss long — open"
+
+
+def test_miss_side_both_open_offset_below_threshold_stays_byte_identical_pre_change_text():
+    """(a) Pin: distance_yards given but offset < APPROACH_FRAME_MIN_TEE_
+    OFFSET_YDS (tee-framed) -> same old text, untouched."""
+    hole = _make_hole(par=4, yards=400, hazards=[_FAR_HAZARD])
+    miss = compute_miss_side(hole, None, distance_yards=380)  # offset 20 < 25
+    assert miss.description == "Miss short — safe side, easy recovery"
+    assert miss.avoid == "Don't miss long — open"
+
+
+def test_miss_side_avoid_side_evidence_branch_stays_byte_identical_when_approach_framed():
+    """(b) Pin: approach-framed WITH avoid-side evidence (the pre-existing
+    "X guards Y — miss Z" branch) is untouched by this commit — only the
+    both-open sub-branch below is new."""
+    hole = _make_hole(par=4, yards=400, hazards=[
+        Hazard(type="bunker", side="left", line_side="left", penalty_severity="severe", distance_from_green=15.0),
+    ])
+    miss = compute_miss_side(hole, None, distance_yards=150)  # offset 250
+    assert miss.description == "Bunker guards the left — miss right"
+    assert miss.avoid == "Don't miss left — bunker"
+
+
+def test_miss_side_approach_framed_both_open_gets_honest_no_strong_side_text():
+    """(c) The new honest degrade: approach-framed + both sides open (no
+    evidence anywhere near the green) -> no unsupported "safe" claim."""
+    hole = _make_hole(par=4, yards=400, hazards=[_FAR_HAZARD])
+    miss = compute_miss_side(hole, None, distance_yards=150)  # offset 250 -> approach_framed
+    assert miss.description == "No strong miss side mapped — middle of the green, two-putt range"
+    assert miss.avoid == "No mapped trouble tight to the green"
+    assert "safe" not in miss.description.lower()
+    assert "safe" not in miss.avoid.lower()
+
+
+def test_miss_side_approach_framed_both_open_wording_is_hazard_and_side_word_free():
+    """Wording constraints (spec): no hazard nouns (`_HAZARD_PATTERNS` would
+    false-red a synth that echoes "no water"), no left/right side word next
+    to a hazard noun (`_has_side_flip`'s proximity scan), never passes
+    `_has_side_flip` as a false claim."""
+    hole = _make_hole(par=4, yards=400, hazards=[_FAR_HAZARD])
+    miss = compute_miss_side(hole, None, distance_yards=150)
+    for forbidden in ("water", "bunker", "trees", "ob", "left", "right"):
+        assert forbidden not in miss.description.lower()
+        assert forbidden not in miss.avoid.lower()
+    assert not _has_side_flip([miss.description, miss.avoid], {"bunker": [("left", 0)]})
+
+
+def test_miss_side_approach_framed_both_open_preferred_avoid_fields_unchanged():
+    """(d) `preferred`/`avoid` SELECTION fields are identical whether or not
+    the turn is approach-framed — only the description/avoid TEXT changes."""
+    hole = _make_hole(par=4, yards=400, hazards=[_FAR_HAZARD])
+    miss_tee = compute_miss_side(hole, None)
+    miss_approach = compute_miss_side(hole, None, distance_yards=150)
+    assert miss_tee.preferred == miss_approach.preferred
+    assert miss_tee.description != miss_approach.description  # text DID change (the fix)
+
+
 def test_around_the_green_p2_line_present_on_approach_framed_reachable_turn():
     hole = _make_hole(par=4, yards=400, hazards=[
         Hazard(type="bunker", side="left", line_side="left", penalty_severity="severe", distance_from_green=15.0),

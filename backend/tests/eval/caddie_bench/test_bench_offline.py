@@ -22,7 +22,7 @@ os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 import pytest  # noqa: E402
 
 from tests.eval.caddie_bench import extract_fixtures, geometry as geo, harness  # noqa: E402
-from tests.eval.caddie_bench import questions as q  # noqa: E402
+from tests.eval.caddie_bench import judge_noise, questions as q  # noqa: E402
 from tests.eval.caddie_bench import render, report, run_caddie_bench  # noqa: E402
 from tests.eval.caddie_bench.geometry import GeometrySamplingError, _in_any, _point_in_polygon_feature  # noqa: E402
 from tests.eval.caddie_bench.schema import (  # noqa: E402
@@ -75,6 +75,46 @@ def test_bags_load_all_three():
     assert set(bags) == set(BagId)
     assert bags[BagId.OWNER].handicap == 3.0
     assert "driver" in bags[BagId.OWNER].clubs
+
+
+# ── cycle-3 commit 2: CaseResult schema round-trip (additive fields) ───────
+
+
+def test_case_result_old_format_line_loads_with_degrade_fields_defaulted_none(tmp_path):
+    """An old (pre-instrumentation) results.jsonl line — written before
+    `degrade_reason`/`raw_synth_text` existed — must still round-trip: the
+    two new fields default to None, `extra='forbid'` notwithstanding."""
+    old_line = json.dumps({
+        "case_id": "holeA__slot0__owner__x",
+        "resolved": {"lat": 1.0, "lng": 2.0, "lie": "tee", "distance_to_green_yards": 400.0, "shot_bearing_deg": 0.0},
+        "intent": "advice", "answer": "old-format answer", "degraded": True,
+        "engine_ref": {"club": "driver"}, "det_checks": [], "cost_usd": 0.0, "latency_ms": 100.0,
+    })
+    path = tmp_path / "old_run.jsonl"
+    path.write_text(old_line + "\n")
+
+    results = report.load_results(path)
+    assert len(results) == 1
+    assert results[0].degrade_reason is None
+    assert results[0].raw_synth_text is None
+
+
+def test_case_result_new_format_line_round_trips_degrade_fields(tmp_path):
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    result = CaseResult(
+        case_id="holeA__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1.0, lng=2.0, lie=LieCategory.TEE, distance_to_green_yards=400.0, shot_bearing_deg=0.0),
+        intent="advice", answer="new-format answer", degraded=True, engine_ref={"club": "driver"},
+        degrade_reason="validator:side-flip", raw_synth_text="the raw pre-validation text",
+    )
+    path = tmp_path / "new_run.jsonl"
+    path.write_text(result.model_dump_json() + "\n")
+
+    loaded = report.load_results(path)
+    assert len(loaded) == 1
+    assert loaded[0].degrade_reason == "validator:side-flip"
+    assert loaded[0].raw_synth_text == "the raw pre-validation text"
 
 
 # ── 2. Fixture load for all pilot holes ──────────────────────────────────
@@ -355,6 +395,152 @@ def test_pricing_table_refuses_unknown_model():
         run_caddie_bench._cost_usd("not-a-real-model", 100, 10)
 
 
+# ── cycle-3 commit 3: judge_noise.py gate-refusal + filename-glob pin ──────
+
+
+def test_judge_noise_filename_does_not_match_pytest_test_glob():
+    filename = pathlib.Path(judge_noise.__file__).name
+    assert not filename.startswith("test_"), "judge_noise.py must never match pytest's test_*.py collection glob"
+
+
+def test_judge_noise_refuses_without_env(monkeypatch):
+    monkeypatch.delenv("CADDIE_EVAL_LIVE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert judge_noise.main(["--run-id", "whatever"]) == judge_noise._EXIT_GATE_REFUSAL
+
+
+def test_judge_noise_refuses_with_only_one_of_two_gates(monkeypatch):
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert judge_noise.main(["--run-id", "whatever"]) == judge_noise._EXIT_GATE_REFUSAL
+
+
+def test_judge_noise_requires_run_id_argument():
+    with pytest.raises(SystemExit):
+        judge_noise.main([])
+
+
+# ── cycle-3 commit 3: compute_noise_stats (pure, offline) ──────────────────
+
+
+def test_compute_noise_stats_respects_shot_reachability_na_and_computes_expected_arithmetic():
+    """Hand-computed double-pass sample: one positioning case (its
+    shot_reachability pair disagrees: first=2, second=0) and one approach
+    case (its OWN shot_reachability pair, first=0/second=1, must be
+    EXCLUDED entirely per Commit 1's N/A rule -- if it leaked in, it would
+    corrupt every downstream number). Every other dimension agrees cleanly
+    (2, 2) on both cases/both passes."""
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+
+    a_first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    a_second_scores = dict(all_two)
+    a_second_scores["shot_reachability"] = 0
+    a_second = JudgeScores(scores=a_second_scores, confidence=dict(all_conf), failure_class="good")
+
+    b_first_scores = dict(all_two)
+    b_first_scores["shot_reachability"] = 0  # must be EXCLUDED (case B is non-positioning)
+    b_first = JudgeScores(scores=b_first_scores, confidence=dict(all_conf), failure_class="good")
+    b_second_scores = dict(all_two)
+    b_second_scores["shot_reachability"] = 1  # must be EXCLUDED too
+    b_second = JudgeScores(scores=b_second_scores, confidence=dict(all_conf), failure_class="good")
+
+    pairs = [("caseA", a_first, a_second), ("caseB", b_first, b_second)]
+    engine_refs = {"caseA": {"shot_kind": "positioning"}, "caseB": {"shot_kind": "approach"}}
+
+    stats = judge_noise.compute_noise_stats(pairs, engine_refs)
+
+    sr = stats["per_dimension"]["shot_reachability"]
+    assert sr["n_applicable"] == 1, "only the positioning case's shot_reachability pair counts"
+    assert sr["exact_agreement_rate"] == pytest.approx(0.0)
+    assert sr["pass_flip_rate"] == pytest.approx(1.0)
+    assert sr["mean_abs_delta"] == pytest.approx(2.0)
+    assert sr["q_pass_repeat"] == pytest.approx(0.0)
+
+    nc = stats["per_dimension"]["numbers_coherence"]
+    assert nc["n_applicable"] == 2
+    assert nc["exact_agreement_rate"] == pytest.approx(1.0)
+    assert nc["pass_flip_rate"] == pytest.approx(0.0)
+    assert nc["mean_abs_delta"] == pytest.approx(0.0)
+    assert nc["q_pass_repeat"] == pytest.approx(1.0)
+
+    # Hand-computed (see docstring in judge_noise.compute_noise_stats for the
+    # formulas): shot_reachability contributes num=2*1.0=2.0/den=2*2=4 (its
+    # one true-pass case-dim scores [2, 0], mean 1.0); the other 5
+    # correctness dims (weight 2, both case-dims true-pass at 2.0 mean)
+    # contribute 5*(2*2.0)/5*(2*2)=20.0/20; the 4 crux dims (weight 1)
+    # contribute 4*(1*2.0)/4*(1*2)=8.0/8. Total 30.0/32 = 93.75%.
+    assert stats["ceiling_expected"] == pytest.approx(30 / 32)
+    # band_optimistic: every case-dim's max(a,b) -> shot_reachability's only
+    # pair maxes to 2 (perfect), everything else already 2 -> 60/60 = 100%.
+    assert stats["band_optimistic"] == pytest.approx(1.0)
+    # band_pessimistic: shot_reachability's only pair mins to 0 (num
+    # contribution drops from 4 to 0) -> (60-4)/60 = 56/60.
+    assert stats["band_pessimistic"] == pytest.approx(56 / 60)
+
+
+def test_compute_noise_stats_dimension_with_zero_applicable_pairs_reports_none_not_zero():
+    """An all-approach sample has zero applicable shot_reachability
+    case-dims — every per-dimension metric must be None (never a misleading
+    0.0/1.0), and the dimension must be excluded from ceiling/band, not
+    silently zeroed (a perfect all-2s sample still yields 100% everywhere)."""
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats([("caseA", first, second)], {"caseA": {"shot_kind": "approach"}})
+
+    sr = stats["per_dimension"]["shot_reachability"]
+    assert sr == {
+        "n_applicable": 0, "exact_agreement_rate": None, "pass_flip_rate": None,
+        "mean_abs_delta": None, "q_pass_repeat": None,
+    }
+    assert stats["ceiling_expected"] == pytest.approx(1.0)
+    assert stats["band_optimistic"] == pytest.approx(1.0)
+    assert stats["band_pessimistic"] == pytest.approx(1.0)
+
+
+def test_compute_noise_stats_stored_first_pass_agreement_bonus():
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    pairs = [("caseA", first, second), ("caseB", first, second)]
+    engine_refs = {"caseA": {"shot_kind": "positioning"}, "caseB": {"shot_kind": "approach"}}
+
+    stored_a = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    b_stored_scores = dict(all_two)
+    b_stored_scores["numbers_coherence"] = 0  # deliberate mismatch on case B only
+    stored_b = JudgeScores(scores=b_stored_scores, confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats(
+        pairs, engine_refs, stored_first={"caseA": stored_a, "caseB": stored_b},
+    )
+    agreement = stats["stored_first_pass_agreement"]
+    assert agreement["shot_reachability"] == pytest.approx(1.0), "only caseA counted -- SR is N/A on caseB"
+    assert agreement["numbers_coherence"] == pytest.approx(0.5), "caseA matches, caseB's stored verdict mismatches"
+    assert agreement["hazard_awareness"] == pytest.approx(1.0), "untouched dimension, both cases match"
+
+
+def test_compute_noise_stats_omits_stored_first_pass_agreement_key_when_not_given():
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats([("caseA", first, second)], {"caseA": {"shot_kind": "positioning"}})
+    assert "stored_first_pass_agreement" not in stats
+
+
 # ── 6. build_cases sanity (case-count math §2) ──────────────────────────
 
 
@@ -499,6 +685,105 @@ def test_report_excludes_fact_class_from_correctness_headline_and_reports_routin
     assert headline.fact_routing_accuracy == pytest.approx(0.5)  # 1 of 2 FACT cases actually routed to "fact"
 
 
+# ── cycle-3 commit 1: shot_reachability is N/A off a positioning shot ──────
+
+
+def test_compute_headline_excludes_shot_reachability_off_positioning_shots():
+    """Cycle-3 commit 1 contract: shot_reachability is N/A on a
+    non-positioning (approach) shot — `report.compute_headline` must exclude
+    it from BOTH the per-dimension pass rate AND the weighted
+    numerator/denominator when `engine_ref['shot_kind'] != 'positioning'`.
+    Fixture: one positioning case (shot_reachability=2, everything else 2)
+    plus one approach case (shot_reachability=0 — a spurious judge zero —
+    everything else 2).
+
+    Hand-computed BEFORE this fix (both cases' shot_reachability counted in
+    the weighted score): the 5 other correctness dims (weight 2, both cases
+    pass) contribute num=8/den=8 each = 40/40; shot_reachability (weight 2,
+    values [2, 0]) contributes num=4/den=8; the 4 crux dims (weight 1, both
+    cases pass) contribute num=4/den=4 each = 16/16. Total: 60/64 = 93.75%.
+
+    AFTER this fix (the approach case's shot_reachability dropped from BOTH
+    numerator and denominator, per the plan's contract): shot_reachability
+    now only counts the positioning case's value=2, contributing num=4/den=4.
+    Total: 60/60 = 100%.
+    """
+    from tests.eval.caddie_bench.schema import CaseResult, JudgeDimension, ResolvedPosition
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+
+    positioning_scores = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    approach_raw_scores = dict(all_two)
+    approach_raw_scores["shot_reachability"] = 0
+    approach_scores = JudgeScores(scores=approach_raw_scores, confidence=dict(all_conf), failure_class="good")
+
+    positioning_case = CaseResult(
+        case_id="holeA__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+        intent="advice", answer="positioning answer", degraded=False,
+        engine_ref={"club": "driver", "shot_kind": "positioning"}, det_checks=[], judge=positioning_scores,
+    )
+    approach_case = CaseResult(
+        case_id="holeB__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0),
+        intent="advice", answer="approach answer", degraded=False,
+        engine_ref={"club": "7iron", "shot_kind": "approach"}, det_checks=[], judge=approach_scores,
+    )
+
+    headline = report.compute_headline([positioning_case, approach_case])
+
+    assert headline.dimension_pass_rate["shot_reachability"] == pytest.approx(1.0), (
+        "the approach case's spurious 0 must never enter the positioning-only pass rate"
+    )
+    assert headline.dimension_n["shot_reachability"] == 1, "only the positioning case is applicable"
+    assert headline.weighted_correctness_score == pytest.approx(1.0)
+
+    # The before-fix number, proving this is a real fix and not a no-op.
+    before_fix_weighted = 60 / 64
+    assert before_fix_weighted == pytest.approx(0.9375)
+    assert headline.weighted_correctness_score > before_fix_weighted
+
+
+def test_judge_prompt_shot_kind_gloss_is_conditional_on_positioning():
+    """Commit 1: the ENGINE REFERENCE gloss must never attach the
+    'out of reach' positioning language to a non-positioning (approach)
+    shot, and vice versa — the previous SHARED gloss misled the judge into
+    flagging reachable approaches as if the flag weren't the target (the
+    68/84 spurious-zero bug this commit fixes)."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="gloss-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.FAIRWAY, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0)
+
+    positioning_ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 260, "target_yards": 260}
+    approach_ref = {"club": "7iron", "shot_kind": "approach", "raw_yards": 150, "target_yards": 150}
+
+    positioning_text, _ = judge_mod.judge_prompt(case, resolved, positioning_ref, "answer text", "det summary")
+    approach_text, _ = judge_mod.judge_prompt(case, resolved, approach_ref, "answer text", "det summary")
+
+    assert "out of reach for THIS swing" in positioning_text
+    assert "NOT the aim target" in positioning_text
+
+    assert "positioning = out of reach" not in approach_text
+    assert "out of reach" not in approach_text
+    assert "NOT the aim target" not in approach_text
+    assert "the green IS reachable" in approach_text
+    assert "aiming at or relative to the flag is CORRECT" in approach_text
+
+    # Rubric scope language: "shot_kind=positioning" scope, and the trigger
+    # clause's own line must not contain a bare "approach" keyword.
+    assert "shot_kind=positioning" in positioning_text
+    sr_line = next(line for line in positioning_text.split("\n") if line.startswith("- shot_reachability:"))
+    assert "approach" not in sr_line.lower()
+
+
 def test_det_check_pass_rate_overall_aggregates_across_every_check():
     """#11: an overall det-check pass rate must be computed and surfaced in
     the headline (DET_CHECK_WEIGHT was an unused, misleading constant —
@@ -525,6 +810,54 @@ def test_det_check_weight_constant_was_removed():
     from tests.eval.caddie_bench import schema as schema_mod
 
     assert not hasattr(schema_mod, "DET_CHECK_WEIGHT")
+
+
+# ── cycle-3 commit 2: degrade_reason_counts headline ────────────────────────
+
+
+def test_compute_headline_degrade_reason_counts_categorizes_and_buckets_unknown():
+    """Two instrumented degrades (one validator, one exception), one
+    pre-instrumentation degrade (degraded=True, degrade_reason=None -- must
+    bucket under "unknown(pre-instrumentation)", never be silently dropped),
+    and one non-degraded case (must not appear at all)."""
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    def _r(case_id, degraded, degrade_reason):
+        return CaseResult(
+            case_id=case_id,
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="x", degraded=degraded, engine_ref={"club": "driver"},
+            degrade_reason=degrade_reason,
+        )
+
+    results = [
+        _r("holeA__slot0__owner__x", True, "validator:side-flip"),
+        _r("holeB__slot0__owner__x", True, "exception:RuntimeError"),
+        _r("holeC__slot0__owner__x", True, None),  # pre-instrumentation
+        _r("holeD__slot0__owner__x", False, None),  # not degraded at all
+    ]
+    headline = report.compute_headline(results)
+    assert headline.degrade_reason_counts == {
+        "validator:side-flip": 1, "exception:RuntimeError": 1, "unknown(pre-instrumentation)": 1,
+    }
+    assert sum(headline.degrade_reason_counts.values()) == sum(1 for r in results if r.degraded)
+
+
+def test_generate_report_includes_a_degrade_reasons_section():
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    results = [
+        CaseResult(
+            case_id="holeA__slot0__owner__x",
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="x", degraded=True, engine_ref={"club": "driver"},
+            degrade_reason="validator:hazard-type",
+        ),
+    ]
+    meta = report.RunMeta(run_id="degrade-reasons-test", case_count=len(results))
+    text = report.generate_report(results, meta)
+    assert "## Degrade reasons" in text
+    assert "validator:hazard-type" in text
 
 
 # ── 8. LIVE-synth recursion fix + real-call canary + --render-mode ─────────
@@ -591,6 +924,57 @@ async def test_live_synth_wrapper_delegates_to_the_saved_original_exactly_once_n
     assert cost_log[0]["model"] == "gpt-5.6-sol"
     assert synth.last_latency_ms >= 0.0
     assert synth.last_cost_usd > 0.0
+
+
+async def test_run_reconstruction_propagates_degrade_reason_and_raw_synth_text(monkeypatch, tmp_path):
+    """Teeth pin (cycle-3 commit 2): the explicit `CaseResult(...)`
+    reconstruction inside `run()` is the silent-drop trap — if a future edit
+    forgets to copy `degrade_reason`/`raw_synth_text` from `harness.run_case`'s
+    result onto `final`, this test goes RED (the JSONL line loses both
+    fields on a real degrade). End-to-end through the real `run()`, with the
+    synth + judge seams stubbed so it stays fully offline."""
+    import argparse
+
+    from app.caddie import strategy as strategy_mod
+
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.setattr(run_caddie_bench, "RUNS_DIR", tmp_path)
+
+    # A rejectable narrative: pebble_beach_h3 has no mapped water (sanity
+    # pinned by test_hazard_only_from_input_goes_red_on_ungrounded_hazard in
+    # test_bench_teeth.py), so naming "water" trips the hazard-type check
+    # deterministically -> degraded=True, degrade_reason="validator:hazard-type".
+    reject_text = "Driver off the tee, watch the water down the left, commit to the shot."
+
+    async def _stub_synth(ground_truth: str, *, model: str):
+        return reject_text, {"input_tokens": 10, "output_tokens": 10}
+
+    monkeypatch.setattr(strategy_mod, "synthesize_strategy", _stub_synth)
+
+    async def _stub_judge_case(*args, **kwargs):
+        return _canned_judge_scores("all_pass"), {"input_tokens": 5, "output_tokens": 5}
+
+    monkeypatch.setattr(run_caddie_bench.judge_mod, "judge_case", _stub_judge_case)
+
+    args = argparse.Namespace(
+        budget_usd=10.0, max_cases=1, only_failures=None, holes=["pebble_beach_h3"],
+        resume=None, min_weighted_correctness=0.0, report_out=None, render_mode="vector",
+    )
+    exit_code = await run_caddie_bench.run(args)
+    # This 1-case synthetic run is deliberately 100% degraded (that's the
+    # scenario under test) -- it correctly trips the UNRELATED real-call
+    # canary (report.py's own guard against a 100%-degraded run masquerading
+    # as real), which is irrelevant to what this test proves. Results are
+    # already written to disk by the time that check runs (see run()).
+    assert exit_code == run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID
+
+    results_path = next(tmp_path.glob("*/results.jsonl"))
+    loaded = report.load_results(results_path)
+    assert len(loaded) == 1
+    assert loaded[0].degraded is True
+    assert loaded[0].degrade_reason == "validator:hazard-type"
+    assert loaded[0].raw_synth_text == reject_text
 
 
 def test_check_real_call_canary_flags_a_synthetic_100pct_degraded_98ms_run_invalid():
