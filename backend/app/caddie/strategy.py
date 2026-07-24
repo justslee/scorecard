@@ -48,6 +48,7 @@ from app.caddie.guide_writer import (
     validate_lore,
 )
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
+from app.caddie.physics import relative_wind
 from app.caddie.session import RoundSession
 from app.caddie.tools import (
     bend_payload,
@@ -120,6 +121,7 @@ async def build_strategy_payload(
     distance_to_green_yards: Optional[int] = None,
     hole_yards: Optional[int] = None,
     yardage_basis: Optional[str] = None,
+    shot_bearing_deg: Optional[float] = None,
 ) -> dict:
     """Assemble the full grounded engine payload for one hole.
 
@@ -129,6 +131,20 @@ async def build_strategy_payload(
     beats the cached hole's own yardage — never a fabricated default. `None`
     when nothing is known; `recommend_payload` returns an honest `{"error":
     ...}` in that case rather than solving a guessed number.
+
+    `shot_bearing_deg` (caddie-bench-cycle2-plan.md §2.2 — a live-vs-bench
+    physics mismatch the planner found): the live engine solve used to call
+    `recommend_payload` with NO bearing at all, decomposing wind against due
+    north (0.0) while the bench oracle always solves with the true shot
+    bearing — a structural disagreement on any windy non-north hole. The
+    caller-supplied bearing wins; falling back to the cached tee->green
+    `intel.approach_bearing_deg` (honest None on an unmapped hole) when the
+    caller doesn't have one. `None` end to end (today's every existing
+    fixture) omits the kwarg entirely, so `recommend_payload` keeps its own
+    0.0 default and every current test stays byte-identical. A live GPS
+    player-bearing doesn't reach the server today, so mid-hole this is the
+    tee->green approximation, not the true player->green bearing — honest
+    and bounded (plan §8.5).
 
     Side effect (intended, inherited from `recommend_payload`):
     `sessions.set_recommendation` persists, so both mouths' "Last
@@ -159,6 +175,16 @@ async def build_strategy_payload(
             resolved_yards = intel.yards if intel is not None else None
             resolved_basis = None
 
+        bearing_used = (
+            shot_bearing_deg
+            if shot_bearing_deg is not None
+            else (intel.approach_bearing_deg if intel is not None else None)
+        )
+
+        recommend_kwargs: dict = {}
+        if bearing_used is not None:
+            recommend_kwargs["shot_bearing"] = bearing_used
+
         recommendation = await recommend_payload(
             session,
             round_id,
@@ -166,6 +192,7 @@ async def build_strategy_payload(
             par=intel.par if intel is not None else 4,
             yards=resolved_yards,
             yardage_basis=resolved_basis,
+            **recommend_kwargs,
         )
 
         # Read-time verdict gate (specs/caddie-two-tier-routing-plan.md §5) —
@@ -197,11 +224,32 @@ async def build_strategy_payload(
                 guide.local_lore, intel.hazards if intel is not None else []
             )
 
+        # Wind-vs-shot-line frame (caddie-bench-cycle2-plan.md §2.2), computed
+        # ONCE here — `conditions_payload` is shared with several other
+        # callers (§1.4) and is NOT touched for wind. Honest by design: `None`
+        # when there's no weather, no resolvable bearing, or the wind is calm
+        # (`relative_wind`'s own gates) — never a fabricated frame.
+        wind_relative: Optional[dict] = None
+        if session.weather is not None and bearing_used is not None:
+            rw = relative_wind(session.weather, bearing_used)
+            if rw is not None:
+                wind_relative = rw._asdict()
+
         return {
             "hole_number": hole_number,
             "recommendation": recommendation,
-            "conditions": conditions_payload(session, hole_number),
-            "carries": carries_payload(session, hole_number),
+            "wind_relative": wind_relative,
+            # from_distance_yards (cycle-2 plan §1.3): the SAME resolved_yards
+            # `carries_payload` below is fed — conditions and carries can
+            # never disagree about the frame (identical gate + identical
+            # input by construction).
+            "conditions": conditions_payload(session, hole_number, from_distance_yards=resolved_yards),
+            # from_distance_yards (approach-solve plan §1.5): the SAME
+            # resolved_yards recommend_payload just solved against — carries
+            # ahead of the player render a `carry_from_you_yards` frame once
+            # the turn is approach-framed, never a second, independently
+            # resolved distance.
+            "carries": carries_payload(session, hole_number, from_distance_yards=resolved_yards),
             "bend": bend_payload(session, hole_number),
             "green_read": green_read_payload(session, hole_number),
             "player": await player_profile_payload(session, user_id),
@@ -222,6 +270,7 @@ async def build_strategy_payload(
             "recommendation": {
                 "error": "Strategy engine hit an unexpected error putting this hole's numbers together.",
             },
+            "wind_relative": None,
             "conditions": {},
             "carries": {},
             "bend": {},
@@ -260,12 +309,43 @@ def format_strategy_ground_truth(payload: dict) -> str:
         if tee_numbers:
             lines.append("  " + format_tee_numbers_line(TeeShotNumbers.model_validate(tee_numbers)))
         else:
+            # Reachable/approach arm (specs/caddie-approach-solve-plan.md
+            # §1.4 DEFECT 3 + §1.3 DEFECT 2): bind the RECOMMENDATION line to
+            # the actual plays-like number and the per-side miss EVIDENCE, so
+            # the synth brain can't parrot the raw distance or a bare "left"/
+            # "right" with nothing behind it. This arm is also hit by
+            # reachable par-3 TEE turns (adjustments == [] there whenever
+            # conditions are calm) — a ground-truth wording improvement, not
+            # an engine-number change; no shipped test pins this arm's bytes.
             aim = (rec.get("aim_point") or {}).get("description") or "unknown"
-            miss = (rec.get("miss_side") or {}).get("preferred") or "unknown"
-            lines.append(
-                f"  Club: {rec.get('club', 'unknown')}. Target {rec.get('target_yards')}y "
-                f"(raw {rec.get('raw_yards')}y). Aim: {aim}. Miss: {miss}."
-            )
+            miss_dict = rec.get("miss_side") or {}
+            # nit 4 (eng-lead review): `description`/`avoid` are each a bare
+            # clause with no trailing punctuation of their own ("Bunker
+            # guards the left — miss right", "Don't miss right — open") —
+            # join with ". " (never a bare space, which ran two clauses
+            # together with no sentence break) and always end the line with
+            # a period, so this arm reads as clean sentences.
+            miss_parts = [p for p in (miss_dict.get("description"), miss_dict.get("avoid")) if p]
+            miss_evidence = ". ".join(miss_parts) if miss_parts else (miss_dict.get("preferred") or "unknown")
+            if miss_evidence and not miss_evidence.endswith((".", "!", "?")):
+                miss_evidence += "."
+            adjustments = rec.get("adjustments") or []
+            target_yards = rec.get("target_yards")
+            raw_yards = rec.get("raw_yards")
+            if adjustments:
+                adj_clause = "; ".join(
+                    a.get("description", "") for a in adjustments if a.get("description")
+                )
+                lines.append(
+                    f"  Club: {rec.get('club', 'unknown')}. Plays-like target {target_yards}y — "
+                    f"SPEAK THIS NUMBER for the shot (raw {raw_yards}y; {adj_clause}). "
+                    f"Aim: {aim}. Miss: {miss_evidence}"
+                )
+            else:
+                lines.append(
+                    f"  Club: {rec.get('club', 'unknown')}. Target {target_yards}y "
+                    f"(raw {raw_yards}y). Aim: {aim}. Miss: {miss_evidence}"
+                )
 
     conditions = payload.get("conditions") or {}
     lines.append("")
@@ -278,6 +358,19 @@ def format_strategy_ground_truth(payload: dict) -> str:
         )
     else:
         lines.append("  Weather: not available.")
+    wind_relative = payload.get("wind_relative")
+    if wind_relative:
+        # Wind decomposed against the SHOT LINE (caddie-bench-cycle2-plan.md
+        # §2.3) — the raw compass Weather line above is zero-signal for
+        # crosswind since the model is never shown the bearing to do trig
+        # against; this embedded-directive line hands it the ANSWER instead
+        # (same pattern as "SPEAK THIS NUMBER" / the COMPLETE-list hazard
+        # line). Omitted entirely when None (calm / no weather / no
+        # resolvable bearing) — never a fabricated frame.
+        lines.append(
+            f"  Wind for this shot: {wind_relative['spoken']}. "
+            "State how it shapes the club, target, or aim."
+        )
     plays_like = conditions.get("plays_like")
     if plays_like:
         lines.append(
@@ -285,7 +378,21 @@ def format_strategy_ground_truth(payload: dict) -> str:
             f"elevation change {plays_like.get('elevation_change_ft')}ft)."
         )
     hazards_line = conditions.get("hazards_line")
-    if hazards_line:
+    hazards_line_frame = conditions.get("hazards_line_frame")
+    if hazards_line_frame == "from_you":
+        # cycle-2 fix (§1 — the degrade-spike root cause): once `conditions`
+        # is fed the SAME `from_distance_yards` as `carries` (above), this
+        # line and the CARRIES section below render the SAME frame, so
+        # parroting either passes — the old tee-anchored/from-you mismatch
+        # that made validation reject truthful from-you answers is gone.
+        if hazards_line:
+            lines.append(f"  {hazards_line} — the COMPLETE list between you and the green — there are NO others.")
+        else:
+            # Every mapped hazard was suppressed (behind/cleared) — a TRUE
+            # statement, distinct from "NONE mapped" (which would be false:
+            # hazards exist, just not ahead of the player).
+            lines.append("  Hazards: every mapped hazard is behind you — nothing between you and the green.")
+    elif hazards_line:
         lines.append(f"  {hazards_line} — the COMPLETE list — there are NO others.")
     else:
         lines.append("  Hazards: NONE mapped. Do not name any specific hazard.")
@@ -294,13 +401,27 @@ def format_strategy_ground_truth(payload: dict) -> str:
         lines.append(f"  Green slope: {green_slope['description']}.")
 
     carries = payload.get("carries") or {}
+    carry_list = carries.get("carries") or []
+    # approach-solve plan §1.5: once the turn is approach-framed, surviving
+    # carries payload entries carry an ADDITIONAL `carry_from_you_yards` key
+    # (never REPLACING `carry_yards`) — its presence is the signal to render
+    # the from-you frame instead of the raw tee-anchored one. Tee turns
+    # (key absent on every entry): byte-identical.
+    approach_framed_carries = any(c.get("carry_from_you_yards") is not None for c in carry_list)
     lines.append("")
-    lines.append("CARRIES:")
+    if approach_framed_carries:
+        lines.append(f"CARRIES (from your position, {rec.get('raw_yards')}y out):")
+    else:
+        lines.append("CARRIES:")
     if carries.get("available"):
-        carry_list = carries.get("carries") or []
         if carry_list:
             for c in carry_list:
-                lines.append(f"  {c['type']} {c['side']} carry {c['carry_yards']}y")
+                if c.get("carry_from_you_yards") is not None:
+                    lines.append(
+                        f"  {c['type']} {c['side']} — about {c['carry_from_you_yards']}y from you to carry"
+                    )
+                else:
+                    lines.append(f"  {c['type']} {c['side']} carry {c['carry_yards']}y")
         else:
             lines.append(f"  {carries.get('note') or 'No mapped bunkers, water, or tree lines in play.'}")
     else:

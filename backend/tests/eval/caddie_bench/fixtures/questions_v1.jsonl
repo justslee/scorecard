@@ -1,0 +1,132 @@
+# questions_v1.jsonl — hand-authored, versioned phrasing bank (specs/caddie-bench-plan.md §1).
+# One JSON object per line: {"phrasing_id", "question_type", "lie_constraint", "text"}.
+# lie_constraint: [] = compatible with any lie; otherwise the lies this phrasing makes sense from.
+# Deduped by normalized text at load time (schema.load_question_bank). Never edit in place —
+# a future regeneration bumps the filename to questions_v2.jsonl.
+{"phrasing_id": "tee_strategy_01", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "What's the play off this tee?"}
+{"phrasing_id": "tee_strategy_02", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "How should I play this hole?"}
+{"phrasing_id": "tee_strategy_03", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "Walk me through this tee shot."}
+{"phrasing_id": "tee_strategy_04", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "What am I looking at off the tee here?"}
+{"phrasing_id": "tee_strategy_05", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "How do you want me to attack this hole?"}
+{"phrasing_id": "tee_strategy_06", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "What's the smart play here off the tee?"}
+{"phrasing_id": "tee_strategy_07", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "Give me the strategy for this hole."}
+{"phrasing_id": "tee_strategy_08", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "What's the game plan off this tee?"}
+{"phrasing_id": "tee_strategy_09", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "How do the pros play this hole?"}
+{"phrasing_id": "tee_strategy_10", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "Talk me through the tee shot on this one."}
+{"phrasing_id": "tee_strategy_11", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "What should my approach be off the tee?"}
+{"phrasing_id": "tee_strategy_12", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "OK caddie, what's the play?"}
+{"phrasing_id": "tee_strategy_13", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "How should I think about this tee shot?"}
+{"phrasing_id": "tee_strategy_14", "question_type": "tee_strategy", "lie_constraint": ["tee"], "text": "What's the plan off the tee on this hole?"}
+{"phrasing_id": "club_selection_01", "question_type": "club_selection", "lie_constraint": [], "text": "What club should I hit?"}
+{"phrasing_id": "club_selection_02", "question_type": "club_selection", "lie_constraint": [], "text": "Which club here?"}
+{"phrasing_id": "club_selection_03", "question_type": "club_selection", "lie_constraint": ["tee"], "text": "Driver or 3-wood off this tee?"}
+{"phrasing_id": "club_selection_04", "question_type": "club_selection", "lie_constraint": ["tee"], "text": "Should I hit driver here?"}
+{"phrasing_id": "club_selection_05", "question_type": "club_selection", "lie_constraint": [], "text": "What am I hitting from here?"}
+{"phrasing_id": "club_selection_06", "question_type": "club_selection", "lie_constraint": [], "text": "What's the right club for this shot?"}
+{"phrasing_id": "club_selection_07", "question_type": "club_selection", "lie_constraint": [], "text": "What do you like here, club-wise?"}
+{"phrasing_id": "club_selection_08", "question_type": "club_selection", "lie_constraint": [], "text": "Give me a club for this shot."}
+{"phrasing_id": "club_selection_09", "question_type": "club_selection", "lie_constraint": ["tee"], "text": "Is this a driver hole or should I take something less?"}
+{"phrasing_id": "club_selection_10", "question_type": "club_selection", "lie_constraint": [], "text": "What should I be hitting off this lie?"}
+{"phrasing_id": "club_selection_11", "question_type": "club_selection", "lie_constraint": [], "text": "Which club do you want me to pull?"}
+{"phrasing_id": "club_selection_12", "question_type": "club_selection", "lie_constraint": [], "text": "What's in your hand for me right now?"}
+{"phrasing_id": "club_selection_13", "question_type": "club_selection", "lie_constraint": ["fairway", "rough"], "text": "Long iron or hybrid from here?"}
+{"phrasing_id": "layup_vs_go_01", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Should I go for it or lay up?"}
+{"phrasing_id": "layup_vs_go_02", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Can I get home in two?"}
+{"phrasing_id": "layup_vs_go_03", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Do I have a shot at the green from here?"}
+{"phrasing_id": "layup_vs_go_04", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Should I take it on or play it safe?"}
+{"phrasing_id": "layup_vs_go_05", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Is this a go or a lay-up?"}
+{"phrasing_id": "layup_vs_go_06", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Send it at the green or play short?"}
+{"phrasing_id": "layup_vs_go_07", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Do you think I can reach it from here?"}
+{"phrasing_id": "layup_vs_go_08", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Should I go for the green in two?"}
+{"phrasing_id": "layup_vs_go_09", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Lay up or give it a go?"}
+{"phrasing_id": "layup_vs_go_10", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Am I laying up here or going at the flag?"}
+{"phrasing_id": "layup_vs_go_11", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Worth trying to get there from here?"}
+{"phrasing_id": "layup_vs_go_12", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Should I bite off the corner and go for it?"}
+{"phrasing_id": "layup_vs_go_13", "question_type": "layup_vs_go", "lie_constraint": ["fairway", "rough"], "text": "Play it smart and lay up, or go for it?"}
+{"phrasing_id": "miss_side_bail_01", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Where's the miss on this one?"}
+{"phrasing_id": "miss_side_bail_02", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Where should I bail if I have to?"}
+{"phrasing_id": "miss_side_bail_03", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Left or right miss here?"}
+{"phrasing_id": "miss_side_bail_04", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Which side do I miss on if I'm off?"}
+{"phrasing_id": "miss_side_bail_05", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Where's the safe miss?"}
+{"phrasing_id": "miss_side_bail_06", "question_type": "miss_side_bail", "lie_constraint": [], "text": "If I'm going to miss, which side is better?"}
+{"phrasing_id": "miss_side_bail_07", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Where's the bailout on this hole?"}
+{"phrasing_id": "miss_side_bail_08", "question_type": "miss_side_bail", "lie_constraint": [], "text": "What side should I favor?"}
+{"phrasing_id": "miss_side_bail_09", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Is there a side I really need to avoid?"}
+{"phrasing_id": "miss_side_bail_10", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Where do I not want to miss it?"}
+{"phrasing_id": "miss_side_bail_11", "question_type": "miss_side_bail", "lie_constraint": [], "text": "Which side is trouble on this hole?"}
+{"phrasing_id": "miss_side_bail_12", "question_type": "miss_side_bail", "lie_constraint": [], "text": "If I block it, am I OK?"}
+{"phrasing_id": "miss_side_bail_13", "question_type": "miss_side_bail", "lie_constraint": [], "text": "What's the smart miss here?"}
+{"phrasing_id": "carry_question_01", "question_type": "carry_question", "lie_constraint": [], "text": "How much do I need to carry that bunker?"}
+{"phrasing_id": "carry_question_02", "question_type": "carry_question", "lie_constraint": [], "text": "What's the carry on that hazard?"}
+{"phrasing_id": "carry_question_03", "question_type": "carry_question", "lie_constraint": [], "text": "How far do I have to carry it to clear the trouble?"}
+{"phrasing_id": "carry_question_04", "question_type": "carry_question", "lie_constraint": [], "text": "What's the number to carry the water?"}
+{"phrasing_id": "carry_question_05", "question_type": "carry_question", "lie_constraint": [], "text": "How much carry do I need here?"}
+{"phrasing_id": "carry_question_06", "question_type": "carry_question", "lie_constraint": [], "text": "What do I need to fly it to get over that?"}
+{"phrasing_id": "carry_question_07", "question_type": "carry_question", "lie_constraint": [], "text": "Can I carry the bunker from here?"}
+{"phrasing_id": "carry_question_08", "question_type": "carry_question", "lie_constraint": [], "text": "What's the carry number to the front?"}
+{"phrasing_id": "carry_question_09", "question_type": "carry_question", "lie_constraint": [], "text": "How far is the carry to clear the trees?"}
+{"phrasing_id": "carry_question_10", "question_type": "carry_question", "lie_constraint": [], "text": "What do I need to carry to be safe?"}
+{"phrasing_id": "carry_question_11", "question_type": "carry_question", "lie_constraint": [], "text": "How much do I have to fly it here?"}
+{"phrasing_id": "carry_question_12", "question_type": "carry_question", "lie_constraint": [], "text": "What's the minimum carry to stay dry?"}
+{"phrasing_id": "wind_adjust_01", "question_type": "wind_adjust", "lie_constraint": [], "text": "How's the wind affecting this shot?"}
+{"phrasing_id": "wind_adjust_02", "question_type": "wind_adjust", "lie_constraint": [], "text": "What's this playing with the wind?"}
+{"phrasing_id": "wind_adjust_03", "question_type": "wind_adjust", "lie_constraint": [], "text": "Do I need to adjust for the wind here?"}
+{"phrasing_id": "wind_adjust_04", "question_type": "wind_adjust", "lie_constraint": [], "text": "How much wind am I fighting?"}
+{"phrasing_id": "wind_adjust_05", "question_type": "wind_adjust", "lie_constraint": [], "text": "Is the wind going to hurt me on this shot?"}
+{"phrasing_id": "wind_adjust_06", "question_type": "wind_adjust", "lie_constraint": [], "text": "What's it actually playing with this wind?"}
+{"phrasing_id": "wind_adjust_07", "question_type": "wind_adjust", "lie_constraint": [], "text": "Should I take extra club for the wind?"}
+{"phrasing_id": "wind_adjust_08", "question_type": "wind_adjust", "lie_constraint": [], "text": "How do I play this wind?"}
+{"phrasing_id": "wind_adjust_09", "question_type": "wind_adjust", "lie_constraint": [], "text": "Is this wind hurting or helping me?"}
+{"phrasing_id": "wind_adjust_10", "question_type": "wind_adjust", "lie_constraint": [], "text": "What's the wind doing to this number?"}
+{"phrasing_id": "wind_adjust_11", "question_type": "wind_adjust", "lie_constraint": [], "text": "Does the wind change my club here?"}
+{"phrasing_id": "wind_adjust_12", "question_type": "wind_adjust", "lie_constraint": [], "text": "How much should I allow for the breeze?"}
+{"phrasing_id": "approach_green_01", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "What's my approach here?"}
+{"phrasing_id": "approach_green_02", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "How do I play this into the green?"}
+{"phrasing_id": "approach_green_03", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "Where should I aim my approach shot?"}
+{"phrasing_id": "approach_green_04", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "What's the target on this approach?"}
+{"phrasing_id": "approach_green_05", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "How should I attack this pin?"}
+{"phrasing_id": "approach_green_06", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "What's the shot into this green look like?"}
+{"phrasing_id": "approach_green_07", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "Where do I want to land this approach?"}
+{"phrasing_id": "approach_green_08", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "How do you want me to play this into the pin?"}
+{"phrasing_id": "approach_green_09", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "What's the best angle into this green?"}
+{"phrasing_id": "approach_green_10", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "Should I go at the flag or play to the middle?"}
+{"phrasing_id": "approach_green_11", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "Where's the smart spot to land this?"}
+{"phrasing_id": "approach_green_12", "question_type": "approach_green", "lie_constraint": ["fairway", "rough", "bunker"], "text": "What's the play into the green from here?"}
+{"phrasing_id": "recovery_01", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "What are my options from here?"}
+{"phrasing_id": "recovery_02", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "Can I go for the green from in here?"}
+{"phrasing_id": "recovery_03", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "I'm stuck behind these trees, what do I do?"}
+{"phrasing_id": "recovery_04", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "What's my best play out of trouble here?"}
+{"phrasing_id": "recovery_05", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "Should I punch out or try to advance it?"}
+{"phrasing_id": "recovery_06", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "Do I have a shot at the green or should I chip out?"}
+{"phrasing_id": "recovery_07", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "What's the smart recovery from here?"}
+{"phrasing_id": "recovery_08", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "How do I get out of this mess?"}
+{"phrasing_id": "recovery_09", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "What's the play from this trouble spot?"}
+{"phrasing_id": "recovery_10", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "Is there a gap I can use to get back in play?"}
+{"phrasing_id": "recovery_11", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "Should I take my medicine here or try something risky?"}
+{"phrasing_id": "recovery_12", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "What's the low-risk play from in here?"}
+{"phrasing_id": "recovery_13", "question_type": "recovery", "lie_constraint": ["recovery_trees", "rough", "bunker"], "text": "Where do I need to get this back to?"}
+{"phrasing_id": "challenge_why_01", "question_type": "challenge_why", "lie_constraint": [], "text": "Why that club?"}
+{"phrasing_id": "challenge_why_02", "question_type": "challenge_why", "lie_constraint": [], "text": "Are you sure about that number?"}
+{"phrasing_id": "challenge_why_03", "question_type": "challenge_why", "lie_constraint": [], "text": "Why not go at the pin?"}
+{"phrasing_id": "challenge_why_04", "question_type": "challenge_why", "lie_constraint": [], "text": "Why favor that side?"}
+{"phrasing_id": "challenge_why_05", "question_type": "challenge_why", "lie_constraint": [], "text": "That seems like a lot of club, why?"}
+{"phrasing_id": "challenge_why_06", "question_type": "challenge_why", "lie_constraint": [], "text": "Why do you think that's the right play?"}
+{"phrasing_id": "challenge_why_07", "question_type": "challenge_why", "lie_constraint": [], "text": "I don't see the trouble you're talking about, why avoid it?"}
+{"phrasing_id": "challenge_why_08", "question_type": "challenge_why", "lie_constraint": [], "text": "Explain that number to me again."}
+{"phrasing_id": "challenge_why_09", "question_type": "challenge_why", "lie_constraint": [], "text": "Why so conservative here?"}
+{"phrasing_id": "challenge_why_10", "question_type": "challenge_why", "lie_constraint": [], "text": "Are you sure that's enough club?"}
+{"phrasing_id": "challenge_why_11", "question_type": "challenge_why", "lie_constraint": [], "text": "Why not just hit driver?"}
+{"phrasing_id": "challenge_why_12", "question_type": "challenge_why", "lie_constraint": [], "text": "Talk me through why you'd pick that over driver."}
+{"phrasing_id": "challenge_why_13", "question_type": "challenge_why", "lie_constraint": [], "text": "Why do you like that side better than the other?"}
+{"phrasing_id": "fact_distance_01", "question_type": "fact_distance", "lie_constraint": [], "text": "How far to the front?"}
+{"phrasing_id": "fact_distance_02", "question_type": "fact_distance", "lie_constraint": [], "text": "What's the number to the pin?"}
+{"phrasing_id": "fact_distance_03", "question_type": "fact_distance", "lie_constraint": [], "text": "How far do I have?"}
+{"phrasing_id": "fact_distance_04", "question_type": "fact_distance", "lie_constraint": [], "text": "What's the yardage to the green?"}
+{"phrasing_id": "fact_distance_05", "question_type": "fact_distance", "lie_constraint": [], "text": "How far to the middle of the green?"}
+{"phrasing_id": "fact_distance_06", "question_type": "fact_distance", "lie_constraint": [], "text": "What's the distance from here?"}
+{"phrasing_id": "fact_distance_07", "question_type": "fact_distance", "lie_constraint": [], "text": "How deep is this green?"}
+{"phrasing_id": "fact_distance_08", "question_type": "fact_distance", "lie_constraint": [], "text": "What's the number to the back?"}
+{"phrasing_id": "fact_distance_09", "question_type": "fact_distance", "lie_constraint": [], "text": "How far do I have left?"}
+{"phrasing_id": "fact_distance_10", "question_type": "fact_distance", "lie_constraint": [], "text": "What's the front number?"}
+{"phrasing_id": "fact_distance_11", "question_type": "fact_distance", "lie_constraint": [], "text": "Give me the yardage."}
+{"phrasing_id": "fact_distance_12", "question_type": "fact_distance", "lie_constraint": [], "text": "How far is it playing?"}

@@ -164,6 +164,177 @@ async def test_ground_truth_no_recommendation_renders_honest_error():
     assert "Not available:" in block
 
 
+# ── Approach-frame ground truth (specs/caddie-approach-solve-plan.md) ─────
+
+
+def _hole7_intel_approach(hazards=None) -> dict[int, HoleIntelligence]:
+    # hole 400, resolved distance 150 (see _fixture_payload_approach) ->
+    # tee_offset 250. carry_yards=320 is still AHEAD of the player
+    # (250 < 320 < 400) -> from-here 70, survives EN_ROUTE_CLEARED_SUPPRESS.
+    return {
+        7: HoleIntelligence(
+            hole_number=7, par=4, yards=400,
+            hazards=hazards if hazards is not None else [
+                Hazard(type="bunker", side="left", line_side="left", carry_yards=320, penalty_severity="moderate"),
+            ],
+            green_slope=GreenSlope(description="back-to-front, moderate"),
+        )
+    }
+
+
+async def _fixture_payload_approach(*, hazards=None, distance=150, wind_mph=6.0) -> dict:
+    session = _session(
+        hole_intel=_hole7_intel_approach(hazards),
+        club_distances={"driver": 300, "7iron": 160, "9iron": 140},
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=wind_mph, wind_direction=210),
+    )
+    return await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=distance,
+    )
+
+
+async def test_ground_truth_approach_turn_renders_from_you_carries_and_miss_evidence():
+    """Approach-framed (hole 400, dist 150 -> offset 250): the CARRIES
+    section renders the from-you frame, and the RECOMMENDATION line binds
+    the miss description/avoid evidence, never a bare preferred-only word."""
+    payload = await _fixture_payload_approach()
+    rec = payload["recommendation"]
+    assert rec.get("error") is None
+    assert rec.get("shot_kind") == "approach"
+
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "CARRIES (from your position," in block
+    assert "from you to carry" in block
+    assert "320" not in block.split("CARRIES")[1].split("SHAPE:")[0]  # raw tee-frame carry never in the CARRIES section
+
+    miss = rec.get("miss_side") or {}
+    assert miss.get("description")
+    assert miss["description"] in block or miss.get("avoid") in block
+
+
+async def test_ground_truth_approach_turn_renders_adjustments_clause_when_wind_present():
+    payload = await _fixture_payload_approach(wind_mph=20.0)
+    rec = payload["recommendation"]
+    assert rec.get("adjustments")
+
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "SPEAK THIS NUMBER for the shot" in block
+    assert f"Plays-like target {rec.get('target_yards')}y" in block
+    assert f"raw {rec.get('raw_yards')}y" in block
+
+
+async def test_ground_truth_tee_turn_byte_identical_no_carries_from_you_frame():
+    """466y hole, always a positioning/tee_shot_numbers turn (existing
+    fixture) — the approach-frame changes must never touch this arm."""
+    payload = await _fixture_payload(None)
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "CARRIES (from your position," not in block
+    assert "from you to carry" not in block
+    assert "CARRIES:" in block
+
+
+async def test_ground_truth_approach_turn_still_byte_identical_across_two_calls():
+    payload_a = await _fixture_payload_approach()
+    payload_b = await _fixture_payload_approach()
+    assert (
+        strategy_mod.format_strategy_ground_truth(payload_a)
+        == strategy_mod.format_strategy_ground_truth(payload_b)
+    )
+
+
+# ── Wind-relative ground truth (caddie-bench-cycle2-plan.md §2) ──────────
+# Fix B: raw-compass Weather was zero-signal for crosswind (the model is
+# never shown the bearing to do trig against). Every existing fixture above
+# never sets `HoleIntelligence.approach_bearing_deg`, so `bearing_used`
+# resolves to None and these lines stay absent — the byte-identity claim is
+# exercised by the existing tests above continuing to pass unmodified; these
+# new tests exercise the OPT-IN path explicitly.
+
+
+def _hole7_intel_with_bearing(bearing_deg: float) -> dict[int, HoleIntelligence]:
+    return {
+        7: HoleIntelligence(
+            hole_number=7, par=4, yards=400, approach_bearing_deg=bearing_deg,
+            hazards=[], green_slope=GreenSlope(description="flat"),
+        )
+    }
+
+
+async def test_ground_truth_wind_line_present_when_bearing_and_wind_both_known():
+    """A hole with a mapped tee->green bearing + a non-calm wind renders the
+    from-the-shot-line wind directive right after the (unchanged) Weather
+    line — the whole point of Fix B."""
+    session = _session(
+        hole_intel=_hole7_intel_with_bearing(0.0),
+        club_distances={"driver": 300, "7iron": 160},
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=20.0, wind_direction=0),
+    )
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150,
+    )
+    assert payload["wind_relative"] is not None
+    assert payload["wind_relative"]["bucket"] == "head"
+
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    weather_idx = block.index("Weather:")
+    wind_idx = block.index("Wind for this shot:")
+    assert wind_idx > weather_idx  # ADDED after, never replacing
+    assert (
+        "Wind for this shot: 20 mph headwind — into you. "
+        "State how it shapes the club, target, or aim."
+    ) in block
+
+
+async def test_ground_truth_wind_line_omitted_when_bearing_unmapped():
+    """Every existing fixture never sets `approach_bearing_deg` — the wind
+    line must stay absent (byte-identical to today) even with a real wind."""
+    payload = await _fixture_payload_approach(wind_mph=20.0)
+    assert payload["wind_relative"] is None
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Wind for this shot:" not in block
+
+
+async def test_ground_truth_wind_line_omitted_when_calm():
+    session = _session(
+        hole_intel=_hole7_intel_with_bearing(0.0),
+        club_distances={"driver": 300, "7iron": 160},
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=0.0, wind_direction=0),
+    )
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150,
+    )
+    assert payload["wind_relative"] is None
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Wind for this shot:" not in block
+
+
+async def test_ground_truth_wind_line_omitted_when_no_weather_at_all():
+    session = _session(hole_intel=_hole7_intel_with_bearing(0.0), club_distances={}, weather=None)
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150,
+    )
+    assert payload["wind_relative"] is None
+    block = strategy_mod.format_strategy_ground_truth(payload)
+    assert "Wind for this shot:" not in block
+
+
+async def test_build_strategy_payload_threads_explicit_shot_bearing_over_intel_fallback():
+    """The caller-supplied `shot_bearing_deg` wins over the cached tee->green
+    `intel.approach_bearing_deg` fallback — pins the ladder order."""
+    session = _session(
+        hole_intel=_hole7_intel_with_bearing(0.0),  # intel says due-north
+        club_distances={"driver": 300, "7iron": 160},
+        # Wind FROM 90 relative to a due-north shot is a pure crosswind, but
+        # relative to a 90-degree shot bearing (the CALLER's value) it's a
+        # headwind — proves the caller value was actually used.
+        weather=WeatherConditions(temperature_f=68, wind_speed_mph=15.0, wind_direction=90),
+    )
+    payload = await strategy_mod.build_strategy_payload(
+        session, "round-1", "user-1", 7, distance_to_green_yards=150, shot_bearing_deg=90.0,
+    )
+    assert payload["wind_relative"]["bucket"] == "head"
+
+
 # ── System prompt contract pins ──────────────────────────────────────────
 
 
@@ -766,6 +937,61 @@ def test_compose_degraded_line_clean_reachable_approach_sane_numbers_and_favor_s
     assert line == "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
 
 
+def test_compose_degraded_line_caps_hazard_clause_at_3_nearest():
+    """caddie-bench-cycle2-plan.md §1.5 — the mechanical multi-hazard
+    readout: >3 hazards -> only the 3 NEAREST (list already sorted ascending
+    by carries_payload) are spoken."""
+    many_carries = {
+        "carries": [
+            {"type": "bunker", "side": "left", "carry_yards": 100},
+            {"type": "water", "side": "right", "carry_yards": 150},
+            {"type": "trees", "side": "left", "carry_yards": 200},
+            {"type": "bunker", "side": "right", "carry_yards": 250},
+            {"type": "water", "side": "left", "carry_yards": 300},
+        ]
+    }
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, many_carries)
+    assert "bunker left at 100" in line
+    assert "water right at 150" in line
+    assert "trees left at 200" in line
+    assert "bunker right at 250" not in line
+    assert "water left at 300" not in line
+
+
+def test_compose_degraded_line_dedupes_type_side_pairs_keeping_the_nearest():
+    """Never repeats "bunker right ... bunker right ..." — the SAME
+    (type, side) pair keeps only its nearest entry."""
+    dupe_carries = {
+        "carries": [
+            {"type": "bunker", "side": "right", "carry_yards": 115},
+            {"type": "bunker", "side": "right", "carry_yards": 130},
+            {"type": "water", "side": "left", "carry_yards": 180},
+        ]
+    }
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, dupe_carries)
+    assert line.count("bunker right") == 1
+    assert "bunker right at 115" in line
+    assert "bunker right at 130" not in line
+    assert "water left at 180" in line
+
+
+def test_compose_degraded_line_at_most_3_unique_pairs_byte_identical():
+    """<=3 unique (type, side) pairs -> unaffected by the cap/dedupe change
+    (the existing Red-6/Augusta-12 pins above already prove this; this test
+    names the invariant directly)."""
+    three_carries = {
+        "carries": [
+            {"type": "bunker", "side": "left", "carry_yards": 100},
+            {"type": "water", "side": "right", "carry_yards": 150},
+            {"type": "trees", "side": "left", "carry_yards": 200},
+        ]
+    }
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, three_carries)
+    assert "bunker left at 100" in line
+    assert "water right at 150" in line
+    assert "trees left at 200" in line
+
+
 _COMP_LEGAL_REC = {
     "club": "driver",
     "raw_yards": 430,
@@ -801,6 +1027,32 @@ def test_compose_degraded_line_competition_legal_none_carry_uses_stored_phrasing
     assert "None" not in line
     assert "plays like" not in line
     assert line == "Driver off the tee — 430 to the green; 285 stored, leaves about 145 in. Favor the right."
+
+
+def test_compose_degraded_line_omits_wind_clause_by_default():
+    """`wind_relative` defaults to None — every existing call site above
+    stays byte-identical (proven by the pins above being unmodified)."""
+    line = compose_degraded_line(_CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, _CLEAN_APPROACH_CARRIES)
+    assert "Wind:" not in line
+    assert line == "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
+
+
+def test_compose_degraded_line_appends_wind_clause_when_present():
+    """caddie-bench-cycle2-plan.md §2.4 — a degraded answer used to auto-fail
+    WIND_AWARENESS with zero wind language; the clause is fields-only and
+    appended after the hazard clause, before the green-read clause."""
+    wind_relative = {
+        "speed_mph": 15.0, "head_mph": 0.0, "cross_mph": 15.0,
+        "bucket": "cross_right", "spoken": "15 mph crosswind off the right — pushes it left",
+    }
+    line = compose_degraded_line(
+        _CLEAN_APPROACH_REC, _CLEAN_APPROACH_GREEN_READ, _CLEAN_APPROACH_CARRIES, wind_relative,
+    )
+    assert "Wind: 15 mph crosswind off the right — pushes it left." in line
+    assert line == (
+        "6 Iron, 170 to the green, plays like 175. Favor the right. Watch water right at 165."
+        " Wind: 15 mph crosswind off the right — pushes it left."
+    )
 
 
 # ── Route-level tests: POST /session/strategy (Task A, QA-found gap) ───────

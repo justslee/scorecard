@@ -27,7 +27,9 @@ from app.caddie.types import TeeShotNumbers
 log = logging.getLogger("looper.caddie.strategy_turn")
 
 
-def compose_degraded_line(rec: dict, green_read: dict, carries: dict) -> str:
+def compose_degraded_line(
+    rec: dict, green_read: dict, carries: dict, wind_relative: Optional[dict] = None,
+) -> str:
     """Deterministic degraded-line composer — built PURELY from engine
     FIELDS, never reused prose (specs/caddie-degraded-line-reliability-plan.md
     Fix A). The old closure this replaces reused `format_tee_numbers_line`
@@ -46,6 +48,12 @@ def compose_degraded_line(rec: dict, green_read: dict, carries: dict) -> str:
     (`tests/eval/test_strategy_tool.py`) and the ONE implementation both the
     live degrade path and the route tests exercise — no hand-reconstructed
     duplicate to drift out of sync.
+
+    `wind_relative` (caddie-bench-cycle2-plan.md §2.4): the SAME
+    `physics.RelativeWind._asdict()` the ground-truth CONDITIONS block
+    renders, threaded through so a degraded answer — which used to auto-fail
+    WIND_AWARENESS with zero wind language — still states it. `None` (every
+    existing caller) omits the clause, byte-identical.
     """
     club_key = rec.get("club") or ""
     club_display = CLUB_DISPLAY_NAMES.get(club_key, club_key) or "your club"
@@ -91,15 +99,48 @@ def compose_degraded_line(rec: dict, green_read: dict, carries: dict) -> str:
         parts.append(" Favor long.")
     # "center" / falsy -> omit (never "no trouble" / "no strong side").
 
-    # 3. Hazard clause from the drive-zone/frame carries.
+    # 3. Hazard clause from the drive-zone/frame carries. Prefers the
+    # player-relative `carry_from_you_yards` frame (approach-solve plan
+    # §1.5) when the turn is approach-framed — the raw tee-anchored
+    # `carry_yards` otherwise (tee turns: key absent, byte-identical).
+    #
+    # caddie-bench-cycle2-plan.md §1.5 — the mechanical "bunker right about
+    # 115 from you, bunker right about 130 from you, ..." readout on every
+    # new-degrade transcript. Two bounded, fields-only changes: dedupe
+    # (type, side) pairs first (keep the nearest of each pair, so the clause
+    # never repeats "bunker right ... bunker right ..."), THEN cap at the 3
+    # nearest survivors — `carries["carries"]` is already sorted ascending
+    # by raw tee carry (carries_payload), and a constant offset subtraction
+    # preserves that ordering for the from-you frame too, so "first" is
+    # "nearest" in either frame. <=3 unique (type, side) pairs -> byte-
+    # identical to before this change.
     hz = [c for c in (carries.get("carries") or []) if c.get("carry_yards")]
     if hz:
+        seen_type_side: set[tuple] = set()
+        deduped: list[dict] = []
+        for c in hz:
+            key = (c.get("type"), c.get("side"))
+            if key in seen_type_side:
+                continue
+            seen_type_side.add(key)
+            deduped.append(c)
+        hz = deduped[:3]
         parts.append(
             " Watch "
-            + ", ".join(f"{c['type']} {c['side']} at {c['carry_yards']}" for c in hz)
+            + ", ".join(
+                (f"{c['type']} {c['side']} about {c['carry_from_you_yards']} from you"
+                 if c.get("carry_from_you_yards") is not None
+                 else f"{c['type']} {c['side']} at {c['carry_yards']}")
+                for c in hz
+            )
             + "."
         )
     # empty / carries unavailable -> omit (no "no trouble" ever).
+
+    # 3b. Wind, fields-only (§2.4) — honest: omitted when there's no weather,
+    # no resolvable bearing, or the wind is calm.
+    if wind_relative:
+        parts.append(f" Wind: {wind_relative['spoken']}.")
 
     # 4. Green read.
     gr = green_read.get("uphill_leave_side")
@@ -123,6 +164,7 @@ async def run_strategy_turn(
     distance_to_green_yards: Optional[int] = None,
     hole_yards: Optional[int] = None,
     yardage_basis: Optional[str] = None,
+    shot_bearing_deg: Optional[float] = None,
 ) -> dict:
     """Frontier-reasoned tee-to-green strategy — the ONE implementation
     behind BOTH the `get_strategy` realtime tool's `/session/strategy`
@@ -140,6 +182,10 @@ async def run_strategy_turn(
     mid-round crash, when a recommendation exists
     ([[no-fake-data-fallbacks]]).
 
+    `shot_bearing_deg` (caddie-bench-cycle2-plan.md §2.2): passed straight
+    through to `build_strategy_payload`, which falls back to the cached
+    tee->green bearing when this is `None` — see that function's docstring.
+
     Returns a plain dict matching `SessionStrategyResponse`'s field shape
     (available/hole_number/strategy/degraded/reason/numbers) — the route
     wraps it in the Pydantic model; this module never imports routes.
@@ -149,6 +195,7 @@ async def run_strategy_turn(
         distance_to_green_yards=distance_to_green_yards,
         hole_yards=hole_yards,
         yardage_basis=yardage_basis,
+        shot_bearing_deg=shot_bearing_deg,
     )
 
     rec = payload.get("recommendation") or {}
@@ -161,7 +208,12 @@ async def run_strategy_turn(
         "plays_like": conditions.get("plays_like"),
         "hazards_line": conditions.get("hazards_line"),
         "carries": [
-            {"type": c.get("type"), "side": c.get("side"), "carry_yards": c.get("carry_yards")}
+            {
+                "type": c.get("type"), "side": c.get("side"), "carry_yards": c.get("carry_yards"),
+                # Player-relative frame (approach-solve plan §1.5), additive —
+                # `None` on every tee-framed turn, byte-identical there.
+                "carry_from_you_yards": c.get("carry_from_you_yards"),
+            }
             for c in (carries.get("carries") or [])
         ],
         "green_read": {
@@ -201,7 +253,9 @@ async def run_strategy_turn(
                 log.warning("session_strategy: verdict-pin reject (%s) hole=%s", pin_reason, hole)
             else:
                 log.warning("session_strategy: validator rejected narrative for hole=%s", hole)
-            strategy_text = compose_degraded_line(rec, green_read, carries)
+            strategy_text = compose_degraded_line(
+                rec, green_read, carries, payload.get("wind_relative")
+            )
             degraded = True
         else:
             strategy_text = validated
@@ -212,7 +266,9 @@ async def run_strategy_turn(
         # exists here (the honest-empty branch above already returned), so
         # the degraded line is always groundable.
         log.exception("session_strategy: synthesis failed for hole=%s", hole)
-        strategy_text = compose_degraded_line(rec, green_read, carries)
+        strategy_text = compose_degraded_line(
+            rec, green_read, carries, payload.get("wind_relative")
+        )
         degraded = True
 
     if not degraded:

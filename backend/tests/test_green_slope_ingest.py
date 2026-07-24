@@ -303,8 +303,19 @@ class TestComputeSlopeFromGrid:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _run(coro):
-    """Run a coroutine in the current event loop (pytest-asyncio is auto mode)."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run a coroutine to completion via a fresh event loop.
+
+    ``asyncio.get_event_loop()`` is fragile from sync test code: once ANY
+    earlier test in the process has called ``asyncio.run()`` (which always
+    unsets the current-thread loop on exit, by design), a bare
+    ``get_event_loop()`` call raises ``RuntimeError: There is no current
+    event loop`` instead of vivifying a new one — order-dependent and not
+    reproducible in isolation. ``asyncio.run()`` owns its own loop lifecycle
+    end-to-end, so it's safe regardless of what ran before it. Matches the
+    idiom already used for this same function in
+    ``test_hole_elevation_ingest.py``.
+    """
+    return asyncio.run(coro)
 
 
 class TestSampleCourseElevationsGreenSlope:

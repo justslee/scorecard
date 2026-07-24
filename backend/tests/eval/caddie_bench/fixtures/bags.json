@@ -1,0 +1,23 @@
+{
+  "owner": {
+    "handicap": 3.0,
+    "clubs": {
+      "driver": 300, "3wood": 270, "4iron": 230, "5iron": 215, "6iron": 195,
+      "7iron": 180, "8iron": 170, "9iron": 155, "pw": 140, "gw": 127, "sw": 115, "lw": 90
+    }
+  },
+  "short_hitter": {
+    "handicap": 20,
+    "clubs": {
+      "driver": 210, "3wood": 195, "5wood": 180, "hybrid": 170, "6iron": 145,
+      "7iron": 135, "8iron": 125, "9iron": 115, "pw": 105, "sw": 80, "lw": 60
+    }
+  },
+  "bomber": {
+    "handicap": 8,
+    "clubs": {
+      "driver": 320, "3wood": 285, "4iron": 240, "5iron": 220, "7iron": 190,
+      "9iron": 165, "pw": 150, "gw": 135, "sw": 118, "lw": 95
+    }
+  }
+}

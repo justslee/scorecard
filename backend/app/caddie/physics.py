@@ -52,6 +52,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import NamedTuple, Optional
 
 # ── Physical constants ────────────────────────────────────────────────────────
 
@@ -682,6 +683,69 @@ def conditions_from_weather(
             firmness=firmness,
         ),
         tuple(assumptions),
+    )
+
+
+class RelativeWind(NamedTuple):
+    """Wind decomposed against the SHOT LINE, not raw compass — cycle-2 fix
+    (caddie-bench-cycle2-plan.md §2.1). Reuses `conditions_from_weather`'s
+    existing relative-angle convention (head_mps/cross_mps above) rather
+    than forking a second decomposition; this is the same trig, just also
+    surfaced as a spoken phrase for ground truth + degraded-line reuse."""
+
+    speed_mph: float
+    head_mph: float  # +into / -helping (speed * cos(rel))
+    cross_mph: float  # +from the RIGHT of the shot line (speed * sin(rel))
+    bucket: str  # "head" | "tail" | "cross_right" | "cross_left"
+    spoken: str  # one phrase, composed here so ground truth + degraded line share it
+
+
+def relative_wind(weather, shot_bearing_deg: float) -> Optional[RelativeWind]:
+    """Decompose ``weather``'s wind against ``shot_bearing_deg`` (the compass
+    direction the shot travels). ``None`` when there is no weather or the
+    wind is calm (mirrors `club_selection.compute_adjustments`'s own
+    `has_weather_effect` wind gate, `wind_speed_mph >= 3` — below that, calm
+    says NOTHING new, never a fabricated frame).
+
+    ``wind_direction`` is meteorological (degrees the wind comes FROM) — the
+    same convention `conditions_from_weather` uses. ``rel`` is the wind's
+    FROM-direction relative to the shot line, normalized to (-180, 180]:
+    ``rel == 0`` means the wind blows FROM straight ahead (a headwind).
+    Buckets on 45-degree boundaries: |rel| < 45 -> head; |rel| >= 135 -> tail
+    (the boundary sample itself, 135, buckets tail — plan §4 edge case 9
+    pins this exact choice); otherwise a crosswind, side determined by the
+    sign of ``rel`` (positive -> wind is FROM the right of the shot line,
+    which pushes the ball left).
+    """
+    if weather is None:
+        return None
+    wind_mph = getattr(weather, "wind_speed_mph", 0.0) or 0.0
+    if wind_mph < 3:
+        return None
+    wind_dir = getattr(weather, "wind_direction", 0) or 0
+
+    rel = (wind_dir - shot_bearing_deg) % 360.0
+    if rel > 180.0:
+        rel -= 360.0
+
+    head_mph = wind_mph * math.cos(math.radians(rel))
+    cross_mph = wind_mph * math.sin(math.radians(rel))
+
+    if abs(rel) < 45.0:
+        bucket = "head"
+        spoken = f"{wind_mph:.0f} mph headwind — into you"
+    elif abs(rel) >= 135.0:
+        bucket = "tail"
+        spoken = f"{wind_mph:.0f} mph tailwind — helping"
+    elif rel > 0.0:
+        bucket = "cross_right"
+        spoken = f"{wind_mph:.0f} mph crosswind off the right — pushes it left"
+    else:
+        bucket = "cross_left"
+        spoken = f"{wind_mph:.0f} mph crosswind off the left — pushes it right"
+
+    return RelativeWind(
+        speed_mph=wind_mph, head_mph=head_mph, cross_mph=cross_mph, bucket=bucket, spoken=spoken,
     )
 
 

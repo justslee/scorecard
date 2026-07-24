@@ -66,8 +66,13 @@ _HAZARD_RE = re.compile(
 # "runs off at 2%" — not a yardage). Deliberately no "yards/y" suffix
 # requirement: caddie speech states bare numbers ("152 to the pin") far more
 # often than suffixed ones — see README.md's Known limitations for the
-# accepted false-positive tradeoff (e.g. a 3-digit wind heading).
-_YARDAGE_RE = re.compile(r"\b(\d{2,3})\b(?!%)")
+# accepted false-positive tradeoff (e.g. a 3-digit wind heading). The mph
+# lookahead (caddie-bench-cycle2-plan.md §3.2) closes exactly that flagged
+# false-positive class for wind speed specifically: "15 mph" no longer
+# extracts as yardage 15 now that wind-aware answers ("15 mph headwind") are
+# the whole point of the from-the-shot wind fix — a bare 3-digit heading
+# ("from 210 degrees") is still extracted, unchanged, per the same README note.
+_YARDAGE_RE = re.compile(r"\b(\d{2,3})\b(?!%)(?!\s*mph\b)")
 
 # Sentence splitter — mirrors checks.py's `_SENTENCE_SPLIT_RE` so endorsement
 # cues are scanned sentence-by-sentence the same way tier2 checks count
