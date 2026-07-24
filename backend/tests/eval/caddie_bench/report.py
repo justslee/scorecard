@@ -70,6 +70,12 @@ class HeadlineStats:
     latency_p50_ms: Optional[float]
     latency_p95_ms: Optional[float]
     failure_class_counts: dict[str, int] = field(default_factory=dict)
+    # cycle-3 commit 1: per-dimension APPLICABLE count -- shot_reachability is
+    # only applicable/aggregated on positioning-shot cases (see the `continue`
+    # in the dim_scores loop below), so its own `n` can be far smaller than
+    # `case_count`; without this a small positioning sample could masquerade
+    # as a full-population rate in the report table.
+    dimension_n: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -129,12 +135,23 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
     dim_scores: dict[JudgeDimension, list[int]] = defaultdict(list)
     for r in judged:
         for dim, v in r.judge.scores.items():
+            # Commit 1: shot_reachability is N/A off a positioning shot (the
+            # rubric/judge only meaningfully scores it when the ENGINE
+            # REFERENCE says shot_kind=positioning — an out-of-reach shot).
+            # `engine_ref` is a plain dict on every CaseResult, so this reads
+            # the deterministic oracle rather than trusting the judge to
+            # self-declare applicability; old runs re-aggregate correctly
+            # too, with zero re-spend.
+            if dim == JudgeDimension.SHOT_REACHABILITY and (r.engine_ref or {}).get("shot_kind") != "positioning":
+                continue
             dim_scores[dim].append(v)
 
     dim_pass_rate: dict[str, float] = {}
+    dim_n: dict[str, int] = {}
     for dim in JudgeDimension:
         vals = dim_scores.get(dim, [])
         dim_pass_rate[dim.value] = (sum(1 for v in vals if v == 2) / len(vals)) if vals else 0.0
+        dim_n[dim.value] = len(vals)
 
     weighted_num = 0.0
     weighted_den = 0.0
@@ -212,6 +229,7 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
         latency_p50_ms=p50,
         latency_p95_ms=p95,
         failure_class_counts=dict(failure_counts),
+        dimension_n=dim_n,
     )
 
 
@@ -301,6 +319,8 @@ def generate_report(
     lines.append("|---|---|")
     for dim in JudgeDimension:
         marker = " (2x weighted)" if dim in CORRECTNESS_DIMENSIONS else ""
+        if dim == JudgeDimension.SHOT_REACHABILITY:
+            marker += f", positioning shots only, n={headline.dimension_n.get(dim.value, 0)}"
         lines.append(f"| {dim.value}{marker} | {headline.dimension_pass_rate.get(dim.value, 0.0):.1%} |")
     lines.append("")
 

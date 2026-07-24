@@ -499,6 +499,105 @@ def test_report_excludes_fact_class_from_correctness_headline_and_reports_routin
     assert headline.fact_routing_accuracy == pytest.approx(0.5)  # 1 of 2 FACT cases actually routed to "fact"
 
 
+# ── cycle-3 commit 1: shot_reachability is N/A off a positioning shot ──────
+
+
+def test_compute_headline_excludes_shot_reachability_off_positioning_shots():
+    """Cycle-3 commit 1 contract: shot_reachability is N/A on a
+    non-positioning (approach) shot — `report.compute_headline` must exclude
+    it from BOTH the per-dimension pass rate AND the weighted
+    numerator/denominator when `engine_ref['shot_kind'] != 'positioning'`.
+    Fixture: one positioning case (shot_reachability=2, everything else 2)
+    plus one approach case (shot_reachability=0 — a spurious judge zero —
+    everything else 2).
+
+    Hand-computed BEFORE this fix (both cases' shot_reachability counted in
+    the weighted score): the 5 other correctness dims (weight 2, both cases
+    pass) contribute num=8/den=8 each = 40/40; shot_reachability (weight 2,
+    values [2, 0]) contributes num=4/den=8; the 4 crux dims (weight 1, both
+    cases pass) contribute num=4/den=4 each = 16/16. Total: 60/64 = 93.75%.
+
+    AFTER this fix (the approach case's shot_reachability dropped from BOTH
+    numerator and denominator, per the plan's contract): shot_reachability
+    now only counts the positioning case's value=2, contributing num=4/den=4.
+    Total: 60/60 = 100%.
+    """
+    from tests.eval.caddie_bench.schema import CaseResult, JudgeDimension, ResolvedPosition
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+
+    positioning_scores = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    approach_raw_scores = dict(all_two)
+    approach_raw_scores["shot_reachability"] = 0
+    approach_scores = JudgeScores(scores=approach_raw_scores, confidence=dict(all_conf), failure_class="good")
+
+    positioning_case = CaseResult(
+        case_id="holeA__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+        intent="advice", answer="positioning answer", degraded=False,
+        engine_ref={"club": "driver", "shot_kind": "positioning"}, det_checks=[], judge=positioning_scores,
+    )
+    approach_case = CaseResult(
+        case_id="holeB__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0),
+        intent="advice", answer="approach answer", degraded=False,
+        engine_ref={"club": "7iron", "shot_kind": "approach"}, det_checks=[], judge=approach_scores,
+    )
+
+    headline = report.compute_headline([positioning_case, approach_case])
+
+    assert headline.dimension_pass_rate["shot_reachability"] == pytest.approx(1.0), (
+        "the approach case's spurious 0 must never enter the positioning-only pass rate"
+    )
+    assert headline.dimension_n["shot_reachability"] == 1, "only the positioning case is applicable"
+    assert headline.weighted_correctness_score == pytest.approx(1.0)
+
+    # The before-fix number, proving this is a real fix and not a no-op.
+    before_fix_weighted = 60 / 64
+    assert before_fix_weighted == pytest.approx(0.9375)
+    assert headline.weighted_correctness_score > before_fix_weighted
+
+
+def test_judge_prompt_shot_kind_gloss_is_conditional_on_positioning():
+    """Commit 1: the ENGINE REFERENCE gloss must never attach the
+    'out of reach' positioning language to a non-positioning (approach)
+    shot, and vice versa — the previous SHARED gloss misled the judge into
+    flagging reachable approaches as if the flag weren't the target (the
+    68/84 spurious-zero bug this commit fixes)."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="gloss-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.FAIRWAY, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0)
+
+    positioning_ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 260, "target_yards": 260}
+    approach_ref = {"club": "7iron", "shot_kind": "approach", "raw_yards": 150, "target_yards": 150}
+
+    positioning_text, _ = judge_mod.judge_prompt(case, resolved, positioning_ref, "answer text", "det summary")
+    approach_text, _ = judge_mod.judge_prompt(case, resolved, approach_ref, "answer text", "det summary")
+
+    assert "out of reach for THIS swing" in positioning_text
+    assert "NOT the aim target" in positioning_text
+
+    assert "positioning = out of reach" not in approach_text
+    assert "out of reach" not in approach_text
+    assert "NOT the aim target" not in approach_text
+    assert "the green IS reachable" in approach_text
+    assert "aiming at or relative to the flag is CORRECT" in approach_text
+
+    # Rubric scope language: "shot_kind=positioning" scope, and the trigger
+    # clause's own line must not contain a bare "approach" keyword.
+    assert "shot_kind=positioning" in positioning_text
+    sr_line = next(line for line in positioning_text.split("\n") if line.startswith("- shot_reachability:"))
+    assert "approach" not in sr_line.lower()
+
+
 def test_det_check_pass_rate_overall_aggregates_across_every_check():
     """#11: an overall det-check pass rate must be computed and surfaced in
     the headline (DET_CHECK_WEIGHT was an unused, misleading constant —

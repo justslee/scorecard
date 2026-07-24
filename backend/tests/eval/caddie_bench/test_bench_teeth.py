@@ -247,6 +247,52 @@ def test_should_second_pass_fires_on_approach_miss_side_pin_vs_miss_side_evidenc
     assert judge_mod.should_second_pass(first, det_checks_agree, case) is False
 
 
+# ── cycle-3 commit 1: shot_reachability N/A off positioning ────────────────
+
+
+def test_check_positioning_no_pin_language_emits_the_exact_not_positioning_detail_string():
+    """Pin: `judge.should_second_pass`'s Commit-1 skip couples to this exact
+    detail string (harness.py::check_positioning_no_pin_language) — if the
+    wording ever drifts, this test goes RED before the coupling silently
+    breaks and the second-pass skip stops firing."""
+    rec = _FakeApproachRec(raw_yards=182)
+    result = harness.check_positioning_no_pin_language("anything at all", [], rec, {})
+    assert result.passed is True
+    assert result.detail == "not a positioning shot"
+
+
+def test_should_second_pass_skips_the_positioning_reachability_overlap_on_a_non_positioning_shot():
+    """Commit 1: on a non-positioning (approach) shot,
+    `check_positioning_no_pin_language` auto-passes with detail "not a
+    positioning shot" — a spurious judge 0 on shot_reachability there is not
+    a real det/judge disagreement (shot_reachability is N/A off positioning;
+    report.py excludes it from aggregation entirely) and must NOT trigger a
+    paid second pass. A genuine positioning-case disagreement must still
+    fire."""
+    case = BenchCase(
+        id="x", hole_fixture="x_h1", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    scores = {d: 2 for d in JudgeDimension}
+    scores[JudgeDimension.SHOT_REACHABILITY] = 0
+    confidence = {d: 0.95 for d in JudgeDimension}
+    first = JudgeScores(scores=scores, confidence=confidence, failure_class=FailureClass.GOOD, engine_looks_wrong=False, reason="x")
+
+    from tests.eval.caddie_bench.schema import DetCheckName, DetCheckResult
+
+    det_not_positioning = [DetCheckResult(check=DetCheckName.POSITIONING_NO_PIN_LANGUAGE, passed=True, detail="not a positioning shot")]
+    det_positioning_disagreement = [DetCheckResult(check=DetCheckName.POSITIONING_NO_PIN_LANGUAGE, passed=True, detail="ok")]
+
+    assert judge_mod.should_second_pass(first, det_not_positioning, case) is False, (
+        "a spurious shot_reachability=0 against the auto-passing 'not a positioning shot' "
+        "det check must not spend a second pass"
+    )
+    assert judge_mod.should_second_pass(first, det_positioning_disagreement, case) is True, (
+        "a genuine positioning-case det-pass/judge-fail disagreement must still fire the second pass"
+    )
+
+
 def test_hazard_only_from_input_goes_red_on_ungrounded_hazard():
     fx = _fixture("pebble_beach_h3.json")
     resolved, engine_ref, hazards, clubs = _engine_and_hazards(fx, LieCategory.TEE)
