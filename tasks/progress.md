@@ -3,6 +3,48 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## IN-PROGRESS (2026-07-24) — CADDIE BENCH CYCLE 3 (eng-lead lane, worktree agent-a451657e208406d24)
+Base `origin/integration/next` @ `0fd7c5b` (post-ship v1.1.21, bench floor 77.0). Landing new bundle
+work on `integration/next`; do NOT ship/ping. Full-150 run under diagnosis: on the box at
+`/tmp/benchwt_1784730879/backend/tests/eval/caddie_bench/runs/20260723-214457/` (read-only via SSM;
+instance i-0826ae70df62d9fe8, doc AWS-RunShellScript, helper scratchpad/ssm.sh).
+
+### DIAGNOSIS (quantified from results.jsonl, 142 judged advice cases)
+1. **shot_reachability 44.4% — CONFIRMED judge-clarity bug, NOT an engine gap.** Split by
+   engine_ref.shot_kind: positioning n=58 → 82.8% pass (dim works where it applies); approach n=84 →
+   17.9% pass (judge zeroes 68/84 reachable approaches). Root cause: `judge.py` `_format_engine_ref`
+   renders `shot_kind: approach (positioning = out of reach; the flag is NOT the aim target)` — the
+   parenthetical GLOSS misleads the judge into thinking the flag isn't the target even on reachable
+   approaches; and the SHOT_REACHABILITY rubric says "out-of-reach tee/**approach** shot" (word
+   "approach" wrongly pulls approach cases in). Judge then hallucinates engine_looks_wrong="reference
+   declares positioning" on 28/84 approach cases where shot_kind is literally "approach". FIX
+   (correctness, plan §5): shot_reachability is N/A on shot_kind!=positioning — exclude from report.py
+   dim aggregation + weighted score, AND fix prompt/rubric/gloss so judge isn't misled (also cuts
+   contested-rate + false engine_looks_wrong + judge cost). PROJECTED: weighted_correctness 77.0% →
+   81.7% (+4.7pts), zero caddie-behavior change (computed offline over the run). Real (a) engine gaps
+   are the small residual: 10/58 positioning imperfect, 6 engine_looks_wrong — minor, low-yield.
+2. **miss_side_evidence 51.4% (27×score0, 42×score1) — payload gap dominant.** Per-side evidence
+   enrichment (`aim_point.compute_miss_side`, cycle-1 DEFECT-2) only fires on the LEFT/RIGHT axis; when
+   the miss axis is front/back ("short/long") and mapped hazards are only left/right, it falls back to
+   evidence-free "Miss short — safe side, easy recovery" — unsupported, and on some holes (h18) the map
+   shows trouble short so the claim is WRONG. Plus a positioning payload bug: h18 slot0 favors right
+   while a bunker sits right at 215 inside the 229 landing window (compute_positioning_miss_side keys on
+   line_side only, not whether the hazard is in the preferred side's actual landing window).
+3. **Degrades 16.7% (25/150) → tanks natural_speech (degraded 32% vs non-degraded 63.2% pass).**
+   `degraded` = production `run_strategy_turn` validator REJECTED synth narrative → mechanical
+   `compose_degraded_line` fallback. Bench stores NO reject reason (all 25 reason=None) — plan must
+   INSTRUMENT bench to persist the validator reject class (verdict-pin vs aim_point suppression
+   divergence vs two-frame leak) so degrades auto-categorize. Suspects = reviewer cycle-3 nits
+   (aim_point rounded-vs-raw suppression divergence).
+4. **natural_speech 57.7%** — downstream of degrades; verify improves after degrade cut before any
+   prompt touch.
+5. **JUDGE NOISE contested 40.1%** — re-judge ~30-case double-pass on-box (~$1.5) → per-dim variance →
+   implied score CEILING (frames owner's 100% goal; never tune judge toward agreement).
+
+### AWAITING: Fable Plan agent (specs/caddie-bench-cycle3-plan.md). On return → dispatch builder on
+integration/next. Nothing committed by children yet. Reconcile from branch on resume: `git log
+origin/integration/next`; the diagnosis above is the contract for the plan.
+
 ## DONE (2026-07-23) — caddie approach-solve B1 fix + nits (builder, lane worktree-agent-a332d46ac24fb510d)
 Fixed the ONE BLOCKING fable-review finding + nits, commit `a8633f3` on top of `c96e529`.
 B1: `check_numbers_close` (harness.py) only learned from-you carry numbers when
