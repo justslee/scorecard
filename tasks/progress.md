@@ -2150,3 +2150,38 @@ warnings from the broken helper are also gone). `ruff check .` clean repo-wide.
 Committed directly to `integration/next` (silent rider, no rebase needed — head was already
 `3097c9f`, same as when dispatched). Landed: see `git log -1` on `integration/next` for the commit hash;
 noted on PR #154. Never touched main; no force-push.
+
+## SHIPPED — bundle #154 -> main, v1.1.21 build 202607232201 (2026-07-23) (release-manager)
+Owner approval in-session, verbatim: "Ship it" — given for the bundle at `3097c9f`. Backend gate then
+failed on the pre-existing green_slope flake (deterministic, twice); fixed at the root as a test-only
+rider (`4f16980`, see entry above). Pinned head confirmed unmoved at `4f16980` throughout gate polling
+(Frontend/Backend/E2E-advisory all SUCCESS).
+Sequence run inline/foreground, no backgrounding:
+1. Gates SUCCESS on `4f16980` (verified via `gh pr checks 154 --json`, structured, not scraped).
+2. VERSION bumped 1.1.20 -> 1.1.21 (`7a50218`), pushed, gates SUCCESS again on the bump head.
+3. `gh pr merge 154 --merge` -> merge commit `d97be85c9fbd583f89adef41b24c50bec6830518`. Post-merge
+   `CI` + `Deploy backend (SSM)` workflows on `main` both SUCCESS.
+4. Key-free confirms via SSM Run-Command on the EC2 box (no secrets in output): `/health` = `{"status":
+   "ok"}`; deployed `git rev-parse HEAD` on box == `d97be85...` (matches merge SHA); `relative_wind`
+   present in deployed `backend/app/caddie/physics.py` (the live bearing-bug fix is the ship's
+   headline — confirmed live); `alembic current` = `018_hole_pins_per_user (head)`, unchanged;
+   `APP_ACCESS_MODE=open` in `.env` — multi-user stays live, untouched; `VOICE_BOOKING_ENABLED` unset
+   in `.env` (defaults false) — outbound caller confirmed inert.
+5. `bash ops/ios/ship.sh` run in the foreground from synced `main` @ `d97be85`. Build succeeded,
+   archived, distribution-signed, uploaded: "Uploaded v1.1.21 (build 202607232201) to TestFlight".
+   Polled the App Store Connect API directly (JWT-signed with the ASC key, key-free stdout) until the
+   build indexed and processed: `processingState` went not-yet-indexed -> `VALID` in ~4 polls
+   (~80s). v1.1.21 sorts above every prior TestFlight entry (last was 1.1.20) — no burial risk.
+6. `integration/next` recut off the merge SHA via a clean fast-forward push (no force; `main` is a
+   strict descendant of the old `integration/next` tip through the merge commit) — a cycle-3 bench
+   lane is in flight and will rebase onto this after.
+7. Records: `backlog.json` — `caddie-approach-shot-engine` status `done-on-bundle` -> `done` with a
+   SHIPPED note (SHA, TestFlight build, bench 53.4->77.0); top-level `note` field prepended with the
+   bundle #154 ship ledger entry (JSON-validated after edit, targeted string edits only, never
+   json.load/dump). `caddie-bench-eval-framework` left `in-progress` (epic continues: full-1000 run +
+   cycle-3 iteration not yet done) — no other backlog items qualified for a terminal mark this cycle.
+   Notion board card #154 + PushNotification to the owner handled separately per the release-manager
+   protocol (Notion MCP / push tool, not git).
+Verified, not asserted: every gate state read from `gh ... --json` structured fields; every prod fact
+read key-free off the box via SSM; TestFlight state read from the ASC REST API with a JWT this session
+minted itself. Nothing scraped from human-readable CLI text.
