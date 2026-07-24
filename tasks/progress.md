@@ -2120,3 +2120,33 @@ suppression divergence -> cycle-3). Records: backlog caddie-approach-shot-engine
 PR #154 checklist += cycle-2 noticeable + silent lines + follow-up updated. NOT shipped/pinged (per
 directive). Coordinator gets the two packaged on-box run commands (failing-subset + fresh full-150) as
 the headline before/after evidence; the cycle-2 ceiling is now fixed so the delta measures the real gain.
+
+## DONE — ship-blocker fix: green_slope asyncio-ordering flake, now root-caused + fixed (2026-07-23)
+PR #154's backend gate was red twice, deterministically (not a rerun flake): all 8
+`tests/test_green_slope_ingest.py::TestSampleCourseElevationsGreenSlope::*` failed with
+`RuntimeError: There is no current event loop in thread 'MainThread'`. This is the long-documented
+green_slope flake (previously worked around by deselecting it, per the cycle-2 gate notes above — "36
+deselected (green_slope flake)") — recent suite growth (caddie-bench cycle2) made it deterministic in
+full-suite CI order.
+Root cause (bisected by prefix-running the full ordered test list): the file's own `_run(coro)` helper
+called the fragile pre-`asyncio.run()` idiom `asyncio.get_event_loop().run_until_complete(coro)`.
+`tests/eval/caddie_bench/test_bench_offline.py::test_render_mode_vector_never_requires_a_maps_key`
+(a SYNC test) calls `run_caddie_bench.main([...])`, which — once the CADDIE_EVAL_LIVE gate is open and
+render-mode is vector — reaches `asyncio.run(run(args))`. `asyncio.run()` always unsets the
+current-thread event loop on exit (by design, `events.set_event_loop(None)` in its `finally`); any LATER
+bare `asyncio.get_event_loop()` call in the same process then raises instead of auto-creating a loop
+(the auto-create fallback only fires when `set_event_loop` was never explicitly called). This is why it
+reproduced only in full-suite order and not in isolation, and why the CI log showed a different
+"immediately before" file (order-dependent on which earlier test happened to call `asyncio.run()`).
+Fix: `tests/test_green_slope_ingest.py`'s `_run()` now uses `asyncio.run(coro)` — same idiom already
+used for the identical `sample_course_elevations` call in the sibling `test_hole_elevation_ingest.py`,
+so this matches how the rest of the suite already handles it. No assertions touched, nothing
+skipped/deselected.
+Verified: the 8 named tests pass in isolation, pass immediately after the poisoning file
+(`test_bench_offline.py`), pass after `test_voice_error_hygiene.py` (CI's reported adjacent file), and
+the FULL offline suite passes in default order with zero deselects: `3256 passed, 154 skipped, 2
+warnings` (was 3248 passed / 8 failed before the fix; the two stray "coroutine was never awaited"
+warnings from the broken helper are also gone). `ruff check .` clean repo-wide.
+Committed directly to `integration/next` (silent rider, no rebase needed — head was already
+`3097c9f`, same as when dispatched). Landed: see `git log -1` on `integration/next` for the commit hash;
+noted on PR #154. Never touched main; no force-push.
