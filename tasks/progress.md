@@ -3063,3 +3063,38 @@ Clean verify at c104cb3: **3333 passed, 154 skipped, 0 failed**; ruff clean; mus
   driver 300y on 517y) is UNAMBIGUOUSLY timid. Previously it sat on a 210y par 3 where a 230y
   4-iron is over-clubbing and the poison pill wasn't poisonous.
 Dispatching a fresh reviewer (re-check B1/B2 only) + qa (full gate delta).
+
+## GREEN MIS-ANCHOR on bethpage_black_h18 — diagnosed from the data (coordinator's fidelity finding)
+Coordinator saw the composite banner read "Hole 18 · Par 4 · 411y · **508y to green**" — impossible.
+Diagnosed; none of the three hypotheses was right. **The tee is correct and the centerline is correct;
+the GREEN ANCHOR is a different hole's green.**
+  bethpage_black_h18: card 411y · polyline length **414.6y** (matches the card) · tee sits **0.0y**
+  from polyline[0] (correct) · but the SELECTED green is **105.4y from the polyline END** and 508.5y
+  from the tee.
+  The fixture carries **TWO green polygons**: green[1] is the real one (3.3y from the centerline end,
+  412.7y from the tee — matches the card); green[0] is a neighbouring green (105.4y off the end).
+  `geometry._tee_green_lonlat` takes `green_feats[0]` — **the first by file order** — and picks wrong.
+Scope, measured across all 10 fixtures: **only h18 is affected** (2 greens). Every other fixture has
+exactly 1 green and its selected green sits 0.2-5.1y from the centerline end.
+**PROD USES THE IDENTICAL RULE.** `app/caddie/hazards.py::_derive_tee_green` documents green priority
+as "A `green` Polygon centroid in the FeatureCollection (**first one found**)". Striking detail: prod
+already fixed exactly this bug class for TEES ("Finding A fix, 2026-07-16 — a multi-tee hole was
+picking the FIRST stored tee feature by file order, which silently anchored every carry/bend/corridor
+number to the wrong box"), but greens never got the same treatment. Latent, not demonstrated: the prod
+assembler over all 18 Bethpage Red holes yields **0/18** holes with != 1 green, so no reproduction in
+prod data I can reach — but the rule is unsafe and the owner plays Bethpage.
+Bench impact: `resolved.distance_to_green_yards` and the banner the JUDGE READS AS GROUND TRUTH are
+wrong on h18 (508 vs 411), and `approach_bearing_deg`/green depth+width are computed to the wrong
+green. It would poison every judged case on 1 of 10 fixtures. The club solve itself used `fx.yards`
+(411), so the engine's own pick was unaffected — but the judge would grade it against 508.
+
+### TRAP in the coordinator's proposed assert — a naive symmetric band would FALSE-FAIL every dogleg
+"|card_yards - tee-to-green geodesic| within a sane band" breaks on real doglegs, because a dogleg's
+straight-line distance is LEGITIMATELY much shorter than its card yardage. Measured:
+  bethpage_black_h7  card 553  geodesic 478.6  **-74.4**  <- CORRECT (a real dogleg; polyline 559.0y,
+                                                            green 0.6y from the centerline end)
+  bethpage_black_h18 card 411  geodesic 508.5  **+97.5**  <- THE BUG
+The asymmetry is the whole signal: a straight line can never be LONGER than the path along it, so
+**geodesic > card + tolerance is geometrically impossible** and is the real invariant. Shorter is
+normal. The robust primary check is therefore "the selected green must be within N yards of the hole
+polyline's END", with the geodesic<=card+tol assert as the secondary.
