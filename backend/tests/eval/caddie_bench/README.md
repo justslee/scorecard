@@ -202,6 +202,26 @@ Per-lie mix on the 174 advice cases: tee 60, fairway 54, rough 27, bunker
 27, greenside 6 — tee+fairway 65.5% (~66%, ordinary golf now the clear
 majority), trouble lies (rough+bunker) 31.0%.
 
+**Bend-cap coverage caveat (cycle-4 commit 6, reviewer ruling condition #2
+— read this before trusting a judged run to prove or disprove the cap):**
+the corridor bend-cap fix (A1/A2/A4, `app/caddie/aim_point.py`/`hazards.py`)
+is covered by the **deterministic offline test suite**
+(`backend/tests/test_bend_cap_corner_sharpness.py` and friends) with 400+
+pinned assertions across real and synthetic fixtures — that coverage is
+solid. Coverage **inside this bench's own judged case matrix** is much
+thinner: exactly ONE hole x bag configuration (`bethpage_red_h6` x
+`short_hitter`) actually exercises an armed cap end to end through a LIVE
+synth + judge call (see cycle-4 commit 3's message for why the owner/bomber
+bags on that same hole don't arm it). A judged-run regression in the cap
+specifically would have to move ONE case's score against judge-noise-level
+variance (`judge_noise.py`'s own `band_pessimistic`/`band_optimistic`
+measure this) to be detectable in the headline number — it would not be.
+**Neither this README nor any generated report may imply the bench
+"covers" the cap path** on the strength of the judged headline score alone;
+the deterministic suite is the actual proof, the judged run is a realism
+check on the SURROUNDING behavior (tone, evidence-citing, aggression
+posture), not a regression gate for the cap's own arming logic.
+
 ## Known engine-taxonomy limitation surfaced while building this (not fixed
 here — flag for the next caddie iteration)
 

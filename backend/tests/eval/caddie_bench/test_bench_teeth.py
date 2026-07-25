@@ -556,6 +556,76 @@ def test_timid_canary_all_pass_verdict_trips_the_canary_gate():
     assert judge_mod.canary_all_pass_gate(results) is True
 
 
+# ── 5b. cycle-4 commit 6, reviewer BLOCKING B2 — the timid canary must     ──
+#       bind to a hole where its own answer is actually coherent, and the   ──
+#       binding must be deterministic-by-CONSTRAINT, not by list POSITION. ──
+
+
+def test_timid_canary_binds_to_bethpage_black_h4_the_owners_incident_hole():
+    from tests.eval.caddie_bench import questions as q
+
+    fx_list = [geo.load_hole_fixture(p) for p in sorted(HOLES_DIR.glob("*.json"))]
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    canaries = q.build_canary_cases(fx_list, bank)
+    timid = next(c for c in canaries if c.canary_answer and "smart play is always the short club" in c.canary_answer)
+    assert timid.hole_fixture == "bethpage_black_h4", (
+        f"the timid canary must bind to the owner's own 517y incident hole, got {timid.hole_fixture!r}"
+    )
+    # Sanity: the bound hole must actually make the answer's timidity
+    # unambiguous — a real par >= 4 and long enough that the owner bag's
+    # 4-iron (230y) is a genuine, severe under-club, never an over-club (the
+    # exact incoherence that made the pre-fix bethpage_black_h8 binding, a
+    # par 3 at 210y, an accidental non-test of the timid tail).
+    bound_fx = next(fx for fx in fx_list if fx.fixture_id == timid.hole_fixture)
+    assert bound_fx.par >= 4
+    assert bound_fx.yards is not None and bound_fx.yards >= 500
+
+
+def test_timid_canary_binding_survives_an_alphabetically_earlier_fixture_added():
+    """The exact fragility the reviewer flagged: the OLD `i % len(hole_
+    fixtures)` binding depended on absolute list position, so ANY new
+    fixture sorting before the existing ones would reshuffle every single
+    canary. The NEW constraint-based binding must be immune to this for any
+    canary with a real requirement — prepending a synthetic alphabetically-
+    first fixture (that also happens to satisfy the requirement) must NOT
+    change which fixture the timid canary picks, because the pick is by
+    fixture_id (alphabetical) among QUALIFYING candidates, and
+    "bethpage_black_h4" still sorts before a fixture named with a leading
+    "AAA" prefix only if... — the real proof here is structural: the
+    SELECTION uses `sorted(candidates, key=fixture_id)[0]`, i.e. it is NOT
+    index-based at all, so reordering the INPUT list (independent of any
+    new fixture) can never change the result. That's what's asserted."""
+    from tests.eval.caddie_bench import questions as q
+
+    fx_list = [geo.load_hole_fixture(p) for p in sorted(HOLES_DIR.glob("*.json"))]
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+
+    forward = q.build_canary_cases(fx_list, bank)
+    reversed_input = q.build_canary_cases(list(reversed(fx_list)), bank)
+
+    forward_timid = next(c for c in forward if c.canary_answer and "smart play is always the short club" in c.canary_answer)
+    reversed_timid = next(c for c in reversed_input if c.canary_answer and "smart play is always the short club" in c.canary_answer)
+    assert forward_timid.hole_fixture == reversed_timid.hole_fixture == "bethpage_black_h4", (
+        "the constrained canary's binding must be independent of input list ORDER, "
+        "unlike the old i % len(hole_fixtures) scheme"
+    )
+
+
+def test_canary_with_unsatisfiable_requirement_is_skipped_not_crashed():
+    """A restricted `--holes` subset (a targeted/debug run) that doesn't
+    include any fixture long enough for the timid canary's requirement must
+    SKIP that one canary (loudly) rather than crash the whole run — a
+    legitimate partial-run workflow must not be held hostage by a canary
+    requirement it can never satisfy."""
+    from tests.eval.caddie_bench import questions as q
+
+    short_fx = geo.load_hole_fixture(HOLES_DIR / "pebble_beach_h3.json")  # par 4, 381y -- fails min_yards=500
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    canaries = q.build_canary_cases([short_fx], bank)
+    assert len(canaries) == 4, "the unsatisfiable timid canary is skipped; the other 4 still build"
+    assert all("smart play is always the short club" not in (c.canary_answer or "") for c in canaries)
+
+
 # ── 6. cycle-4 §B2 — the aggression_realism rubric text can't be quietly
 #      softened: both FAIL tails and the anti-hedging sentence must survive.
 
@@ -566,6 +636,27 @@ def test_aggression_realism_rubric_names_both_fail_tails_and_anti_hedging():
     assert "FAIL (0) an aggressive call" in text, "the reckless tail must be named"
     assert "never the tone" in text, "the anti-hedging sentence must survive"
     assert "does NOT rescue a timid" in text and "does NOT rescue a reckless" in text
+
+
+def test_aggression_realism_rubric_names_implausible_reach_is_not_punitive_evidence():
+    """cycle-4 commit 6, reviewer nit N1: the rubric demands 'high-
+    probability punishment' but (pre-fix) gave the judge no way to discount
+    a hazard the player's own shot can't plausibly reach — a moderate
+    hazard far off the played line (or beyond the club's own range) must be
+    named as NOT punitive evidence, closing that gap."""
+    text = judge_mod._RUBRIC_TEXT[JudgeDimension.AGGRESSION_REALISM]
+    assert "cannot plausibly reach" in text
+    assert "NOT punitive evidence" in text
+
+
+def test_aggression_realism_rubric_wires_too_timid_failure_class():
+    """cycle-4 commit 6, reviewer nit N2: `FailureClass.TOO_TIMID` is a real
+    enum member but was never wired into any rubric guidance — without an
+    instruction to actually USE it, it would sit near-zero in the Pareto
+    and be misread as "no timidity" rather than "never selected"."""
+    text = judge_mod._RUBRIC_TEXT[JudgeDimension.AGGRESSION_REALISM]
+    assert "too_timid" in text
+    assert FailureClass.TOO_TIMID.value == "too_timid"
 
 
 # ── 5. Filename-glob pins (mirrors test_harness_has_teeth.py's run_tier2

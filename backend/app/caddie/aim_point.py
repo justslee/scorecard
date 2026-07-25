@@ -876,6 +876,26 @@ CORNER_TREE_FORWARD_YDS: int = 40
 # plan; if the knife-edge proves unacceptable in review, the pre-named
 # turn_angle_deg fallback above is much better-conditioned (sweeps 20-32 deg
 # vs corners 51-62 deg) and should replace this fraction, not patch it.
+#
+# TRIGGER (reviewer ruling condition, cycle-4 commit 6 — non-speculative,
+# not "build the fallback now"): BEFORE tree/woods ingestion is enabled for
+# ANY course beyond the fixtures already committed this cycle, measure
+# `turn_angle_deg` across the FULL Red 18 + Black 18 (not just this cycle's
+# 8-hole calibration table) and re-decide 0.30 vs the 45-degree turn-angle
+# criterion using that measurement — the risk above is latent only because
+# no further course has live tree data yet; this is what makes it stop
+# being latent.
+#
+# N3 (reviewer nit, cycle-4 commit 6): A4's near-green vertex exclusion
+# (`_BEND_NEAR_GREEN_EXCLUDE_YDS`, hazards.py) operates on absolute
+# deviation (argmax |dev_m|), not this fraction — it can in principle
+# PROMOTE a SHORTER candidate vertex whose dev/dist fraction is HIGHER than
+# the one it excludes, newly arming the cap on a hole that was previously
+# unarmed (the mirror image of Black 18's demotion, specs/caddie-bench-
+# cycle4-plan.md commit-1 finding). This has NOT happened on any of the 26
+# real holes audited this cycle (the audit checked `straight`, not this
+# fraction, on the post-exclusion result) — named here as a real, checked-
+# for-but-unobserved edge case, not a speculative one.
 CORNER_MIN_DEVIATION_FRACTION: float = 0.30
 
 _SEVERITY_RANK: dict[str, int] = {"mild": 1, "moderate": 2, "severe": 3, "death": 5}

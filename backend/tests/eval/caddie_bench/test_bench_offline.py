@@ -983,6 +983,157 @@ def test_judge_prompt_renders_bag_hazards_and_corridor_evidence_when_given():
     assert "corridor width at landing zone: unmapped — no danger-edge evidence (do not invent one)" in text
 
 
+# ── cycle-4 commit 6, reviewer BLOCKING B1 — hazard evidence must select   ──
+#    by RELEVANCE TO THE SHOT, not proximity to the tee, and must DISCLOSE  ──
+#    truncation rather than presenting a partial list as complete.         ──
+
+
+def test_hazards_payload_pebble3_landing_zone_survives_the_cap():
+    """The exact repro from the reviewer's finding: pebble_beach_h3 (381y,
+    one of this cycle's two headline fixtures) has n=20 real hazards; the
+    owner bag's driver lands ~277-299y. BEFORE this fix, `[:12]` on the
+    carry-ascending list kept only carries <= 215 and silently dropped
+    [225,230,265,275,300,350,390,405] -- the ENTIRE landing zone, on the
+    fixture this cycle's fix is supposed to be judged against. AFTER: with
+    `reference_yards` set to a drive_total in that landing zone, the
+    landing-zone carries (265/275/300) MUST be present, and the header
+    MUST disclose the truncation instead of implying completeness."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.geometry import hole_intel_from_fixture, load_hole_fixture
+
+    fx = load_hole_fixture(HOLES_DIR / "pebble_beach_h3.json")
+    intel = hole_intel_from_fixture(fx)
+    hazards_payload = [h.model_dump() for h in intel.hazards]
+    assert len(hazards_payload) == 20, "sanity: this test means nothing if the fixture's hazard count drifts"
+
+    # BEFORE-fix repro: the old unconditional `[:12]` on carry-ascending
+    # order never sees the landing zone at all -- proves this is a REAL
+    # fix, not a no-op, by reproducing the bug's own output directly.
+    before_fix_carries = [h["carry_yards"] for h in sorted(hazards_payload, key=lambda h: h["carry_yards"])[:12]]
+    assert 265 not in before_fix_carries and 275 not in before_fix_carries and 300 not in before_fix_carries, (
+        "sanity: the pre-fix carry-ascending truncation must NOT see the landing zone"
+    )
+
+    drive_total = 288.0  # inside the owner bag's real 277-299y landing range on this hole
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=drive_total)
+    assert line is not None
+    assert "showing 12 of 20" in line, "truncation must be disclosed, never presented as a complete list"
+    for landing_zone_carry in (265, 275, 300):
+        assert f"{landing_zone_carry}y" in line, (
+            f"landing-zone carry {landing_zone_carry}y must survive the cap — got: {line!r}"
+        )
+    # And it must carry the lateral offset per entry (closes N1 — the judge
+    # needs it to discount a hazard the player's shot can't plausibly reach).
+    assert "lat=" in line
+
+
+def test_hazards_payload_sorts_by_relevance_not_tee_proximity():
+    """Direct unit proof of the sort itself: three hazards at carries far
+    from, near, and far from the reference point — only the NEAR one must
+    survive a cap of 1, regardless of its tee-proximity rank (it is the
+    LAST one by carry-ascending order, which is exactly the failure mode
+    the fix closes)."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 100, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},  # nearest 288
+    ]
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=288.0, cap=1)
+    assert line is not None
+    assert "290y" in line
+    assert "50y" not in line and "100y" not in line
+
+
+def test_hazards_payload_carry_none_sorts_last_never_crashes():
+    """Defensive per the reviewer's ask: a hazard with `carry_yards=None`
+    (never produced by the real `Hazard` model — it defaults to 0 — but
+    handled anyway) must sort LAST, never crash and never silently win the
+    cap over a real, relevant distance."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": None, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},
+    ]
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=288.0, cap=1)
+    assert line is not None
+    assert "290y" in line
+
+
+def test_hazards_payload_falls_back_to_original_order_without_a_reference():
+    """`reference_yards=None` (no relevance signal available) must fall
+    back to the ORIGINAL order — never crash, never fabricate a relevance
+    ranking it doesn't have grounds for."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+    ]
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=None, cap=1)
+    assert line is not None
+    assert "290y" in line and "50y" not in line, "original order preserved -- the first entry wins the cap"
+
+
+def test_judge_prompt_uses_drive_total_as_reference_on_a_positioning_turn():
+    """End-to-end through `judge_prompt`: on a positioning turn, the
+    reference point must be the drive's own landing distance
+    (`tee_shot_numbers.drive_total_yards`) — derived from `engine_ref` the
+    function already has, never a new kwarg."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="reference-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {
+        "club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400,
+        "tee_shot_numbers": {"drive_total_yards": 288},
+    }
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},
+    ]
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary", hazards_payload=hazards_payload,
+    )
+    # width-1 cap isn't in play here (only 2 hazards, under the default cap of
+    # 12) -- what's under test is ORDER: the near-to-drive_total one (290)
+    # must be listed before the far one (50), proving the sort actually ran.
+    assert text.index("290y") < text.index("50y")
+
+
+def test_judge_prompt_uses_hole_yards_as_reference_on_a_non_positioning_turn():
+    """End-to-end: on an approach/reachable turn (shot_kind != positioning),
+    the reference point must be `hole_yards` — the green IS what this shot
+    is aimed at."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="reference-test-2", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.FAIRWAY, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0)
+    ref = {"club": "7iron", "shot_kind": "approach", "raw_yards": 150, "target_yards": 150}
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 400, "penalty_severity": "moderate"},  # near the green
+    ]
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary", hazards_payload=hazards_payload, hole_yards=410,
+    )
+    # "50y" alone would false-match the "150y to the green" facts line above
+    # the hazards line -- assert on the actual rendered hazard entries.
+    assert text.index("bunker L 400y") < text.index("bunker L 50y")
+
+
 def test_rubric_instructions_header_names_the_real_dimension_count():
     """cycle-4 (§B3): the hardcoded 'fixed 10-dimension rubric' string must
     track len(JudgeDimension) so it never silently drifts stale again after

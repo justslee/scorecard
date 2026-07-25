@@ -2938,3 +2938,106 @@ whether the "corner trees" are 5y or 60y off the line. Its arming condition carr
 information about danger.
 Deviation-as-fraction-of-corner-distance cleanly separates the cases: pinned real dogleg 88/226 =
 39%; genuine fixtures 43-52%; the false positives that produce the 4-iron 10-19%.
+
+## DONE (2026-07-25) — CADDIE BENCH CYCLE 4, commit 6/6: reviewer's 2 BLOCKING findings fixed (builder, resumed after a 529, lane worktree-agent-a36e12e4dc633a855)
+
+Resumed from the STOPPED entry above (529 was transient; nothing was stranded, `origin/
+integration/next` was at `2e76a8f`/`aed7386` and the lane was clean). Fixed both BLOCKING
+findings + all 3 nits + both reviewer ruling conditions, in one commit, "do not touch the
+engine" respected exactly (verified: `git diff app/caddie/aim_point.py` shows a COMMENT-only
+change, zero logic/behavior touched; `hazards.py`/`types.py` untouched entirely).
+
+**B1 (judge.py `_format_hazards_payload`)** — the judge's mapped-hazard evidence used to keep
+the 12 hazards NEAREST THE TEE (`hazards_payload[:cap]` on a carry-ascending list) and present
+that as a complete list. On `pebble_beach_h3` (381y, one of this cycle's two headline
+fixtures, n=20 hazards) this silently dropped `[225,230,265,275,300,350,390,405]` — the owner
+bag's driver lands ~277-299y, so the ENTIRE landing zone was withheld from the judge on
+exactly the fixture this cycle's fix is judged against.
+  BEFORE (cap=12, carry-ascending): `[15,35,35,65,80,80,100,160,195,195,205,215]` — landing
+  zone entirely absent.
+  AFTER (`reference_yards=288`, the drive's own landing distance): `MAPPED HAZARDS (showing 12
+  of 20, nearest the shot; ...): bunker R 300y ... lat=18.7y; bunker R 275y ... lat=23.9y;
+  bunker R 265y ... lat=29.1y; bunker C 230y ...; trees R 350y ...; trees L 225y ...; ...` — the
+  entire landing zone (300/275/265/230) now present, closest-to-the-shot first.
+Fix: `_format_hazards_payload` now sorts by `abs(carry_yards - reference_yards)` before
+capping; `reference_yards` is derived INSIDE `judge_prompt` from data it already has (never a
+new kwarg/plumbing change) — `tee_shot_numbers.drive_total_yards` on a positioning turn (the
+drive's own landing distance is what's relevant), else `hole_yards` (the green IS the target
+on a reachable/approach turn, and sits at the hole's own tee-anchored length by the same frame
+`Hazard.carry_yards` is measured in). Truncation is DISCLOSED in the header whenever the real
+count exceeds the cap (never presented as complete — same honesty discipline the corridor line
+already had). Every entry now also renders `lateral_yards` (closes N1 below). `carry_yards is
+None` (defensive; never actually produced by the real `Hazard` model, which defaults to 0)
+sorts LAST, never crashes, never silently wins the cap. `reference_yards=None` (no signal)
+falls back to the original order — never a fabricated relevance ranking.
+Pinned: 6 new tests (`test_hazards_payload_pebble3_landing_zone_survives_the_cap` is the exact
+repro above; sort-by-relevance unit proof; `carry_yards=None` defensive proof; no-reference
+fallback proof; `judge_prompt`'s reference derivation on both positioning and non-positioning
+turns).
+
+**B2 (questions.py `build_canary_cases`)** — the 5th (timid) canary's binding
+(`hole_fixtures[i % len(hole_fixtures)]`) was PURELY POSITIONAL and landed it on
+`bethpage_black_h8` — a par 3, 210y — where the owner bag's 4-iron (230y) is an OVER-club and
+"driver is way too risky" is incoherent on a par 3; the rubric's own anti-hedging clause would
+then tell the judge to ignore the incoherent rhetoric anyway, so the timid tail's only
+empirical teeth were satisfied by accident. Fix: `_CANARY_ANSWERS` tuples gain
+`(min_par, min_yards)` — 0/0 (no real requirement) for the 4 reckless-tail canaries
+(self-contained poison: fabricated/inconsistent numbers, not hole-dependent — their existing
+bindings are UNCHANGED); `(4, 500)` for the timid canary. `build_canary_cases` now picks the
+alphabetically-first fixture satisfying a real requirement — deterministic AND correct
+regardless of population order, unlike positional indexing — landing the timid canary on
+`bethpage_black_h4` (517y, the owner's own incident geometry), where under-clubbing to a
+4-iron is unambiguously timid. Also fixes the latent fragility the reviewer named (an
+alphabetically-early fixture reshuffling all five bindings) for any FUTURE canary that needs a
+real constraint. A restricted `--holes` subset that can't satisfy a canary's requirement now
+SKIPS that canary (loud stderr warning) rather than crashing the whole run — a legitimate
+partial/debug run must not be held hostage by an unsatisfiable requirement (verified: this
+only ever fires on a deliberately narrowed `--holes` list; the full fixture set always
+satisfies it).
+Pinned: 4 new tests — binds to `bethpage_black_h4` specifically (+ sanity par>=4/yards>=500);
+binding is IDENTICAL whether `hole_fixtures` is passed forward or reversed (proves it's no
+longer position-dependent); the unsatisfiable-requirement skip-not-crash path.
+
+**N1** — rubric clause added: a mapped hazard the player's shot "cannot plausibly reach — far
+off the played line (large lateral offset), or beyond the range of the club actually in play —
+is NOT punitive evidence." Closes the gap where a moderate hazard 60y off-line could otherwise
+read as valid cover for a layup, now that lateral_yards is rendered per B1.
+**N2** — one sentence: "When this dimension FAILS on the conservative tail ..., set
+failure_class to 'too_timid' — never 'vague' or another class" — `FailureClass.TOO_TIMID` now
+has actual rubric guidance telling the judge to use it, so it won't sit near-zero in the
+Pareto and read as "no timidity" by omission.
+**N3** — one paragraph on `CORNER_MIN_DEVIATION_FRACTION` (aim_point.py, comment-only): A4's
+near-green exclusion operates on absolute deviation, not this fraction, so it can in principle
+PROMOTE a shorter vertex with a HIGHER fraction, newly arming the cap — not observed on any of
+the 26 real holes audited this cycle (which checked `straight`, not the fraction), named as a
+real checked-for-but-unobserved edge case.
+**Ruling condition 1** — new TRIGGER sentence on the same constant's comment + a new,
+deliberately `status: blocked` backlog item (`caddie-bend-cap-turn-angle-remeasure-trigger`):
+before tree/woods ingestion is enabled for ANY course beyond this cycle's fixtures, re-measure
+`turn_angle_deg` across the full Red 18 + Black 18 and re-decide 0.30 vs the 45deg criterion
+using that real measurement, not this cycle's 8-hole table.
+**Ruling condition 2** — new README.md section: bend-cap coverage is solid on the
+DETERMINISTIC offline suite (400+ pins) but thin inside the bench's own judged case matrix
+(exactly ONE hole x bag config actually arms the cap through a live synth+judge call) — a
+judged-run regression in the cap specifically would not clear judge noise to be detectable.
+Neither README nor any generated report may imply the bench "covers" the cap path on the
+judged headline score alone.
+
+**Note on a peer discrepancy, surfaced not silently accepted**: the eng-lead's own "authoritative
+mix reconciliation" commit (`af6eb2c`) states ADVICE=179/trouble=28.6%(or 30.2%) — I
+re-executed `build_cases()` directly on the current head and got ADVICE=**174**, tee=**60**
+(matching MY original commit-3/5 numbers exactly, unchanged). The likely cause: all 5 canary
+cases resolve to TEE lie (verified) — if a reconciliation script counted canaries as "advice"
+(174+5=179, tee 60+5=65 — both match eng-lead's stated figures exactly), that would explain the
+gap. Did not touch README's existing (correct, re-verified) case-math numbers to match the
+peer figure; flagging this for eng-lead directly rather than either silently overriding the
+record or silently adopting a number my own execution contradicts.
+
+Gates: ruff clean; bench suite **112 passed** (was 101, +11 new pins); must-not-regress set
+429 passed; full offline suite **3333 passed, 154 skipped, 0 failed** (was 3322 before this
+commit — +11 new tests, zero regressions). `git diff app/caddie/aim_point.py` confirmed
+comment-only (no engine logic changed); `hazards.py`/`types.py` untouched.
+
+Cycle 4 is now feature-complete pending re-review of B1/B2 only (per the reviewer's own
+stated scope for the re-check) and the owner's key-gated satellite/live-run execution
+(unchanged, still blocked on `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`, not on this machine).

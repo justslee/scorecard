@@ -89,7 +89,17 @@ _RUBRIC_TEXT: dict[JudgeDimension, str] = {
         "acknowledging the longer club without recommending it does NOT rescue a timid "
         "pick, and cautionary language does NOT rescue a reckless one. "
         "If the answer makes no club or risk decision at all (a pure factual readout), "
-        "score 2 with confidence 1.0."
+        "score 2 with confidence 1.0. "
+        # cycle-4 commit 6, reviewer nit N1: the mapped-hazards evidence below carries a
+        # lateral offset from the played line but NOT a probability, so a moderate hazard far
+        # off-line can otherwise be misread as valid cover for a layup.
+        "A mapped hazard the player's own shot cannot plausibly reach — far off the played "
+        "line (large lateral offset), or beyond the range of the club actually in play — is "
+        "NOT punitive evidence; citing it does not excuse a conservative call. "
+        # cycle-4 commit 6, reviewer nit N2: TOO_TIMID must actually get used, or it reads as
+        # near-zero ("no timidity") in the failure-class Pareto by omission, not by fact.
+        "When this dimension FAILS on the conservative tail (a timid call with no punitive "
+        "evidence), set failure_class to 'too_timid' — never 'vague' or another class."
     ),
 }
 
@@ -154,18 +164,68 @@ def _format_bag(bag_clubs: Optional[dict[str, int]], bag_handicap: Optional[floa
     return f"Player bag (stored yards): {clubs_str} · handicap {bag_handicap}"
 
 
-def _format_hazards_payload(hazards_payload: Optional[list[dict]], cap: int = 12) -> Optional[str]:
-    """cycle-4 (§B3): compact one-line-per-hazard summary — tee-anchored
-    carry/side/severity — so the judge can name specific mapped evidence
-    instead of eyeballing the composite image alone. `None` when the caller
-    doesn't have hazards to hand (offline tests, or a case with none)."""
+def _format_hazards_payload(
+    hazards_payload: Optional[list[dict]], reference_yards: Optional[float] = None, cap: int = 12,
+) -> Optional[str]:
+    """cycle-4 (§B3, hardened post-review §B1): compact one-line-per-hazard
+    summary — tee-anchored carry/side/severity/lateral offset — so the judge
+    can name specific mapped evidence instead of eyeballing the composite
+    image alone. `None` when the caller doesn't have hazards to hand
+    (offline tests, or a case with none).
+
+    BLOCKING fix (reviewer, cycle-4 commit 6): the cap used to keep the
+    hazards NEAREST THE TEE (`hazards_payload` is carry-ascending) and
+    present the truncated result as complete. On `pebble_beach_h3` (381y,
+    one of this cycle's two headline fixtures) that silently dropped
+    carries [225,230,265,275,300,350,390,405] — the owner bag's driver
+    lands ~277-299y, so the ENTIRE landing zone was withheld from the judge
+    on exactly the fixture this cycle's fix targets. Now selects by
+    RELEVANCE TO THE SHOT (`abs(carry_yards - reference_yards)`, ascending)
+    before capping — `reference_yards` is the drive's own landing distance
+    on a positioning turn, or the hole's own tee-anchored length otherwise
+    (the green IS the target for a reachable/approach turn) — computed by
+    the caller (`judge_prompt`, below) from `engine_ref`/`hole_yards` it
+    already has; never invented here. `carry_yards is None` (defensive —
+    every real `Hazard` defaults to 0, never actually None) sorts LAST,
+    never crashes and never silently wins the cap over a real distance.
+    When `reference_yards` is unavailable, falls back to the ORIGINAL
+    carry-ascending order (never a crash, never a fabricated relevance).
+
+    Also DISCLOSES truncation in the header (`showing N of M, nearest the
+    shot`) whenever the real count exceeds `cap` — presenting a partial
+    list as complete is the exact dishonesty [[no-fake-data-fallbacks]]
+    already rules out for the corridor line; this closes the same gap for
+    hazards."""
     if not hazards_payload:
         return None
+
+    def _relevance_key(h: dict) -> float:
+        carry = h.get("carry_yards")
+        if reference_yards is None or carry is None:
+            return float("inf")
+        return abs(carry - reference_yards)
+
+    if reference_yards is not None:
+        ordered = sorted(hazards_payload, key=_relevance_key)
+    else:
+        ordered = hazards_payload  # original (carry-ascending) order — no relevance signal to sort by
+
+    total = len(ordered)
+    shown = ordered[:cap]
     entries = []
-    for h in hazards_payload[:cap]:
+    for h in shown:
         side = (h.get("side") or h.get("line_side") or "?")[:1].upper()
-        entries.append(f"{h.get('type', '?')} {side} {h.get('carry_yards', '?')}y {h.get('penalty_severity', '?')}")
-    return "MAPPED HAZARDS (tee-anchored carry, side, severity): " + "; ".join(entries)
+        lat = h.get("lateral_yards")
+        lat_str = f" lat={lat}y" if lat is not None else ""
+        entries.append(f"{h.get('type', '?')} {side} {h.get('carry_yards', '?')}y {h.get('penalty_severity', '?')}{lat_str}")
+
+    header = (
+        f"MAPPED HAZARDS (showing {len(shown)} of {total}, nearest the shot; "
+        "tee-anchored carry, side, severity, lateral offset from the line):"
+        if total > cap else
+        "MAPPED HAZARDS (tee-anchored carry, side, severity, lateral offset from the line):"
+    )
+    return header + " " + "; ".join(entries)
 
 
 def judge_prompt(
@@ -185,13 +245,26 @@ def judge_prompt(
     aggression_realism dimension actually needs to grade risk posture,
     rather than vibes off the picture alone."""
     rubric_lines = "\n".join(f"- {dim.value}: {desc}" for dim, desc in _RUBRIC_TEXT.items())
+    # cycle-4 §B1 (post-review hardening): the tee-anchored reference point
+    # THIS shot is actually aimed at — the drive's own landing distance on a
+    # positioning turn (hazards near the LANDING ZONE are what matter, not
+    # hazards near the tee), or the hole's own tee-anchored length otherwise
+    # (a reachable/approach turn is aimed at the green, which sits at
+    # `hole_yards` in this same tee-anchored frame by construction — see
+    # module docstring). Derived from data `judge_prompt` already has —
+    # never a new kwarg, never invented.
+    tsn_for_reference = engine_ref.get("tee_shot_numbers") or {}
+    if engine_ref.get("shot_kind") == "positioning" and tsn_for_reference.get("drive_total_yards") is not None:
+        reference_yards: Optional[float] = tsn_for_reference["drive_total_yards"]
+    else:
+        reference_yards = hole_yards
     # cycle-4 §B3: hazards/corridor evidence lines are OMITTED (not
     # fabricated) when the caller has nothing to pass — the caller (run()
     # in run_caddie_bench.py) is the one that decides, per case, whether
     # corridor_summary should carry the honest "unmapped" wording; this
     # function only ever prints what it's given.
     evidence_lines: list[str] = []
-    hazards_line = _format_hazards_payload(hazards_payload)
+    hazards_line = _format_hazards_payload(hazards_payload, reference_yards=reference_yards)
     if hazards_line:
         evidence_lines.append(f"  {hazards_line}")
     if corridor_summary:
