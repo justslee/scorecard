@@ -2401,3 +2401,28 @@ instead. Cleaning it up requires a history-discarding reset, which the permissio
 refused unattended. **Next person in that checkout: drop `69bb095` (e.g. `git reset --hard
 origin/integration/next`) before pulling** — otherwise progress.md will conflict on the next pull.
 Nothing was pushed from there; origin is clean and correct.
+
+## AWAITING (cycle 4, live) — fable Plan agent on specs/caddie-bench-cycle4-plan.md
+Baselines captured BEFORE any change (all green, on `caddie-bench-c4` == origin/integration/next):
+  ruff check .                                  -> All checks passed
+  pytest tests/eval/caddie_bench/               -> 68 passed
+  the 7 must-not-regress tee/corridor suites    -> 221 passed
+  full backend offline suite                    -> 3256 passed, 154 skipped (DB), 0 failed
+On plan landing: dispatch `builder` to implement `specs/caddie-bench-cycle4-plan.md` on this branch
+(commit + push each step to `integration/next`), then a FRESH adversarial `reviewer` (must falsify
+BOTH tails of the new `aggression_realism` dimension, prove no rubric gaming, and prove the engine
+fix does not regress the proven lay-up/dogleg/hcp-30 cases on their merits), then `qa` (full gates).
+If the plan agent is dead/stuck: the diagnosis above is complete and sufficient to brief a builder
+directly — do NOT re-run the diagnosis.
+
+Satellite render directive — findings that constrain the plan (verified by reading the code, no keys
+needed): `render.fetch_base_tile` (render.py:168-215) already raises `RuntimeError` on a missing key
+and on any `httpx.HTTPError`, with the API key redacted from the message; there is NO silent vector
+fallback anywhere (vector requires explicitly passing `mode="vector"`). `run_caddie_bench.py:215`
+calls `render_case` with no try/except, so a tile failure aborts the run (recoverable via
+`--resume`), and `run_caddie_bench.py:140` pre-flight-checks the key and exits 2 before spending.
+Tiles are cached forever per hole, so a 150-case run over 8 holes makes only 8 tile fetches — quota
+is a non-issue. Net: the "fail loudly, never mixed-basis" requirement is already met; the only open
+design choice is abort-whole-run vs record-per-case-and-continue.
+`Hazard` lives only in `backend/app/caddie/types.py` (NOT in frontend types.ts or models.py), so a
+lateral-offset field on it is backend-internal — no shared-types sync, no frontend gate.
