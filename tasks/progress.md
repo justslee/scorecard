@@ -2886,3 +2886,45 @@ and no lateral offset -> a bunker 60y off line reads as valid layup justificatio
 B1's lateral_yards rendering + one rubric clause), N2 (`TOO_TIMID` is never wired to guidance so it
 will read as near-zero "no timidity" in the Pareto), N3 (A4 can in principle PROMOTE a shorter vertex
 with a HIGHER fraction; my 26-hole audit checked `straight`, not the fraction — worth one line).
+
+## AWAITING / STOPPED ON 529 — cycle 4 needs ONE more commit (6/6). Resume here.
+The builder died with `API Error: 529 Overloaded` (server-side, transient) while implementing the
+reviewer's two blockers. **Nothing was stranded**: `origin/integration/next` is at `2e76a8f`, the lane
+worktree is clean, and every completed thing is committed and pushed. Per the standing directive
+(checkpoint + stop on usage/529) this lane stops here rather than retrying into an overloaded API.
+
+**STATE: cycle 4 is code-complete and green EXCEPT the two reviewer blockers.**
+  Landed + independently verified: 40d144f, 36482c2, 089bfd8, 363708e, 192a976.
+  Gates at 192a976: ruff clean · full offline **3322 passed / 154 skipped / 0 failed** (baseline 3297,
+  +25 tests, zero regressions) · must-not-regress 308/0 · bench 101/0 · deterministic across 3
+  PYTHONHASHSEED values · key-free · no do-not-touch path touched · frontend gates proven N/A.
+  QA verdict: **PASS**.  Reviewer verdict: **BLOCKING x2** (both bench-instrument, ~10 lines, NO
+  engine change). The engine fix itself was verified sound and is the strongest part of the cycle.
+
+**TO RESUME — dispatch a builder with exactly this (full detail in the reviewer section above):**
+ B1. `judge.py:165` — `hazards_payload[:cap]` (cap=12) truncates to the hazards NEAREST THE TEE and
+     presents the result as a complete list. On `pebble_beach_h3` it drops carries
+     [225,230,265,275,300,350,390,405] — the owner bag's driver lands ~277-299, so the ENTIRE landing
+     zone is withheld from the judge, on one of the two headline fixtures for this cycle's fix.
+     Fix: sort by `abs(carry_yards - drive_total)` (drive_total available at run_caddie_bench.py:294)
+     before capping; disclose truncation in the header ("showing 12 of 20, nearest the shot");
+     render `lateral_yards` per entry (also closes N1). Pin with a test asserting Pebble 3's
+     landing-zone carries are present.
+ B2. `questions.py:225` — `fx = hole_fixtures[i % len(hole_fixtures)]` binds the new timid canary to
+     `bethpage_black_h8`, a **par 3, 210y**, where "take the 4-iron and lay it back safe" is
+     OVER-clubbing (owner's 4-iron = 230y) and "driver is way too risky" is incoherent. The rubric's
+     own anti-hedging clause then tells the judge to ignore the timid rhetoric — so the only empirical
+     teeth for the timid tail are satisfied only by accident. Fix: pin it to a long par 4/5
+     (`bethpage_black_h4`, 517y — the owner's own incident geometry) via a `min_par`/`min_yards`
+     selector, not `i % len(...)`; also fix the latent fragility that canary->fixture binding depends
+     on `sorted(glob)` order (adding an alphabetically-early fixture reshuffles all five). Pin it.
+ Plus nits N1/N2/N3 and the reviewer's two ruling CONDITIONS (trigger-gated turn_angle_deg backlog
+ item before any further tree ingestion; a README line stating bend-cap coverage is
+ deterministic-test-side and judge-side coverage is a single config, below judge noise).
+ Then: re-review (the fresh reviewer only needs to re-check B1/B2), re-run gates, done.
+
+**DO NOT** re-run the diagnosis, re-plan, or touch the engine — all settled and verified.
+**Still blocked on the owner** (unchanged): the satellite fidelity check + the full 150-case re-run
+need `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`; this machine has neither and prod-box execution was correctly
+denied by the permission system. Commands are packaged and verified runnable as written.
+NOT shipped, NOT pinged — per directive.
