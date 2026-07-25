@@ -20,7 +20,15 @@ all key-free. Exit codes mirror run_tier2: 0 pass-bar met / 1 missed /
 4 REAL-CALL CANARY TRIPPED — run-level self-check that the synth call
 actually left the process (see `report.check_real_call_canary` /
 `REAL_CALL_CANARY_MAX_DEGRADED_RATE` / `REAL_CALL_CANARY_MIN_SYNTH_LATENCY_MS`);
-this run's numbers must be treated as invalid and discarded, never graded.
+this run's numbers must be treated as invalid and discarded, never graded /
+5 RENDER FAILURE — a per-case composite render aborted the run (§E2,
+specs/caddie-bench-cycle4-plan.md). `results.jsonl` is append-resumable, so
+aborting here is cheap; the failed case is recorded in `runs/<run_id>/
+render_failures.jsonl` and is NEVER judged without its composite, and the
+run NEVER silently falls back to vector mode for the remaining cases (a
+mixed-basis run corrupts the comparison the owner's satellite directive
+exists to produce) — re-run (or `--resume <run_id>`) once the underlying
+issue (usually quota/billing) is fixed.
 
 Invocation (never in CI — run this yourself, after a reviewer signs off on
 the judge rubric, per the builder's contract):
@@ -67,6 +75,7 @@ _EXIT_MISSED_BAR = 1
 _EXIT_GATE_REFUSAL = 2
 _EXIT_BUDGET_ABORT = 3
 _EXIT_REAL_CALL_CANARY_INVALID = 4
+_EXIT_RENDER_FAILURE = 5  # cycle-4 §E2 — a per-case composite render aborted the run
 
 
 def _cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -221,7 +230,29 @@ async def run(args: argparse.Namespace) -> int:
 
         result = await harness.run_case(case, fx, phrasing, bag, synth=synth)
 
-        composite_path = render.render_case(case, fx, result.resolved, mode=args.render_mode, out_dir=out_dir)
+        # cycle-4 §E2 — fail LOUDLY per-case, never fall back to vector: a
+        # mixed-basis run (some cases judged against satellite imagery,
+        # others against the offline vector substrate) corrupts the
+        # comparison the owner's satellite directive exists to produce.
+        # results.jsonl is append-resumable, so aborting the WHOLE run here
+        # is cheap and a partial mixed run is never produced; the failed
+        # case is recorded and never judged without its composite.
+        try:
+            composite_path = render.render_case(case, fx, result.resolved, mode=args.render_mode, out_dir=out_dir)
+        except RuntimeError as e:
+            _append_jsonl(out_dir / "render_failures.jsonl", {
+                "case_id": case.id, "error": str(e), "render_mode": args.render_mode,
+            })
+            print("=" * 78, file=sys.stderr)
+            print(f"RENDER FAILURE on case {case.id!r} — ABORTING THE RUN (never falling back to vector)", file=sys.stderr)
+            print(f"  {e}", file=sys.stderr)
+            print(
+                "results.jsonl is append-resumable — fix the underlying issue (usually maps-key "
+                "quota/billing) and re-run with --resume to continue from here.", file=sys.stderr,
+            )
+            print("=" * 78, file=sys.stderr)
+            return _EXIT_RENDER_FAILURE
+
         det_summary = "; ".join(f"{d.check.value}={'PASS' if d.passed else 'FAIL'}" for d in result.det_checks)
 
         # #6 fix: FACT-class cases are canned one-liner distance readouts —
@@ -372,6 +403,66 @@ async def run(args: argparse.Namespace) -> int:
     return _EXIT_PASS
 
 
+def render_only(args: argparse.Namespace) -> int:
+    """cycle-4 §E3 (specs/caddie-bench-cycle4-plan.md) — one-time composite
+    fidelity check. Renders composites for the selected cases (position
+    resolution only — no synth/judge/det-checks, no cost) and exits 0.
+    Gated ONLY on the maps key (never CADDIE_EVAL_LIVE/OPENAI_API_KEY,
+    which this never needs — it never calls the synth or the judge).
+    Georegistration has never run against real tiles at scale before this;
+    a projection bug would mislead every judge call, so this is the gate
+    before any full satellite run.
+
+    Verification checklist (see README.md for the full text): player pin
+    on the sampled lie, green pin on the green, hazard outlines tracking
+    real bunkers/water, centerline on the fairway, header/wind annotations
+    legible — at the fitted zoom on a long hole, a sharp dogleg, and a
+    par 3."""
+    if args.render_mode == "satellite" and not (
+        os.getenv("GOOGLE_MAPS_KEY") or os.getenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY")
+    ):
+        print(
+            "--render-only (satellite, the default) requires GOOGLE_MAPS_KEY (or "
+            "NEXT_PUBLIC_GOOGLE_MAPS_KEY) set — the whole point is a fidelity check against real "
+            "imagery. Pass --render-mode vector for an offline/no-key smoke (not a fidelity check).",
+            file=sys.stderr,
+        )
+        return _EXIT_GATE_REFUSAL
+
+    run_id = args.resume or time.strftime("%Y%m%d-%H%M%S")
+    out_dir = RUNS_DIR / run_id
+
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    hole_paths = sorted(HOLES_DIR.glob("*.json"))
+    if args.holes:
+        wanted = set(args.holes)
+        hole_paths = [p for p in hole_paths if p.stem in wanted]
+    fixtures = {p.stem: geo.load_hole_fixture(p) for p in hole_paths}
+    fx_list = list(fixtures.values())
+
+    cases = q.build_cases(fx_list, bank)
+    if args.max_cases is not None:
+        cases = cases[: args.max_cases]
+
+    for case in cases:
+        fx = fixtures[case.hole_fixture]
+        resolved = geo.sample_position(fx, case.position)
+        try:
+            composite_path = render.render_case(case, fx, resolved, mode=args.render_mode, out_dir=out_dir)
+        except RuntimeError as e:
+            print(f"RENDER FAILURE on case {case.id!r}: {e}", file=sys.stderr)
+            return _EXIT_RENDER_FAILURE
+        print(f"wrote {composite_path}")
+
+    print(f"\n{len(cases)} composite(s) written to {out_dir / 'composites'}")
+    print(
+        "Verification checklist: player pin on the sampled lie, green pin on the green, hazard "
+        "outlines tracking real bunkers/water, centerline on the fairway, header/wind annotations "
+        "legible. See README.md for the full checklist."
+    )
+    return _EXIT_PASS
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--budget-usd", type=float, default=40.00)
@@ -388,9 +479,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--render-mode", choices=["vector", "satellite"], default="satellite",
         help="Composite renderer backend (default: satellite, the owner's fidelity flow; "
-        "requires GOOGLE_MAPS_KEY). Use 'vector' for a key-free/offline smoke.",
+        "requires GOOGLE_MAPS_KEY). Use 'vector' for a key-free/offline smoke, NEVER a judged basis.",
+    )
+    # cycle-4 §E3 — one-time composite fidelity check, key-gated only (never
+    # CADDIE_EVAL_LIVE/OPENAI_API_KEY). Handled BEFORE the live-pilot gate
+    # below so it never needs an OpenAI key it doesn't use.
+    parser.add_argument(
+        "--render-only", action="store_true",
+        help="Render composites for the selected cases and exit — no synth/judge calls, no cost. "
+        "Gated on GOOGLE_MAPS_KEY only (satellite mode). Use to verify georegistration before a full run.",
     )
     args = parser.parse_args(argv)
+
+    if args.render_only:
+        return render_only(args)
 
     if os.getenv("CADDIE_EVAL_LIVE") != "1" or not os.getenv("OPENAI_API_KEY"):
         print(

@@ -1326,6 +1326,141 @@ def test_exit_code_constants_are_distinct_and_documented():
     codes = {
         run_caddie_bench._EXIT_PASS, run_caddie_bench._EXIT_MISSED_BAR,
         run_caddie_bench._EXIT_GATE_REFUSAL, run_caddie_bench._EXIT_BUDGET_ABORT,
-        run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID,
+        run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID, run_caddie_bench._EXIT_RENDER_FAILURE,
     }
-    assert codes == {0, 1, 2, 3, 4}, "exit codes must stay distinct — a collision would hide which failure mode fired"
+    assert codes == {0, 1, 2, 3, 4, 5}, "exit codes must stay distinct — a collision would hide which failure mode fired"
+
+
+# ── cycle-4 §E2/§E3 (specs/caddie-bench-cycle4-plan.md) — satellite render ──
+#    hardening: fail loudly per-case, never fall back to vector; the one-   ──
+#    time --render-only fidelity check.                                    ──
+
+
+def test_fetch_base_tile_raises_on_a_non_image_200_body(tmp_path, monkeypatch):
+    """§E2: a Static Maps 200 with a non-image body (e.g. quota/billing
+    HTML) must raise loudly rather than being cached/used as a tile —
+    `raise_for_status()` alone only catches non-2xx, never a 200 that isn't
+    actually an image."""
+    import httpx as httpx_mod
+
+    monkeypatch.setenv("GOOGLE_MAPS_KEY", "fake-key-for-test")
+
+    class _FakeResp:
+        status_code = 200
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html>You have exceeded your daily request quota.</html>"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _fake_get(url, params=None, timeout=None):
+        return _FakeResp()
+
+    monkeypatch.setattr(httpx_mod, "get", _fake_get)
+
+    fx = geo.load_hole_fixture(sorted(HOLES_DIR.glob("*.json"))[0])
+    with pytest.raises(RuntimeError, match="non-image body"):
+        render.fetch_base_tile(fx, mode="satellite", cache_dir=tmp_path)
+
+
+def test_fetch_base_tile_never_leaks_the_key_in_the_content_type_error(tmp_path, monkeypatch):
+    """Same guard as #8's original key-redaction contract (the HTTPError
+    path above): the raised message must never contain the fake key
+    string, even on this NEW content-type-guard error path."""
+    import httpx as httpx_mod
+
+    monkeypatch.setenv("GOOGLE_MAPS_KEY", "SECRET-KEY-MUST-NEVER-LEAK")
+
+    class _FakeResp:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+        content = b'{"error": "quota exceeded"}'
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr(httpx_mod, "get", lambda *a, **k: _FakeResp())
+
+    fx = geo.load_hole_fixture(sorted(HOLES_DIR.glob("*.json"))[0])
+    with pytest.raises(RuntimeError) as excinfo:
+        render.fetch_base_tile(fx, mode="satellite", cache_dir=tmp_path)
+    assert "SECRET-KEY-MUST-NEVER-LEAK" not in str(excinfo.value)
+    assert "<redacted>" in str(excinfo.value)
+
+
+async def test_run_render_failure_writes_jsonl_and_returns_exit_5(monkeypatch, tmp_path):
+    """§E2, the runner's except-path: a render failure on ANY case aborts
+    the WHOLE run (never falls back to vector for the rest), records
+    `render_failures.jsonl`, and returns exit code 5 — canned-synth
+    harness, `render.render_case` monkeypatched to raise directly (the
+    content-type/network specifics are `fetch_base_tile`'s own concern,
+    already pinned above; this proves the RUNNER's reaction to any
+    RuntimeError from render_case)."""
+    import argparse
+
+    from app.caddie import strategy as strategy_mod
+
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.setattr(run_caddie_bench, "RUNS_DIR", tmp_path)
+
+    async def _stub_synth(ground_truth: str, *, model: str):
+        return "Driver off the tee, straightforward hole.", {"input_tokens": 10, "output_tokens": 10}
+
+    monkeypatch.setattr(strategy_mod, "synthesize_strategy", _stub_synth)
+
+    def _raising_render_case(*args, **kwargs):
+        raise RuntimeError("Static Maps tile fetch failed (hole='x', status=429, key=<redacted>)")
+
+    monkeypatch.setattr(run_caddie_bench.render, "render_case", _raising_render_case)
+
+    args = argparse.Namespace(
+        budget_usd=10.0, max_cases=1, only_failures=None, holes=["pebble_beach_h3"],
+        resume=None, min_weighted_correctness=0.0, report_out=None, render_mode="vector",
+    )
+    exit_code = await run_caddie_bench.run(args)
+    assert exit_code == run_caddie_bench._EXIT_RENDER_FAILURE
+
+    failures_path = next(tmp_path.glob("*/render_failures.jsonl"))
+    lines = [json.loads(line) for line in failures_path.read_text().splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert lines[0]["render_mode"] == "vector"
+    assert "429" in lines[0]["error"]
+
+    # results.jsonl must NOT contain a judged entry for the failed case —
+    # the abort happens BEFORE the judge is ever called.
+    results_path = tmp_path.glob("*/results.jsonl")
+    assert not list(results_path), "no case should have reached results.jsonl before the render aborted the run"
+
+
+def test_render_only_gated_on_maps_key_not_live_eval_env(monkeypatch):
+    """§E3: --render-only is gated ONLY on GOOGLE_MAPS_KEY (satellite mode)
+    — it must refuse without a maps key even when CADDIE_EVAL_LIVE/
+    OPENAI_API_KEY are completely UNSET (the opposite of every other gate
+    in this module), proving it never touches that gate at all."""
+    monkeypatch.delenv("CADDIE_EVAL_LIVE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.delenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", raising=False)
+
+    assert run_caddie_bench.main(["--render-only"]) == run_caddie_bench._EXIT_GATE_REFUSAL
+
+
+def test_render_only_vector_mode_runs_fully_offline(monkeypatch, tmp_path):
+    """§E3: `--render-only --render-mode vector` needs neither the maps key
+    nor CADDIE_EVAL_LIVE/OPENAI_API_KEY — proves the whole render-only path
+    (case build, position resolution, composite write) runs end to end
+    fully offline."""
+    monkeypatch.delenv("CADDIE_EVAL_LIVE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.delenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.setattr(run_caddie_bench, "RUNS_DIR", tmp_path)
+
+    exit_code = run_caddie_bench.main([
+        "--render-only", "--render-mode", "vector",
+        "--holes", "pebble_beach_h3", "--max-cases", "2",
+    ])
+    assert exit_code == run_caddie_bench._EXIT_PASS
+    composites = list(tmp_path.glob("*/composites/*.png"))
+    assert len(composites) == 2

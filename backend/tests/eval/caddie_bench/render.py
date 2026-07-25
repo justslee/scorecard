@@ -212,6 +212,22 @@ def fetch_base_tile(
         raise RuntimeError(
             f"Static Maps tile fetch failed (hole={fx.fixture_id!r}, status={status}, key=<redacted>)"
         ) from None
+
+    # cycle-4 §E2 (specs/caddie-bench-cycle4-plan.md): a Static Maps 200 with
+    # a non-image body (e.g. quota/billing HTML) is a SILENT corruption
+    # risk — `raise_for_status()` above only catches non-2xx, not a 200 that
+    # isn't actually a tile. Fail loudly here instead. NEVER fall back to
+    # vector on any failure in this function (still true after this change):
+    # a mixed-basis run (some cases judged against satellite imagery, others
+    # against the offline vector substrate) corrupts the comparison the
+    # owner's directive exists to produce.
+    content_type = resp.headers.get("content-type", "")
+    if not content_type.startswith("image/"):
+        raise RuntimeError(
+            f"Static Maps tile fetch returned a non-image body (hole={fx.fixture_id!r}, "
+            f"status={resp.status_code}, content-type={content_type!r}, key=<redacted>) — "
+            "refusing to cache/use it as a tile."
+        )
     cache_path.write_bytes(resp.content)
     return Image.open(cache_path).convert("RGB")
 
