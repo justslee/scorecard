@@ -3442,7 +3442,44 @@ h18 — an artifact that only existed because the green was mis-anchored. Whethe
 load-bearing on correctly-anchored data, or was a symptom-fix for this same root cause, is worth a
 look in its own cycle. Do NOT rip it out on this evidence; it remains a reasonable global guard.
 
-## AWAITING
-- **builder (round 2)** on the A4/h18 test ruling above, based @910b790. Then reviewer + qa.
-Then: PR #155 checklist entry NOTICEABLE ("caddie: correct green anchoring on multi-green holes —
-Bethpage Black 18 was ~102y wrong"), backlog flip, progress. Do NOT ship/ping this cycle (directive).
+### CYCLE COMPLETE — `caddie-green-anchor-nearest-centerline-end` DONE @0f0ba97
+Nothing is awaited. Records are all updated: backlog flipped to `done` with a full resolution,
+PR #155 checklist has the NOTICEABLE entry, this file is current.
+
+**Verdicts:** reviewer (fable) **SHIP** · qa **PASS** · eng-lead independent gate run **green**.
+Gates: ruff clean, **3361 passed / 154 skipped / 0 failed** (baseline 3339 + 22 new). Frontend
+gates correctly N/A — proven by an empty `git diff -- frontend/`, not skipped silently. No
+forbidden path touched. Audit determinism proven by md5 across two runs.
+
+**Reviewer's attacks all held** (executed, not asserted): hand re-derivation of Black 18
+(105.4y vs 3.3y candidate offsets -> 412.6y vs the old 508.3y); a 90-degree dogleg with a decoy
+near the interior corner -> correct end green; the SYMMETRIC case of a neighbour green near the
+TEE -> new rule strictly better there too; reversed-way exposure unchanged; no existing test
+modified or deleted; audit script proven read-only and key-free.
+One non-blocking constructed edge, recorded honestly: a centerline ending >=40y short of its own
+green PLUS a foreign green within 30y of that endpoint would mis-pick under the 30y warn
+threshold. Zero observed instances (real greens measure 0.6-3.3y off their path end, and
+centerlines are card-validated at ingest), and the old rule was a coin-flip there anyway. This is
+the documented trade-off of D4's ranking-not-validation policy.
+
+**NOT shipped, NOT pinged** — per the directive. The bundle keeps accumulating on PR #155.
+
+### STILL OWED TO THE OWNER (needs his authorization, not more engineering)
+The **all-12-course PROD audit**. `backend/scripts/audit_green_selector.py` is written, read-only
+and verified; the SSM runbook is plan §3.1; SSM to i-0826ae70df62d9fe8 is Online. The permission
+classifier blocked the prod DB query because that host was not named as an approved target this
+session, and I did NOT route around it. The `--fixture` offline mode is real evidence for the 5
+Bethpage courses meanwhile. Open question only the prod run can settle: whether Bethpage
+Blue/Green/Yellow are even among the 12 ingested prod courses — if they are, four of the owner's
+holes were lying to him; if they are not, only Black 18 was.
+
+### THE BIGGER FIND — the same bug class, on a WRITER (filed p1, not fixed)
+`course_elevation._feature_center` is first-by-file-order for BOTH green and tee, and it is the
+writer that samples USGS 3DEP and PERSISTS tee/green elevation, delta_ft, plays_like_yards and
+green_slope to the DB. A wrong green there means the whole elevation + slope read is sampled at a
+neighbouring hole's green, and every consumer reads the persisted value with no way to detect it.
+Its tee half is the 2026-07-16 "Finding A" defect, never applied there. Fixing the selector only
+corrects FUTURE sampling, so it also needs a re-sample/backfill — a prod DATA change, its own
+cycle. Plus: ingest last-wins centerline (p2), the spatial join's missing per-hole cardinality
+check (p2 — the ROOT ENABLER that retires this whole class at the source), and get_course's
+missing ORDER BY (p3, the amplifier that makes "correct by luck" unstable).
