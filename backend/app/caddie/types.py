@@ -66,6 +66,11 @@ class Hazard(BaseModel):
     # older cached HoleIntelligence JSONB still validates.
     carry_yards: int = 0  # yards from the tee along the tee→green line
     line_side: str = "center"  # left | right | center, relative to tee→green travel
+    # Perpendicular offset (yards) of this hazard's observation point from
+    # the hole's played centerline — additive + defaulted so older cached
+    # HoleIntelligence JSONB still validates. None = not measured (legacy
+    # cache / hand-built fixture), never "on the line".
+    lateral_yards: Optional[float] = None
 
 
 # ── Green Slope ──

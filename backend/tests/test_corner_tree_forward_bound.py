@@ -78,11 +78,21 @@ def test_pine_valley_hole9_after_fix_uncapped():
 
 def test_pine_valley_hole9_before_fix_repro_via_monkeypatch(monkeypatch):
     """Reproduces the PRE-FIX bug directly: with no forward bound (the old
-    behavior), the same real geometry caps the drive to a sub-hybrid club."""
+    behavior), the same real geometry caps the drive to a sub-hybrid club.
+
+    Repro-harness maintenance (specs/caddie-bench-cycle4-plan.md §A6): Pine
+    Valley 9 measures dev/dist 0.25, below the cycle-4 CORNER_MIN_DEVIATION_
+    FRACTION (0.30) gate added upstream of this filter — without also
+    disarming that new, correct gate, this hole would no longer even reach
+    the forward-bound filter this test exists to isolate, and would fail for
+    a DIFFERENT (now-correct) reason. Neutralizing the fraction gate here
+    keeps this test proving exactly the forward-bound mechanism, not a
+    conflation of two independent fixes."""
     hole = _hole_intel_from_geometry_fixture(
         FIXTURES_DIR / "pine_valley_hole9_geometry.json", hole_number=9, yards=554,
     )
     monkeypatch.setattr(aim_point, "CORNER_TREE_FORWARD_YDS", 10_000)  # effectively unbounded (pre-fix)
+    monkeypatch.setattr(aim_point, "CORNER_MIN_DEVIATION_FRACTION", 0.0)  # isolate forward-bound only
     rec = generate_recommendation(
         hole=hole, distance_yards=554, club_distances=_OWNER_BAG,
         handicap=3.0, weather=None, shot_bearing=0.0,
@@ -113,10 +123,15 @@ def test_pebble_beach_hole3_after_fix_uncapped():
 
 
 def test_pebble_beach_hole3_before_fix_repro_via_monkeypatch(monkeypatch):
+    """Repro-harness maintenance (specs/caddie-bench-cycle4-plan.md §A6): same
+    reasoning as Pine Valley 9 above — Pebble Beach hole 3 measures dev/dist
+    0.18, below the cycle-4 fraction gate, so that gate must also be
+    neutralized here to keep isolating the forward-bound mechanism alone."""
     hole = _hole_intel_from_geometry_fixture(
         FIXTURES_DIR / "pebble_beach_hole3_geometry.json", hole_number=3, yards=381,
     )
     monkeypatch.setattr(aim_point, "CORNER_TREE_FORWARD_YDS", 10_000)
+    monkeypatch.setattr(aim_point, "CORNER_MIN_DEVIATION_FRACTION", 0.0)  # isolate forward-bound only
     rec = generate_recommendation(
         hole=hole, distance_yards=381, club_distances=_OWNER_BAG,
         handicap=3.0, weather=None, shot_bearing=0.0,

@@ -845,8 +845,50 @@ CORNER_TREE_LOOKBACK_YDS: int = 20
 # layer, never touching the E-model or water costs.
 CORNER_TREE_FORWARD_YDS: int = 40
 
+# A corner only arms the cap when the bend vertex's chord deviation is a
+# substantial FRACTION of its own tee-anchored distance — i.e. the hole
+# genuinely TURNS there, rather than gently sweeping. Empirical table
+# (specs/caddie-bench-cycle4-plan.md §0, measured on real fixtures
+# 2026-07-25): clear holes the cap was ruining measure 0.10-0.19 (Black 4,
+# Pebble 3, Black 18); every genuine, pinned corner measures 0.39-0.52 (Red
+# 6, Black 7, Red 16, the synthetic bend-cap fixture). 0.30 sits in the gap
+# with >=0.09 margin both ways. A fixed yardage (_BEND_MIN_DEVIATION_YARDS,
+# hazards.py) is the wrong SHAPE of criterion here: the corner distances are
+# all similar while deviations differ 3x. Falsification: a real, genuinely
+# blind, tree-walled, cappable corner measuring dev/dist < 0.30 (search
+# ground: the 166-hole prod audit, specs/caddie-tee-selector-audit-before
+# .md) would mean the criterion is the wrong SHAPE, not just the wrong
+# number — the named fallback is a `turn_angle_deg` field on HoleBend
+# (additive, computed from the two legs extract_hole_bend already forms)
+# with a 45 deg threshold (measured gap: sweeps 20-32 deg, corners 51-62
+# deg). Do not build the fallback speculatively; this comment names it.
+#
+# KNOWN RISK (eng-lead audit, 2026-07-25, all 18 Bethpage Red holes assembled
+# from the committed Overpass fixture): the 8-hole calibration table above is
+# a clean void, but across all 18 Red holes dev/dist is a CONTINUUM
+# straddling 0.30: 0.07, 0.08, 0.18, 0.22, 0.22, 0.26, 0.27, 0.29 | 0.30 |
+# 0.33, 0.35, 0.43, 0.45 — Red 14 (0.29) and Red 3 (0.33) get opposite
+# treatment on near-identical geometry. 0.30 is a knife edge through a
+# populated region, not a cut through a void, on the FULL Red sample.
+# Practical impact today is nil (the Overpass fixture carries no trees, so
+# none of these holes arms the cap at all — the risk is latent and lands
+# when trees are ingested for these courses). Built at 0.30 anyway per this
+# plan; if the knife-edge proves unacceptable in review, the pre-named
+# turn_angle_deg fallback above is much better-conditioned (sweeps 20-32 deg
+# vs corners 51-62 deg) and should replace this fraction, not patch it.
+CORNER_MIN_DEVIATION_FRACTION: float = 0.30
+
 _SEVERITY_RANK: dict[str, int] = {"mild": 1, "moderate": 2, "severe": 3, "death": 5}
 _MODERATE_RANK: int = _SEVERITY_RANK["moderate"]
+
+# Corner-guarding tree evidence only counts within this lateral distance of
+# the played line. Red 6 (the pinned legit bend-cap) measures 29y/35y; the
+# extraction cap (_TREE_MAX_LATERAL_YARDS, hazards.py) admits observations
+# to 70y, and a tree edge 45+y off the line is ~2.6 sigma for a hcp-15
+# driver cone (width ~70y, sigma ~17.5) — sub-1% tail, not "guarding".
+# `None` (legacy cache / hand-built fixture) never disqualifies — unknown is
+# unknown ([[no-fake-data-fallbacks]]).
+CORNER_TREE_MAX_LATERAL_YDS: float = 45.0
 
 
 def _select_club_capped_at(
@@ -1300,8 +1342,15 @@ def generate_recommendation(
             and not bend.straight
             and bend.distance_yards is not None
             and bend.distance_yards >= CORNER_MIN_DISTANCE_YDS
+            and bend.deviation_yards >= CORNER_MIN_DEVIATION_FRACTION * bend.distance_yards
             and tee_shot_numbers.drive_total_yards > bend.distance_yards + CORNER_OVERSHOOT_TOLERANCE_YDS
         ):
+            # Root cause #5 (specs/caddie-bench-cycle4-plan.md §A5, OUT OF
+            # SCOPE, backlogged loudly as caddie-shot-origin-offset-for-bend-
+            # and-corridor): bend.distance_yards is tee-anchored, but this
+            # positioning branch is shared by mid-hole strokes with no
+            # shot-origin offset — a mid-hole re-solve can misjudge a corner
+            # that's actually already behind the player.
             corner_trees = [
                 h for h in hole.hazards
                 if h.type == "trees"
@@ -1309,6 +1358,11 @@ def generate_recommendation(
                     <= h.carry_yards
                     <= bend.distance_yards + CORNER_TREE_FORWARD_YDS
                 and _SEVERITY_RANK.get(h.penalty_severity, 0) >= _MODERATE_RANK
+                # Vacuous today: every mapped tree hazard is hardcoded
+                # penalty_severity="moderate" (hazards.py), so this rank
+                # filter currently admits every tree. Retained for future
+                # non-tree corner evidence with a real severity spread.
+                and (h.lateral_yards is None or abs(h.lateral_yards) <= CORNER_TREE_MAX_LATERAL_YDS)
             ]
             if corner_trees:
                 capped = _select_club_capped_at(

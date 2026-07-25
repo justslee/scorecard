@@ -116,6 +116,17 @@ _DEFAULT_CAP: int = 5
 # the 10y hazard lateral deadband, comfortably below any bend a caddie would
 # actually name.
 _BEND_MIN_DEVIATION_YARDS: float = 15.0
+# A candidate bend vertex this close to the GREEN end of the path describes
+# the green surround / final approach curl, not a dogleg the tee shot faces
+# — a DELIBERATE GLOBAL correction (specs/caddie-bench-cycle4-plan.md §A4),
+# not just a club-selection fix: `HoleBend.straight` also drives the spoken
+# hole-shape line (format_bend_line below, tools.py's get_bend) and the P2
+# "corner is your landing zone" color line (aim_point.py) — a phantom bend
+# near the green is wrong everywhere those consumers speak it, not only in
+# club selection. 40y ~ green-complex scale; Black 18's phantom "bend" sits
+# 16y short of the green and is the convicting case (spoken "doglegs left at
+# ~395" on a hole the owner calls dead straight, 411y, plays dead straight).
+_BEND_NEAR_GREEN_EXCLUDE_YDS: float = 40.0
 
 _HAZARD_FEATURE_TYPES: frozenset[str] = frozenset({"bunker", "water"})
 _SEVERITY_BY_TYPE: dict[str, str] = {"water": "death", "bunker": "moderate", "trees": "moderate"}
@@ -583,8 +594,11 @@ def extract_hole_bend(
 
     # Candidate interior vertices: real forward progress past the tee's own
     # projection (a kink behind the tee is back-tee routing jitter, not a
-    # bend the player faces) and not coincident with the green (no outgoing
-    # leg to define a turn from there).
+    # bend the player faces), not coincident with the green (no outgoing leg
+    # to define a turn from there), and not within _BEND_NEAR_GREEN_EXCLUDE_
+    # YDS of the path's own green end (a vertex that close describes the
+    # green surround / final approach curl, not a dogleg the tee shot
+    # faces — Black 18's phantom "bend" sits 16y short of the green).
     candidates: list[tuple[int, float, float]] = []  # (index, dev_m, along_m)
     for i in range(1, len(path_xy) - 1):
         vx, vy = path_xy[i]
@@ -592,6 +606,9 @@ def extract_hole_bend(
         if along_m <= 0:
             continue
         if math.hypot(gx - vx, gy - vy) <= 1.0:
+            continue
+        remaining_yds = (cum_m[-1] - cum_m[i]) * _YARDS_PER_METER
+        if remaining_yds < _BEND_NEAR_GREEN_EXCLUDE_YDS:
             continue
         dev_m = ux * vy - uy * vx  # positive = LEFT of the chord
         candidates.append((i, dev_m, along_m))
@@ -784,6 +801,7 @@ def extract_hole_hazards(
                 lng=h_lon,
                 carry_yards=carry_yards,
                 line_side=line_side,
+                lateral_yards=round(abs(lateral_yards), 1),
             )
         )
 
@@ -848,6 +866,7 @@ def _tree_hazard(
         lng=lon,
         carry_yards=carry_yards,
         line_side=side,
+        lateral_yards=round(abs(_lateral_yards), 1),
     )
 
 

@@ -951,6 +951,17 @@
         "noticeable": false,
         "depends_on": [],
         "why": "Prereq (owner/ops action, not app code) for the login-onboarding redesign epic (specs/login-onboarding-redesign-plan.md §2.5). The headless custom login screen renders Google/Apple/email buttons, but Google + Apple must be enabled as SSO connections on the PRODUCTION Clerk instance (Dashboard -> Configure -> SSO connections), and Native Applications must be on (already referenced by the AuthProvider native-token bridge). App Store Guideline 4.8 makes Apple sign-in mandatory once Google is offered. Blocked on the owner doing the Dashboard config; the auth-headless-spike can dev against a dev instance meanwhile but ships only once prod connections are live."
+    },
+    {
+        "id": "caddie-shot-origin-offset-for-bend-and-corridor",
+        "title": "HoleBend/CorridorSample geometry is tee-anchored but reused mid-hole with no shot-origin offset",
+        "type": "minor",
+        "status": "ready",
+        "priority": "p3",
+        "risk": "low",
+        "noticeable": false,
+        "depends_on": [],
+        "why": "specs/caddie-bench-cycle4-plan.md §A5 (cycle-4 root cause #5, explicitly OUT OF SCOPE for that plan, backlogged loudly rather than silently fixed). `HoleBend.distance_yards`/`CorridorSample.distance_yards` (backend/app/caddie/types.py:157,169) are measured tee-anchored, along the hole's full mapped centerline from the TEE. But `generate_recommendation`'s positioning branch (the bend-cap + corridor-width block in aim_point.py) is shared by mid-hole strokes (e.g. a par-5 second shot from the fairway) with NO shot-origin offset applied — grep confirms no `already_played|from_tee|shot_origin` concept exists anywhere in the caddie module. A mid-hole re-solve can therefore misjudge whether a mapped corner or corridor pinch is still ahead of the player or is actually already behind them. The bench's fairway-lie par-5 cases are the observable surface (a positioning shot recomputed from a fairway lie reuses the same tee-anchored bend/corridor distances as the original tee shot). Not fixed here: doing so honestly requires threading the player's current along-hole position through the bend/corridor consumers, which is a real (if contained) design task, not a one-line patch. A code comment naming this limitation was added at the bend-cap gate in aim_point.py (cycle-4 commit 1)."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
