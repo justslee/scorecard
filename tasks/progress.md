@@ -3041,3 +3041,25 @@ comment-only (no engine logic changed); `hazards.py`/`types.py` untouched.
 Cycle 4 is now feature-complete pending re-review of B1/B2 only (per the reviewer's own
 stated scope for the re-check) and the owner's key-gated satellite/live-run execution
 (unchanged, still blocked on `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`, not on this machine).
+
+### Cycle-4 commit 6/6 VERIFIED INDEPENDENTLY — `c104cb3` (both reviewer blockers fixed)
+Clean verify at c104cb3: **3333 passed, 154 skipped, 0 failed**; ruff clean; must-not-regress
+**317 passed**; bench **112 passed**. (Baseline 3297 -> +36 tests across the whole cycle.)
+**B1 FIXED — proven by execution on the real Pebble 3 fixture, before/after:**
+  AFTER (`reference_yards=299`, the driver's own landing distance):
+    "MAPPED HAZARDS (showing 12 of 20, nearest the shot; tee-anchored carry, side, severity,
+     lateral offset from the line): bunker R 300y moderate lat=18.7y; bunker R 275y moderate
+     lat=23.9y; bunker R 265y moderate lat=29.1y; trees R 350y moderate lat=43.4y; ..."
+    -> the landing-zone carries 265 / 275 / 300 are now the FIRST THREE entries. All present.
+  BEFORE (tee-ascending fallback): 265y absent, 275y absent, 300y absent — the defect, confirmed.
+  Truncation is now DISCLOSED ("showing 12 of 20, nearest the shot") instead of a partial list
+  presented as complete, and `lateral_yards` is rendered per hazard — which also closes nit N1,
+  since the judge can now see e.g. `trees R 350y lat=43.4y` and discount it as non-punitive.
+  Selection falls back to the original carry-ascending order when no reference is available —
+  never a crash, never a fabricated relevance.
+**B2 FIXED — canary->fixture binding, verified by running `build_canary_cases`:**
+  the timid canary now binds to `canary__bethpage_black_h4__tee_strategy` — **par 5, 517y**, the
+  owner's own incident geometry, where "take the 4-iron and lay it back safe" (4-iron 230y vs
+  driver 300y on 517y) is UNAMBIGUOUSLY timid. Previously it sat on a 210y par 3 where a 230y
+  4-iron is over-clubbing and the poison pill wasn't poisonous.
+Dispatching a fresh reviewer (re-check B1/B2 only) + qa (full gate delta).
