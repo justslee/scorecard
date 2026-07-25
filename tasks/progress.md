@@ -2832,3 +2832,57 @@ chain) and `caddie-shot-origin-offset-for-bend-and-corridor` (tee-anchored geome
 Awaiting the fable adversarial reviewer (both tails of the new dimension, rubric-gaming, no-regression
 on merits, plus rulings on the two open questions I routed to it: the 0.30 knife edge and the
 one-config cap-side bench coverage).
+
+### Cycle-4 REVIEWER (fable, fresh context) — **BLOCKING x2**, both in the bench instrument
+Engine fix (§A), dual-basis arithmetic (§D/§F), monkeypatch harness maintenance, honesty and cached-
+JSONB back-compat: all verified SOUND by execution. The two blockers are ~10 lines, no engine change.
+Both CONFIRMED INDEPENDENTLY BY ME before acting:
+
+**B1 — the judge's hazard evidence is truncated to the 12 hazards NEAREST THE TEE** (`judge.py:165`,
+`hazards_payload[:cap]`, cap=12). `intel.hazards` is carry-ascending, so `[:12]` keeps the near-tee
+ones and silently drops the rest, under an authoritative header that claims to list "MAPPED HAZARDS"
+with no disclosure. Measured by me on the committed fixtures:
+  pebble_beach_h3 (381y): n=20, shown up to 215y, **DROPPED [225,230,265,275,300,350,390,405]**
+     -> the owner bag's driver lands ~277-299, so **265/275/300 are dropped** — the entire landing zone
+  bethpage_red_h1 (465y): n=18, DROPPED [420..480] (all beyond driver range — harmless here)
+Pebble 3 is one of the TWO headline fixtures for this cycle's fix. Consequences: the reckless tail of
+`aggression_realism` goes blind exactly where it must see; a caddie that truthfully cites the trees at
+275 is graded against a list that doesn't contain them (false FAIL); and it presents partial data as
+complete — the opposite of the honest "unmapped — do not invent one" discipline the sibling corridor
+line applies. `hazard_awareness` has the same exposure.
+
+**B2 — the timid canary lands on a 210y par 3, where its answer isn't timid.** Confirmed by running
+`build_canary_cases`: the 5th canary binds to `bethpage_black_h8`, **par 3, 210y**. Its text is "take
+the 4-iron and lay it back safe... driver is way too risky". The owner bag's 4-iron is 230y — on a
+210y par 3 that is OVER-clubbing, and "driver is way too risky" is incoherent on a par 3. Worse, the
+rubric's own anti-hedging clause ("score the CLUB ACTUALLY RECOMMENDED, never the tone"), followed
+literally, tells the judge to ignore the timid rhetoric — the very thing that makes it a poison pill.
+The run-level gate probably still trips via other dimensions, so this is a hole in the PROBE, not in
+the gate: the only empirical teeth for the timid tail are only accidentally satisfied.
+Incidental fragility exposed: canary->fixture binding is `i % len(sorted(glob))`, so adding any
+alphabetically-early fixture reshuffles all five canaries.
+
+**Reviewer RULINGS on the two questions I routed to it (I accept both):**
+ (a) **0.30 knife edge -> SHIP IT, with a hard trigger.** Reasoning I found persuasive: the change is
+     MONOTONE (it can only REMOVE caps vs today, so every hole in the ambiguous band ends up better
+     than it is now, nothing regresses); the error costs are ASYMMETRIC (a false cap is the owner's
+     actual complaint, a missed cap is driver on a mild sweep, and the E-model still prices lateral
+     trouble) so the ambiguous 0.22-0.29 band falls on the cheap side; and decisively, `turn_angle_deg`
+     at 45deg looks better-conditioned only on the SAME under-sampled 9-hole table — it has never been
+     measured on the 18-hole continuum that exposed the fraction's problem. Swapping an under-sampled
+     scalar for an unmeasured one is the same bet with better marketing.
+     CONDITION: the risk lands when tree/woods ingestion is enabled beyond the current fixtures — a
+     known, dateable event. Backlog a TRIGGER-GATED item: measure turn_angle_deg across the full Red 18
+     + Black 18 and re-decide BEFORE enabling tree ingestion for any further course.
+ (b) **1-of-27 judged cap coverage -> SUFFICIENT.** A single LLM-judged case sits inside the
+     instrument's own noise band, so widening to 3-4 configs would still be inside noise. The real
+     regression detector is the DETERMINISTIC suite (test_bend_cap_corner_sharpness boundary probes at
+     0.2965/0.3009 and 44/46/None, test_corridor_bend_cap, test_13_red6, and the new offline
+     end-to-end assertion on real merged geometry). CONDITION: neither the README nor the report may
+     imply the bench "covers" the bend-cap path — state that judge-side coverage is one config and a
+     judged cap regression would not be detectable above noise.
+Nits to fold in: N1 (rubric demands "high-probability" punishment but gives the judge no probability
+and no lateral offset -> a bunker 60y off line reads as valid layup justification; rides along with
+B1's lateral_yards rendering + one rubric clause), N2 (`TOO_TIMID` is never wired to guidance so it
+will read as near-zero "no timidity" in the Pareto), N3 (A4 can in principle PROMOTE a shorter vertex
+with a HIGHER fraction; my 26-hole audit checked `straight`, not the fraction — worth one line).
