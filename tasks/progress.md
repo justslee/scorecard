@@ -2750,3 +2750,27 @@ DATABASE_URL set. Asked the builder to make the import lazy (preferred, makes th
 contract true) or else correct the docs and put a never-connected placeholder in the packaged
 command — plus a pinning test, and to check the FULL run command for the same undocumented
 requirement so the packaged commands are runnable exactly as written.
+
+## AWAITING — reviewer (fable, fresh context) + qa on caddie-bench cycle 4 @192a976
+All 5 builder commits landed on `integration/next` and INDEPENDENTLY verified by me in a clean
+detached worktree (never trusting the builder's own numbers):
+  40d144f commit 1 engine bend-cap arms on evidence   3306 passed / 0 failed
+  36482c2 commit 2 aggression_realism + evidence      3312 passed / 0 failed
+  089bfd8 commit 3 real tree fixtures + mix rebalance 3316 passed / 0 failed
+  363708e commit 4 satellite render hardening         3321 passed / 0 failed
+  192a976 commit 5 records + --render-only doc fix    3322 passed / 0 failed
+  (true pre-fix baseline 3297) — +25 net tests, ZERO regressions, ruff clean throughout.
+Commit 5 resolved the defect I found in commit 4: `--render-only` was falsely documented as
+maps-key-only. Builder diagnosed it correctly (import chain harness.py -> app.caddie.strategy -> ...
+-> app.caddie.session pulls app.db.engine, which raises at IMPORT time; SQLAlchemy never actually
+connects), chose to fix the DOCS rather than refactor 4 production modules outside this plan's scope
+(right call for a bench-only cycle), and added a SUBPROCESS pinning test that runs the packaged
+command exactly as written so the documented contract can't silently rot again.
+ON REVIEWER/QA VERDICTS: SHIP + PASS -> update PR #155 checklist (NOTICEABLE) + backlog, then STOP
+(do NOT ship/ping — coordinator directive). BLOCKING -> re-dispatch builder, re-review.
+Open questions I deliberately routed to the reviewer rather than deciding myself:
+  (a) the 0.30 knife edge (Red 14 at 0.29 vs Red 3 at 0.33 get opposite treatment; the pre-named
+      turn_angle_deg fallback at 45deg has a much cleaner measured gap, 20-32 vs 51-62deg);
+  (b) cap-side bench coverage is ONE hole x bag config (red_h6 x short_hitter) — enough or not?
+Still BLOCKED and unchanged: the satellite fidelity check + the full 150-case run need keys this
+machine does not have; prod-box execution was correctly denied. Owner must unblock.
