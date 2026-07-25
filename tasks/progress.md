@@ -2774,3 +2774,39 @@ Open questions I deliberately routed to the reviewer rather than deciding myself
   (b) cap-side bench coverage is ONE hole x bag config (red_h6 x short_hitter) — enough or not?
 Still BLOCKED and unchanged: the satellite fidelity check + the full 150-case run need keys this
 machine does not have; prod-box execution was correctly denied. Owner must unblock.
+
+### Cycle-4 SCENARIO MIX — authoritative reconciliation (three numbers were floating; these are correct)
+Measured by executing `build_cases()` on the final head 192a976. The builder's report said "174
+advice / 31.0% trouble" and I earlier said "189 / 28.6%" — both were on different bases and the
+builder's advice count was slightly off. Exact figures:
+  `build_cases()` total = **189**  (FACT = 10, ADVICE = **179**);  canaries = 5;  GRAND TOTAL = **194**
+  ADVICE-ONLY basis (what the rubric actually judges — FACT cases are never judged, `judge=None`):
+    n=179 · tee 65, fairway 54, rough 27, bunker 27, greenside 6
+    trouble **30.2%** · ordinary **66.5%**
+  ALL-CASES basis (incl. FACT), which is the like-for-like comparison against the pre-change 46.0%
+  (that figure was measured over all 150 cases including FACT):
+    n=189 · tee 65, fairway 64, rough 27, bunker 27, greenside 6
+    trouble **28.6%** · ordinary **68.3%**
+**Headline, like-for-like: trouble lies 46.0% -> 28.6%; ordinary tee-and-fairway 52.0% -> 68.3%.**
+Case count 150 -> 189 (+5 canaries = 194). Use these numbers, not the plan's projection (33%/66%)
+and not the builder's 174/31.0%.
+Root of the plan's projection miss (builder diagnosed, verified): `bethpage_red_h1` has no mapped
+bunker polygon, so its BUNKER slot substitutes to GREENSIDE via the pre-existing `_LIE_FALLBACK` —
+a fixture-availability nuance the plan's uniform "9 holes x 1 bunker slot" hand-count could not know.
+Honest behavior (no fabricated bunker), just a projection that couldn't have been exact.
+
+### Builder self-corrections worth keeping (it found these by EXECUTION, not by trusting the plan)
+1. `band_pessimistic` is **64/68**, not the plan's predicted 68/72 (the separate headline test's
+   68/72 literal WAS correct — two different denominators, easy to conflate).
+2. Post-fix `bethpage_black_h18` does NOT go fully `straight=True`: a second real vertex (dev 24 @
+   275y, fraction 0.087) is promoted, so the spoken line improves from a phantom "~395" to "~275"
+   rather than disappearing. Far below the 0.30 arming fraction either way, so the club-cap fix is
+   unaffected. Documented rather than forced.
+3. The plan's claim that red_h6 arms the cap "for the owner bag" is wrong: at its real 292y the
+   owner's 300y driver reaches the green outright (`shot_kind=approach`), and the bend-cap lives only
+   on the positioning branch. Proven against `short_hitter` instead. This exposed a genuinely
+   separate gap, now backlogged as `caddie-reachable-branch-blind-to-corner-danger` — **the reachable
+   branch never consults `hole.bend` at all**, so a drivable short par 4 with a guarded corner gets
+   no corner reasoning whatsoever. Worth a future cycle.
+Also backlogged: `caddie-bench-lazy-db-import` (the preferred real fix for the --render-only import
+chain) and `caddie-shot-origin-offset-for-bend-and-corridor` (tee-anchored geometry reused mid-hole).
