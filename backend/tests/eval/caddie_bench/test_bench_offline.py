@@ -140,6 +140,80 @@ def test_extract_fixtures_filename_matches_pattern_for_extracted_holes():
         assert fx.fixture_id.split("_h")[-1].isdigit()
 
 
+# ── 2b. cycle-4 §C(i) — the merged-tree Red fixtures make the tee-club     ──
+#       machinery LIVE. Extraction invariants, zero network (committed).   ──
+
+
+_OWNER_BAG_CLUBS: dict[str, int] = {
+    "driver": 300, "3wood": 270, "4iron": 230, "5iron": 215, "6iron": 195,
+    "7iron": 180, "8iron": 170, "9iron": 155, "pw": 140, "gw": 127, "sw": 115, "lw": 90,
+}
+
+
+def test_red_h1_has_a_live_corridor_profile():
+    """Red 1 (real tree lines merged onto the Overpass geometry) finally
+    gives the corridor-width E-model machinery a real profile to run
+    against -- `extract_corridor_profile` is `None` on every OTHER real
+    bend-capping fixture in the bench (the plan's own §0 finding)."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_red_h1.json")
+    intel = geo.hole_intel_from_fixture(fx)
+    assert intel.corridor is not None
+    assert len(intel.corridor) >= 20, "expected a real multi-sample profile, not a token one"
+
+
+def test_red_h5_stays_driver_for_the_owner_bag():
+    """Red 5: a genuinely clear hole with right-side tree color (105-170y)
+    but a bend well below the 0.30 arming fraction (measured 64/295 =
+    0.217, matching the plan's §0 diagnosis table) -- the owner's exact
+    scenario: trees present, bend below threshold -> DRIVER, never capped."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_red_h5.json")
+    intel = geo.hole_intel_from_fixture(fx)
+    assert intel.bend is not None and not intel.bend.straight
+    assert intel.bend.deviation_yards < 0.30 * intel.bend.distance_yards
+    from app.caddie.aim_point import generate_recommendation
+    rec = generate_recommendation(intel, fx.yards, _OWNER_BAG_CLUBS, handicap=3.0)
+    assert rec.club == "driver"
+
+
+def test_red_h6_bend_cap_arms_end_to_end_with_real_evidence():
+    """Red 6: the genuinely-tight case -- real 0.43 corner (measured
+    83/195) with real guarding trees at a measured lateral offset within
+    CORNER_TREE_MAX_LATERAL_YDS. Proves the FULL cap mechanism (fraction
+    gate + real Hazard.lateral_yards from real extraction, not a hand-built
+    None) fires end to end on committed geometry.
+
+    DIVERGENCE FROM THE PLAN'S OWN WORDING, verified rather than assumed:
+    the plan's §C(i) text says "cap arms for the owner bag" -- on this
+    fixture's actual assembled yardage (292y) the OWNER bag's driver (300y)
+    reaches the green outright (shot_kind=approach, "go for it" is the
+    correct call for a legitimately drivable short par 4), so the bend-cap
+    machinery -- which only lives in the non-reachable/positioning branch
+    -- never runs for that bag on THIS hole. The mechanism is proven here
+    against the SHORT_HITTER bag (driver 210, definitely not reachable)
+    instead, which is exactly what the bench's own bag rotation (owner/
+    short_hitter/bomber x every TEE slot) already exercises end to end.
+    This is a real fact about the real geometry, not a fixture bug -- see
+    the cycle-4 commit-3 message for the full accounting."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_red_h6.json")
+    intel = geo.hole_intel_from_fixture(fx)
+    assert intel.bend is not None and not intel.bend.straight
+    assert intel.bend.deviation_yards >= 0.30 * intel.bend.distance_yards, "sanity: this must be a genuinely sharp corner"
+    corner_trees = [h for h in intel.hazards if h.type == "trees" and h.lateral_yards is not None]
+    assert corner_trees, "sanity: real tree hazards must carry a real measured lateral_yards"
+
+    from app.caddie.aim_point import generate_recommendation
+    from tests.eval.caddie_bench.schema import BagId, load_bags
+
+    bags = load_bags(BAGS_PATH)
+    short_hitter = bags[BagId.SHORT_HITTER]
+    rec = generate_recommendation(intel, fx.yards, short_hitter.clubs, handicap=short_hitter.handicap)
+    assert rec.shot_kind == "positioning"
+    assert rec.club != "driver"
+    assert any("runs through the corner" in line for line in rec.reasoning), (
+        f"the corner note must be nameable in the reasoning -- got {rec.reasoning}"
+    )
+
+
 # ── 3. Position containment for EVERY pilot case (re-verified here) ────────
 
 
@@ -571,6 +645,51 @@ def test_build_cases_produces_the_planned_case_count():
     ids = [c.id for c in cases]
     assert len(ids) == len(set(ids)), "case ids must be unique"
     assert len(cases) >= 100
+
+
+def test_build_cases_exact_count_and_lie_mix_cycle4():
+    """cycle-4 (specs/caddie-bench-cycle4-plan.md §C(ii)) — pins the exact
+    case count and per-lie mix so the rebalance can't silently regress.
+
+    10 fixtures after §C(i) (9 par-4/5, 1 par-3), 3 bags: advice cases =
+    9*6*3 + 1*4*3 = 174; + 10 FACT (1/hole) + 5 canaries = 189 total. Both
+    match the plan's own projection exactly.
+
+    Per-lie mix on the 174 advice cases (measured here, not assumed):
+    tee 60, fairway 54, rough 27, bunker 27, greenside 6. tee+fairway =
+    114/174 = 65.5% (~66%, matches the plan). trouble (rough+bunker) =
+    54/174 = 31.0% -- DIVERGES from the plan's naive projection of 33%
+    (57/174): bethpage_red_h1 has no mapped bunker polygon in the merged
+    fixture, so its BUNKER slot substitutes to GREENSIDE (the existing
+    _LIE_FALLBACK), moving 3 cases from bunker to greenside that a uniform
+    "9 holes x 1 bunker slot" hand-count doesn't account for. Verified by
+    executing build_cases directly, not by trusting the plan's arithmetic."""
+    fixtures = _all_hole_fixtures()
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    cases = q.build_cases(fixtures, bank)
+    assert len(cases) == 189
+
+    canaries = [c for c in cases if c.canary]
+    fact = [c for c in cases if "__fact__" in c.id]
+    advice = [c for c in cases if c not in canaries and c not in fact]
+    assert len(canaries) == 5
+    assert len(fact) == 10
+    assert len(advice) == 174
+
+    from collections import Counter
+    lie_counts = Counter(c.position.lie.value for c in advice)
+    assert lie_counts["tee"] == 60
+    assert lie_counts["fairway"] == 54
+    assert lie_counts["rough"] == 27
+    assert lie_counts["bunker"] == 27
+    assert lie_counts["greenside"] == 6
+    assert "recovery_trees" not in lie_counts, "the RECOVERY_TREES slot was removed in cycle-4 §C(ii)"
+
+    tee_fairway_pct = (lie_counts["tee"] + lie_counts["fairway"]) / len(advice)
+    trouble_pct = (lie_counts["rough"] + lie_counts["bunker"]) / len(advice)
+    assert tee_fairway_pct == pytest.approx(0.6551724137931034)
+    assert trouble_pct == pytest.approx(0.3103448275862069)
+    assert tee_fairway_pct > 0.6, "the rebalance must clear a clean majority of ordinary golf"
 
 
 def test_bags_json_matches_owner_bag_from_corner_tree_forward_bound_test():

@@ -1,5 +1,5 @@
 {
-  "_provenance": "OSM geometry assembled from the committed tests/fixtures/bethpage_overpass.json (Bethpage Red, hole 6) via app.services.osm_ingest.assemble_osm_course. Yardage 292 DERIVED (straight-line tee->green polyline length) \u2014 no published card for Bethpage Red in this repo; see test_tee_club_expected_strokes.py for the same derivation method used elsewhere in this codebase.",
+  "_provenance": "OSM geometry assembled from committed tests/fixtures/bethpage_overpass.json (Bethpage Red, hole 6) via app.services.osm_ingest.assemble_osm_course; tree/woods features (1) merged verbatim from committed tests/fixtures/bethpage_red_trees.json (real OSM data, captured read-only). Yardage 292 DERIVED (straight-line tee->green) \u2014 labeled, not measured.",
   "par": 4,
   "yards": 292,
   "features": {
@@ -860,6 +860,111 @@
             [
               -73.455045,
               40.7488088
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "featureType": "woods"
+        },
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                -73.4578856,
+                40.7489461
+              ],
+              [
+                -73.4575789,
+                40.7491307
+              ],
+              [
+                -73.4570827,
+                40.749076
+              ],
+              [
+                -73.4563699,
+                40.7489256
+              ],
+              [
+                -73.4554587,
+                40.7488436
+              ],
+              [
+                -73.4558467,
+                40.7491922
+              ],
+              [
+                -73.4560361,
+                40.7495544
+              ],
+              [
+                -73.4560542,
+                40.7499645
+              ],
+              [
+                -73.4556572,
+                40.7503472
+              ],
+              [
+                -73.4549806,
+                40.7509487
+              ],
+              [
+                -73.4549264,
+                40.7515433
+              ],
+              [
+                -73.4554768,
+                40.7514954
+              ],
+              [
+                -73.455982,
+                40.7513724
+              ],
+              [
+                -73.456397,
+                40.7515228
+              ],
+              [
+                -73.4567669,
+                40.7518235
+              ],
+              [
+                -73.4574977,
+                40.7519807
+              ],
+              [
+                -73.4576781,
+                40.751926
+              ],
+              [
+                -73.4579487,
+                40.7515501
+              ],
+              [
+                -73.4578856,
+                40.7510307
+              ],
+              [
+                -73.4579307,
+                40.7508051
+              ],
+              [
+                -73.4579758,
+                40.7501832
+              ],
+              [
+                -73.4578495,
+                40.7495647
+              ],
+              [
+                -73.4578856,
+                40.7489461
+              ]
             ]
           ]
         }

@@ -37,20 +37,31 @@ from tests.eval.caddie_bench.schema import (
 # fallback lie/question pair named in parens below rather than silently
 # dropping the slot or fabricating a position.
 
+# cycle-4 (specs/caddie-bench-cycle4-plan.md §C(ii)) rebalance toward
+# ordinary golf. Measured before (150 cases): fairway 50, rough 42, tee 28,
+# bunker 24, greenside 3, recovery 3 -- 46% trouble lies, and the TEE slot
+# (where the owner's actual "4-iron on a driver hole" incident lives) was
+# structurally under-weighted. The RECOVERY_TREES slot is removed (it
+# substituted to ROUGH on 6 of 7 holes anyway -- the mix's hidden rough
+# inflation); QuestionType.RECOVERY stays in the bank (bank-coverage is
+# bank-side, not slot-side) and recovery scenarios are noted in the backlog
+# as a future dedicated suite. A second TEE slot (CHALLENGE_WHY) is the
+# aggression surface -- "why that club / why not go at it?" is exactly the
+# question that should surface a timid or reckless pick.
 _PAR45_SLOTS: tuple[tuple[LieCategory, Optional[float], QuestionType], ...] = (
     (LieCategory.TEE, None, QuestionType.TEE_STRATEGY),
-    (LieCategory.FAIRWAY, 0.35, QuestionType.LAYUP_VS_GO),       # "prime" position, mid-drive
-    (LieCategory.FAIRWAY, 0.65, QuestionType.CLUB_SELECTION),    # "layup-decision" position, closer in
+    (LieCategory.TEE, None, QuestionType.CHALLENGE_WHY),      # "why that club / why not go at it?" — the aggression surface
+    (LieCategory.FAIRWAY, 0.35, QuestionType.LAYUP_VS_GO),
+    (LieCategory.FAIRWAY, 0.65, QuestionType.CLUB_SELECTION),
     (LieCategory.ROUGH, 0.5, QuestionType.MISS_SIDE_BAIL),
     (LieCategory.BUNKER, 0.7, QuestionType.CARRY_QUESTION),
-    (LieCategory.RECOVERY_TREES, 0.4, QuestionType.RECOVERY),    # falls back to GREENSIDE/APPROACH_GREEN below
 )
 
 _PAR3_SLOTS: tuple[tuple[LieCategory, Optional[float], QuestionType], ...] = (
     (LieCategory.TEE, None, QuestionType.CLUB_SELECTION),
+    (LieCategory.TEE, None, QuestionType.WIND_ADJUST),        # wind club-adjust is asked ON the tee
     (LieCategory.GREENSIDE, None, QuestionType.APPROACH_GREEN),
     (LieCategory.BUNKER, 0.9, QuestionType.CARRY_QUESTION),
-    (LieCategory.ROUGH, 0.85, QuestionType.WIND_ADJUST),
 )
 
 # Fallback substitution when a slot's ideal lie isn't mapped on a given hole.
