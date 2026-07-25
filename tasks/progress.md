@@ -3,6 +3,74 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-25) — CADDIE BENCH CYCLE 4 commit 7: h18 green mis-anchor fix + geometry precondition + F1/severity-cap judge hardening (builder, lane worktree-agent-a36e12e4dc633a855)
+
+Implemented the diagnosed h18 fix (commit `3d935f9` diagnosis) as commit 7 on
+`caddie-bench-c4` == `integration/next`.
+
+**1. Green selection fix** (`tests/eval/caddie_bench/geometry.py::_tee_green_lonlat`):
+`bethpage_black_h18`'s FeatureCollection carries 2 `green` polygons (its own, 3.3y from the
+hole polyline's last vertex, + a neighbouring hole's, 105.4y away) — "first found" silently
+picked the wrong one, producing "411y hole, 508y to green". New `_select_green_nearest_
+polyline_end` picks the green nearest the polyline's own last vertex — same bug CLASS as
+`app.caddie.hazards._derive_tee_green`'s tee-side "Finding A fix, 2026-07-16" (referenced in
+the new code comment). BEFORE/AFTER (measured by stashing the fix and re-running): h18
+508.5y -> 412.7y (matches the 411y card); all other 9 fixtures BYTE-IDENTICAL before vs. after
+(black_h4 509.1, black_h5 478.0, black_h7 478.6, black_h8 208.8, red_h1 464.7, red_h16 500.2,
+red_h5 467.3, red_h6 292.9, pebble_h3 381.5 — every value unchanged by the fix).
+
+**2. `validate_tee_green_geometry` precondition** (new, runs inside `load_hole_fixture` —
+earliest point a bad fixture could reach a paid run): (a) selected green must be within 15y
+of the polyline's own last vertex (real greens measure 0.2-5.1y; the bug was 105.4y — wide
+gap, 15y sits 3x the worst real case and well under 1/7 the bug); (b) `tee->green geodesic <=
+card_yards + 10y` — the ONLY geometrically-impossible direction (a straight line can never
+exceed the path along it); deliberately NO lower bound, since a real dogleg
+(`bethpage_black_h7`: card 553, geodesic 478.6, -74.4y) is normal and a symmetric band would
+false-fail it. New tests: all 10 committed fixtures proven clean, a synthetic mis-anchored
+green rejected, a synthetic dogleg (chord meaningfully shorter than card) accepted.
+
+**3. Backlog item `caddie-green-anchor-nearest-centerline-end`** (p1, high risk, own review
+cycle) — NOT fixed in this bench cycle (bench-instrument scope only, must not touch
+`app/caddie/hazards.py`). Upgraded mid-cycle per eng-lead's own reproduction: ran the real
+prod ingestion path (`osm_ingest.assemble_osm_course` -> `hazards._derive_tee_green`) over all
+18 Bethpage Black holes — 2/18 (holes 9 + 18) carry >1 green; hole 18 is DEMONSTRATED wrong in
+prod (508y vs correct ~430... concretely 102y off), hole 9 only escapes by luck of file order.
+Bethpage Red is clean (0/18). Item captures the reproduction, the prod file:line, the tee-side
+precedent, and the fix (nearest-centerline-end selection, mirroring this commit's own bench
+fix).
+
+**4. `judge.py` fixes (folded in per cycle-4 re-review, verdict SHIP):**
+- Reviewer nit: renamed `test_timid_canary_binding_survives_an_alphabetically_earlier_
+  fixture_added` -> `test_timid_canary_binding_is_independent_of_input_list_order` (the body
+  proves input-order independence via list reversal, not resilience to a genuinely new
+  fixture; docstring corrected to match).
+- Reviewer finding F1 (latent): `judge_prompt`'s `reference_yards` was player-anchored
+  (`tee_shot_numbers.drive_total_yards`) on a positioning turn, while `hazards_payload`'s
+  `carry_yards` is tee-anchored — wrong frame on a MID-HOLE positioning turn (harmless today:
+  the only >12-hazard hole, `pebble_beach_h3`, never produces one). Fixed:
+  `reference = (hole_yards - resolved.distance_to_green_yards) + drive_total_yards` — reduces
+  to `drive_total_yards` unchanged on a TEE turn (no existing pin moves) since no pinned test
+  combines TEE + positioning + a passed `hole_yards`. New pinned mid-hole test proves the fix
+  (decoy 30y hazard vs. real 300y landing-zone hazard).
+- Reviewer §3 hardening: `_format_hazards_payload`'s cap was severity-blind — a `death`/
+  `severe` hazard far from the reference could be dropped. Sort key now `(severity not in
+  (death, severe), distance)` — death/severe entries never truncated regardless of distance.
+  New test: 13 moderate + 1 far-away death hazard, cap=12 — the death hazard survives.
+
+Gates: `ruff check .` clean. Full offline suite **3339 passed, 154 skipped, 0 failed**
+(baseline 3333 + 6 new tests, exact arithmetic match, confirming zero regressions elsewhere).
+Bench dir (`tests/eval/caddie_bench/`) **118 passed** (baseline 112 + 6, also exact). Zero
+`app/` production files touched (`git diff --stat` — only `tests/eval/caddie_bench/{geometry,
+judge,test_bench_offline,test_bench_teeth}.py` + `backlog.json`), so the historical
+"must-not-regress (9-file set)" figure is unaffected by construction; re-ran the known
+geometry/hazard regression files as an additional explicit check (aim_point, bend_cap_corner_
+sharpness, corner_tree_forward_bound, corridor_bend_cap/profile/width_selection, hazards,
+tee_club_expected_strokes/tree_severity_calibration) — all green, 0 failed. Could not
+reconstruct the exact literal "317" grouping from progress.md's own history (the label was
+used loosely across cycles, e.g. "402"/"408"/"412"/"417" then split into "bench"+"must-not-
+regress" only from commit 6 on) — flagging this ambiguity rather than asserting a match I
+couldn't verify.
+
 ## DONE (2026-07-25) — CADDIE BENCH CYCLE 4: bend-cap arms on evidence + aggression_realism + real fixtures + satellite hardening (builder, lane worktree-agent-a36e12e4dc633a855)
 
 Implemented `specs/caddie-bench-cycle4-plan.md` (approved fable plan) as 5 commits on

@@ -140,6 +140,119 @@ def test_extract_fixtures_filename_matches_pattern_for_extracted_holes():
         assert fx.fixture_id.split("_h")[-1].isdigit()
 
 
+# ── 2c. cycle-4 commit 7 — tee/green geometry PRECONDITION. h18's fixture   ──
+#       carries two `green` polygons (its own + a neighbour's); picking the ──
+#       first by file order produced "411y hole, 508y to green". Fixed in   ──
+#       `_tee_green_lonlat` (nearest-the-polyline-end selection, mirroring  ──
+#       `hazards._derive_tee_green`'s tee-side "Finding A" fix) and guarded ──
+#       going forward by `validate_tee_green_geometry`, which now runs on   ──
+#       EVERY `load_hole_fixture` call -- a bad fixture fails at load,      ──
+#       never reaches a paid run.                                          ──
+
+
+def test_all_committed_fixtures_pass_the_tee_green_geometry_precondition():
+    """Every committed fixture (10, incl. the h18 fix) must pass
+    `validate_tee_green_geometry` cleanly. `_all_hole_fixtures()` already
+    proves this implicitly -- `load_hole_fixture` runs the precondition on
+    every load and would raise -- but this test makes the guarantee
+    explicit and pins the fixture count so coverage can't silently shrink."""
+    fixtures = _all_hole_fixtures()
+    assert len(fixtures) == 10, f"expected exactly the 10 committed pilot fixtures, found {len(fixtures)}"
+    for fx in fixtures:
+        geo.validate_tee_green_geometry(fx)  # must not raise -- already ran once at load time, run again explicitly
+
+
+def test_bethpage_black_h18_green_selects_the_holes_own_green_not_the_neighbours():
+    """Direct repro/pin of the actual defect: h18's FeatureCollection
+    carries 2 `green` polygons -- its own (3.3y from the hole polyline's
+    last vertex) and a neighbouring hole's (105.4y away, first by file
+    order). The selected green must be near the hole's OWN polyline end,
+    and the resulting tee->green distance must land close to the 411y card
+    yardage -- not the ~508y the file-order bug produced."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_black_h18.json")
+    tee, green = geo._tee_green_lonlat(fx.features)
+    assert tee is not None and green is not None
+    to_green_yards = geo.haversine_yards(tee, green)
+    assert 400 <= to_green_yards <= 420, (
+        f"expected ~412y (near the 411y card), got {to_green_yards:.1f}y -- the pre-fix bug produced ~508y"
+    )
+
+
+def _square_ring(center_lon: float, center_lat: float, half_size_m: float = 5.0) -> list[list[float]]:
+    """A tiny closed-ring square (GeoJSON Polygon outer ring) centered on
+    (center_lon, center_lat) -- enough for `_feature_point`'s centroid to
+    land exactly on the center, for synthetic precondition fixtures below."""
+    offsets = [(-half_size_m, -half_size_m), (half_size_m, -half_size_m), (half_size_m, half_size_m), (-half_size_m, half_size_m)]
+    ring = [list(geo._from_xy(center_lat, center_lon, dx, dy)) for dx, dy in offsets]
+    ring.append(ring[0])
+    return ring
+
+
+def test_validate_tee_green_geometry_rejects_a_mis_anchored_green():
+    """Synthetic negative: a `green` feature far from the hole polyline's
+    own last vertex must be REJECTED -- this is the actual defect class
+    `bethpage_black_h18` hit (a neighbouring hole's green, 105.4y off,
+    picked as THE green)."""
+    base_lat, base_lon = 40.700000, -73.500000
+    tee_lonlat = (base_lon, base_lat)
+    green_end_lonlat = geo._from_xy(base_lat, base_lon, 0.0, 400 * geo._M_PER_YARD)
+    # The mis-anchored green sits 200y east of the polyline's own end --
+    # comfortably outside the 15y anchor tolerance.
+    bad_green_lonlat = geo._from_xy(green_end_lonlat[1], green_end_lonlat[0], 200 * geo._M_PER_YARD, 0.0)
+    fc = {
+        "features": [
+            {
+                "properties": {"featureType": "hole"},
+                "geometry": {"type": "LineString", "coordinates": [list(tee_lonlat), list(green_end_lonlat)]},
+            },
+            {
+                "properties": {"featureType": "green"},
+                "geometry": {"type": "Polygon", "coordinates": [_square_ring(*bad_green_lonlat)]},
+            },
+        ]
+    }
+    fx = geo.HoleFixture(fixture_id="synthetic_bad_green_h1", hole_number=1, par=4, yards=400, features=fc, provenance="synthetic")
+    with pytest.raises(geo.GeometryPreconditionError, match="synthetic_bad_green_h1"):
+        geo.validate_tee_green_geometry(fx)
+
+
+def test_validate_tee_green_geometry_accepts_a_legitimate_dogleg():
+    """Synthetic dogleg: a straight tee->green chord meaningfully SHORTER
+    than the card yardage (the played line bends around a corner) must be
+    ACCEPTED -- mirrors the real `bethpage_black_h7` case (card 553,
+    geodesic 478.6, a legitimate -74.4y). There is deliberately NO lower
+    bound in `validate_tee_green_geometry` -- this proves it: a naive
+    symmetric `abs(geodesic - card) < N` band would reject this fixture
+    outright, which is exactly the trap the precondition must not fall
+    into."""
+    base_lat, base_lon = 40.700000, -73.500000
+    tee_lonlat = (base_lon, base_lat)
+    # L-shaped bend: tee -> 300y north -> 300y east. Arc length 600y (~ the
+    # 600y card yardage below); the straight tee->green CHORD is only
+    # ~424y -- meaningfully shorter than the card.
+    corner_lonlat = geo._from_xy(base_lat, base_lon, 0.0, 300 * geo._M_PER_YARD)
+    green_end_lonlat = geo._from_xy(corner_lonlat[1], corner_lonlat[0], 300 * geo._M_PER_YARD, 0.0)
+    fc = {
+        "features": [
+            {
+                "properties": {"featureType": "hole"},
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [list(tee_lonlat), list(corner_lonlat), list(green_end_lonlat)],
+                },
+            },
+            {
+                "properties": {"featureType": "green"},
+                "geometry": {"type": "Polygon", "coordinates": [_square_ring(*green_end_lonlat)]},
+            },
+        ]
+    }
+    fx = geo.HoleFixture(fixture_id="synthetic_dogleg_h1", hole_number=1, par=5, yards=600, features=fc, provenance="synthetic")
+    chord_yards = geo.haversine_yards(tee_lonlat, green_end_lonlat)
+    assert chord_yards < 600 - 100, "sanity: this test means nothing unless the chord is meaningfully shorter than the card yardage"
+    geo.validate_tee_green_geometry(fx)  # must NOT raise
+
+
 # ── 2b. cycle-4 §C(i) — the merged-tree Red fixtures make the tee-club     ──
 #       machinery LIVE. Extraction invariants, zero network (committed).   ──
 
@@ -1132,6 +1245,64 @@ def test_judge_prompt_uses_hole_yards_as_reference_on_a_non_positioning_turn():
     # "50y" alone would false-match the "150y to the green" facts line above
     # the hazards line -- assert on the actual rendered hazard entries.
     assert text.index("bunker L 400y") < text.index("bunker L 50y")
+
+
+def test_judge_prompt_reference_yards_on_a_mid_hole_positioning_turn_stays_tee_anchored():
+    """cycle-4 commit 7 (reviewer finding F1): on a MID-HOLE positioning
+    turn (the player has already covered ground from the tee and is
+    hitting a SECOND positioning/layup shot), `tee_shot_numbers.
+    drive_total_yards` is PLAYER-anchored (this shot's own carry from
+    wherever the player stands), while `hazards_payload`'s `carry_yards` is
+    TEE-anchored -- using `drive_total_yards` alone would put the reference
+    point BEHIND the player. Player is 200y down a 550y hole (350y left to
+    the green) hitting a shot with its own 100y carry -- the correct
+    tee-anchored reference is 200 + 100 = 300y. If the bug were present
+    (reference == drive_total_yards == 100), the near-the-tee 30y hazard
+    would falsely outrank the real landing-zone hazard at 300y."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="reference-test-midhole", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.FAIRWAY, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=350, shot_bearing_deg=0)
+    ref = {
+        "club": "7iron", "shot_kind": "positioning", "raw_yards": 100, "target_yards": 100,
+        "tee_shot_numbers": {"drive_total_yards": 100},
+    }
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 30, "penalty_severity": "moderate"},   # near the TEE -- a decoy
+        {"type": "bunker", "side": "left", "carry_yards": 300, "penalty_severity": "moderate"},  # the real landing zone
+    ]
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary", hazards_payload=hazards_payload, hole_yards=550,
+    )
+    assert text.index("bunker L 300y") < text.index("bunker L 30y"), (
+        "the tee-anchored landing-zone hazard (300y) must outrank the near-tee decoy (30y) -- "
+        "a bare drive_total_yards=100 reference would get this backwards"
+    )
+
+
+def test_format_hazards_payload_never_drops_a_death_or_severe_hazard_under_the_cap():
+    """Reviewer §3 hardening: the relevance cap was severity-blind -- a
+    `death`/`severe` hazard sitting far from the reference point could be
+    dropped entirely on a >12-hazard hole even though it's exactly the
+    evidence the judge most needs. 13 `moderate` hazards clustered AT the
+    reference plus 1 `death` hazard far away, cap=12: the death hazard must
+    survive; one of the moderate ones (farthest from the reference among
+    its own tier) must be the one truncated instead."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 200 + i, "penalty_severity": "moderate"} for i in range(13)
+    ]
+    hazards_payload.append({"type": "water", "side": "left", "carry_yards": 20, "penalty_severity": "death"})
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=200.0, cap=12)
+    assert line is not None
+    assert "showing 12 of 14" in line
+    assert "water L 20y death" in line, "the death hazard must never be dropped by the cap regardless of distance"
 
 
 def test_rubric_instructions_header_names_the_real_dimension_count():

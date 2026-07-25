@@ -191,6 +191,13 @@ def _format_hazards_payload(
     When `reference_yards` is unavailable, falls back to the ORIGINAL
     carry-ascending order (never a crash, never a fabricated relevance).
 
+    HARDENED further (cycle-4 commit 7, reviewer §3): the cap was severity-
+    blind even after the relevance fix above -- a `death`/`severe` hazard
+    far from the reference could still be dropped entirely on a >12-hazard
+    hole. The sort key now puts every `death`/`severe` entry ahead of every
+    lesser one, regardless of distance, so severe/deadly hazards are never
+    the ones truncated away; see `_relevance_key` below.
+
     Also DISCLOSES truncation in the header (`showing N of M, nearest the
     shot`) whenever the real count exceeds `cap` — presenting a partial
     list as complete is the exact dishonesty [[no-fake-data-fallbacks]]
@@ -199,16 +206,28 @@ def _format_hazards_payload(
     if not hazards_payload:
         return None
 
-    def _relevance_key(h: dict) -> float:
+    # cycle-4 commit 7 (reviewer §3 hardening): the relevance sort was
+    # severity-blind -- a `death`/`severe` hazard sitting far from the
+    # reference point could be capped away entirely on a >12-hazard hole,
+    # even though it's exactly the evidence the judge most needs to see.
+    # The key is now (not-death/severe, distance) -- every `death`/`severe`
+    # entry sorts BEFORE every lesser one regardless of distance, so it can
+    # never be dropped by the cap (only truncated among ITS OWN severity
+    # tier if that tier alone exceeds `cap`); within a tier, nearest-to-the-
+    # -shot still wins, unchanged.
+    def _relevance_key(h: dict) -> tuple[bool, float]:
         carry = h.get("carry_yards")
-        if reference_yards is None or carry is None:
-            return float("inf")
-        return abs(carry - reference_yards)
+        severity = h.get("penalty_severity")
+        distance = float("inf") if (reference_yards is None or carry is None) else abs(carry - reference_yards)
+        return (severity not in ("death", "severe"), distance)
 
     if reference_yards is not None:
         ordered = sorted(hazards_payload, key=_relevance_key)
     else:
-        ordered = hazards_payload  # original (carry-ascending) order — no relevance signal to sort by
+        # No relevance signal to sort proximity by, but severity priority
+        # still applies -- never let a death/severe hazard fall out of the
+        # cap just because it happens to sort late in file order.
+        ordered = sorted(hazards_payload, key=lambda h: h.get("penalty_severity") not in ("death", "severe"))
 
     total = len(ordered)
     shown = ordered[:cap]
@@ -253,9 +272,31 @@ def judge_prompt(
     # `hole_yards` in this same tee-anchored frame by construction — see
     # module docstring). Derived from data `judge_prompt` already has —
     # never a new kwarg, never invented.
+    #
+    # cycle-4 commit 7 (reviewer finding F1): `drive_total_yards` is
+    # PLAYER-anchored (this shot's own carry from wherever the player is
+    # currently standing), while `hazards_payload`'s `carry_yards` is
+    # TEE-anchored. On a TEE positioning turn that's the same number (the
+    # player IS at the tee), but on a MID-HOLE positioning turn (a long hole
+    # where the drive itself doesn't reach the green, so a second
+    # positioning/layup shot follows) using `drive_total_yards` alone put
+    # the reference point BEHIND the player -- silently poisoning which
+    # hazards survive the cap. Fix: fold in the yardage already covered
+    # from the tee (`hole_yards - resolved.distance_to_green_yards`) before
+    # adding this shot's own carry, which keeps the reference in the same
+    # tee-anchored frame the hazards are reported in. On a TEE turn
+    # `resolved.distance_to_green_yards == hole_yards` (no progress yet),
+    # so this reduces to `drive_total_yards` unchanged -- no existing pin
+    # moves. Harmless on the current fixture set (the only >12-hazard hole,
+    # `pebble_beach_h3`, never produces a mid-hole positioning turn) but
+    # becomes real the moment a long hole with >12 hazards is added.
     tsn_for_reference = engine_ref.get("tee_shot_numbers") or {}
     if engine_ref.get("shot_kind") == "positioning" and tsn_for_reference.get("drive_total_yards") is not None:
-        reference_yards: Optional[float] = tsn_for_reference["drive_total_yards"]
+        if hole_yards is not None:
+            progress_so_far_yards = hole_yards - resolved.distance_to_green_yards
+            reference_yards: Optional[float] = progress_so_far_yards + tsn_for_reference["drive_total_yards"]
+        else:
+            reference_yards = tsn_for_reference["drive_total_yards"]
     else:
         reference_yards = hole_yards
     # cycle-4 §B3: hazards/corridor evidence lines are OMITTED (not

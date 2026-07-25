@@ -581,20 +581,21 @@ def test_timid_canary_binds_to_bethpage_black_h4_the_owners_incident_hole():
     assert bound_fx.yards is not None and bound_fx.yards >= 500
 
 
-def test_timid_canary_binding_survives_an_alphabetically_earlier_fixture_added():
-    """The exact fragility the reviewer flagged: the OLD `i % len(hole_
-    fixtures)` binding depended on absolute list position, so ANY new
-    fixture sorting before the existing ones would reshuffle every single
-    canary. The NEW constraint-based binding must be immune to this for any
-    canary with a real requirement — prepending a synthetic alphabetically-
-    first fixture (that also happens to satisfy the requirement) must NOT
-    change which fixture the timid canary picks, because the pick is by
-    fixture_id (alphabetical) among QUALIFYING candidates, and
-    "bethpage_black_h4" still sorts before a fixture named with a leading
-    "AAA" prefix only if... — the real proof here is structural: the
-    SELECTION uses `sorted(candidates, key=fixture_id)[0]`, i.e. it is NOT
-    index-based at all, so reordering the INPUT list (independent of any
-    new fixture) can never change the result. That's what's asserted."""
+def test_timid_canary_binding_is_independent_of_input_list_order():
+    """(Renamed, cycle-4 commit 7 — reviewer nit: the old name claimed this
+    proves survival of "an alphabetically earlier fixture added", but the
+    body below only ever exercises the SAME fixture set, forward and
+    reversed; it proves input-ORDER independence, not resilience to a
+    genuinely NEW fixture being added. Docstring corrected to match.)
+
+    The exact fragility the reviewer flagged: the OLD `i % len(hole_
+    fixtures)` binding depended on absolute list position, so ANY reordering
+    of the input list (e.g. a new fixture sorting before the existing ones)
+    would reshuffle every single canary. The NEW constraint-based binding
+    must be immune to this: the SELECTION uses `sorted(candidates,
+    key=fixture_id)[0]`, i.e. it is NOT index-based at all, so reversing the
+    INPUT list (same fixtures, opposite order) must still pick the
+    identical fixture. That's what's asserted."""
     from tests.eval.caddie_bench import questions as q
 
     fx_list = [geo.load_hole_fixture(p) for p in sorted(HOLES_DIR.glob("*.json"))]
