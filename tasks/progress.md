@@ -3,6 +3,52 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-25) — bend-cap-corner-sharpness: re-pin h18 to the corrected (straight) reality + dedicated synthetic A4 coverage (builder, lane worktree-agent-a39d54b0135bdf23e)
+
+Resolved the FLAG below, per eng-lead's ruling (verified independently, see commit
+`7d7a798`): `test_bend_cap_corner_sharpness.py`'s h18 test was red because its pinned
+numbers were computed against a chord aimed at a NEIGHBOURING hole's green (calling
+`extract_hole_bend(fc)` with no `green=` arg routed it through the pre-910b790 buggy
+first-by-file-order `_derive_tee_green` path). Test-only round; `hazards.py` untouched.
+
+1. Renamed/rewrote `test_h18_near_green_vertex_excluded_demotes_to_the_real_minor_wobble`
+   → `test_h18_plays_straight_after_the_green_anchor_fix`: re-pinned to the measured
+   post-fix reality (`straight=True`, `deviation_yards=7`,
+   `"Hole 18 shape: plays straight — no significant bend"`), docstring rewritten to
+   explain WHY the numbers changed (wrong chord → corrected chord → the hole now agrees
+   with the owner's own "plays dead straight" description, already quoted in the module
+   docstring). Removed the pre-fix `monkeypatch.setattr(hazards, "_BEND_NEAR_GREEN_EXCLUDE_
+   YDS", 0.0)` repro half — with the corrected green, h18 measures `straight=True,
+   deviation 7` identically whether the exclusion window is 40y or 0y, so that block no
+   longer reproduced anything; kept honest by removing rather than leaving a dead
+   monkeypatch block whose assertions no longer tested the mechanism they claimed to.
+2. Added `test_near_green_vertex_masks_a_farther_real_bend_synthetic`: a new synthetic
+   two-vertex hole fixture (extends the file's existing `_hole_way_with_vertex` pattern to
+   two interior vertices) that reproduces the exact argmax-masking shape A4 exists to
+   close, independent of any real course's green anchoring — with
+   `_BEND_NEAR_GREEN_EXCLUDE_YDS` at its real 40.0, the near-green candidate (dev 35y, 45y
+   from green) is excluded and the farther real corner (dev 20y, 250y out) wins the
+   argmax (`straight=False, distance=250, deviation=20`); monkeypatched to 0.0, the
+   near-green candidate's larger deviation wins outright, producing the phantom near-green
+   bend (`straight=False, distance=395, deviation=35`) — both legs against the SAME
+   fixture, isolating A4 as the one variable. The file's pre-existing
+   `test_near_green_exclusion_boundary_synthetic` (boundary-distance coverage, unrelated to
+   this round, left untouched) stays as complementary coverage.
+3. A4's real-data vehicle (Black 18) is gone — tracked, not hidden: A4
+   (`_BEND_NEAR_GREEN_EXCLUDE_YDS`) is now covered ONLY synthetically (the two tests
+   above). Whether A4 is still load-bearing on any correctly-anchored real course is an
+   open question for a future cycle (flagged, not resolved, by the eng-lead's ruling
+   commit) — not addressed this round.
+
+**Gates:** `ruff check .` clean. Full offline `pytest`: **3361 passed / 154 skipped / 0
+failed** (up from 3359 passed/1 failed baseline: the h18 fix converts 1 failed→passed, +1
+net new test in this file). No local Postgres; DB-backed integration tests skip locally,
+run in CI.
+
+Files: `backend/tests/test_bend_cap_corner_sharpness.py` only. No production files touched
+(`backend/app/caddie/hazards.py` untouched this round, per instruction). Silent
+(test-only — no user-visible change).
+
 ## DONE (2026-07-25) — caddie-green-anchor-nearest-centerline-end: prod green mis-anchor fix (builder, lane worktree-agent-a39d54b0135bdf23e)
 
 Implemented `specs/caddie-green-anchor-nearest-centerline-end-plan.md` exactly:

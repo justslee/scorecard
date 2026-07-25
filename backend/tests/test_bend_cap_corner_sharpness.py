@@ -208,63 +208,54 @@ def test_corner_tree_unknown_lateral_never_disqualifies():
 #     consumers (format_bend_line, the P2 "landing zone" reasoning line).   ──
 
 
-def test_h18_near_green_vertex_excluded_demotes_to_the_real_minor_wobble(monkeypatch):
+def test_h18_plays_straight_after_the_green_anchor_fix():
     """bethpage_black_h18 (par 4, 411y, plays dead straight per the owner).
 
-    MEASURED FINDING that diverges from the plan's own prediction ("Result:
-    h18 -> straight=True (remaining candidates deviate < 15y)") — flagged
-    here rather than silently forced true, per this session's ground rules
-    (never fabricate an assertion to match a spec's unverified prediction).
-    h18 actually has TWO candidate bend vertices, not one:
-      - along ~396y, dev ~41y, remaining-to-green ~18y — the green-surround
-        artifact this fix targets (excluded by A4, correctly).
-      - along ~276y, dev ~24y, remaining-to-green ~139y — a real, mapped,
-        MUCH gentler wobble (dev/dist ~0.087) that was previously masked
-        because the near-green artifact's larger deviation always won the
-        argmax. A4 excludes only the near-green candidate; it does not
-        (and per the plan's stated mechanism, was never designed to)
-        re-evaluate whether what's LEFT still clears the independent 15y
-        "straight" threshold (_BEND_MIN_DEVIATION_YARDS, unrelated to A4).
+    RE-PINNED (2026-07-25, following commit 910b790 "green anchor = nearest
+    the hole path's last vertex"). This test's ORIGINAL numbers (straight=
+    False, distance_yards=275, deviation_yards=24, "doglegs left at ~275y")
+    were computed before that fix, when ``hole_intel_from_fixture`` called
+    ``extract_hole_bend(fc)`` with no explicit ``green=`` arg and so went
+    through the then-buggy first-stored-green-by-file-order path in
+    ``_derive_tee_green`` — the chord was measured against a NEIGHBOURING
+    hole's green, ~105y off this hole's own centerline end. Both candidate
+    bend vertices this test's old docstring described (the ~396y near-green
+    one AND the ~276y "real minor wobble" one) were themselves artifacts of
+    that wrong chord.
 
-    So post-fix, Black 18 is measurably LESS wrong (the spoken/P2 bend line
-    now cites ~275y and a much gentler shape, not the phantom ~395y
-    green-surround artifact) but not silent for every bag — a driver in the
-    220-340y corridor-note window (e.g. 280-300y, the common case) still
-    reports "Fairway bends left at ~275" in the P2 color line. This is
-    orthogonal to the owner's actual reported incident (club selection):
-    dev/dist 0.087 is far below CORNER_MIN_DEVIATION_FRACTION (0.30) either
-    way, so the corridor bend-cap NEVER arms on this hole, before or after
-    A4 — verified below alongside the near-green exclusion itself."""
+    Measured against the CORRECTED chord (own path's last vertex, or the
+    stored green nearest it), Black 18 has no candidate vertex left whose
+    chord deviation clears even the independent 15y ``_BEND_MIN_DEVIATION_
+    YARDS`` straight threshold (max residual deviation is 7y) — i.e. the
+    corrected geometry agrees with the owner's own description of his home
+    hole, already quoted at the top of this docstring before this rewrite.
+    This is a genuine re-measurement, not a weakened assertion: the fix
+    changed the ANSWER (a real bend selected off a wrong chord versus no
+    bend at all off the right one), so the pin changes with it.
+
+    Real cost, tracked separately (not papered over here): re-pinning this
+    hole to "straight" leaves A4 (``_BEND_NEAR_GREEN_EXCLUDE_YDS``) with no
+    real-course fixture left to exercise it — with the corrected green, h18
+    measures ``straight=True, deviation 7`` whether A4's exclusion window is
+    40y (real) or 0y (disabled), identically. See
+    ``test_near_green_exclusion_boundary_synthetic`` and
+    ``test_near_green_vertex_masks_a_farther_real_bend_synthetic`` below for
+    A4's dedicated synthetic coverage, which does not depend on any real
+    course's green anchoring."""
     fx = load_hole_fixture(_BENCH_HOLES_DIR / "bethpage_black_h18.json")
     assert fx.par == 4 and fx.yards == 411
 
-    hole_after = hole_intel_from_fixture(fx)
-    assert hole_after.bend is not None and hole_after.bend.straight is False
-    assert hole_after.bend.distance_yards == 275 and hole_after.bend.deviation_yards == 24
-    assert hole_after.bend.deviation_yards < aim_point.CORNER_MIN_DEVIATION_FRACTION * hole_after.bend.distance_yards, (
-        "sanity: the demoted wobble must sit well below the arming fraction — "
-        "the cap must never fire on this hole regardless of the spoken-line residual"
-    )
-    assert format_bend_line(18, hole_after.bend) == "Hole 18 shape: doglegs left at ~275y"
-    # The corridor bend-cap never arms here (fraction gate blocks it) for a
-    # representative bag, even with a driver overshooting the vertex.
-    rec_after = generate_recommendation(hole_after, fx.yards, {"driver": 280, "3wood": 230}, handicap=15)
-    assert rec_after.club == "driver"
-    assert not any("runs through the corner" in line for line in rec_after.reasoning)
+    hole = hole_intel_from_fixture(fx)
+    assert hole.bend is not None and hole.bend.straight is True
+    assert hole.bend.deviation_yards == 7
+    assert format_bend_line(18, hole.bend) == "Hole 18 shape: plays straight — no significant bend"
 
-    # Pre-fix repro (monkeypatch _BEND_NEAR_GREEN_EXCLUDE_YDS to 0 — the old
-    # behavior): the near-green artifact wins the argmax outright and speaks
-    # the WORSE, phantom ~395y bend.
-    monkeypatch.setattr(hazards, "_BEND_NEAR_GREEN_EXCLUDE_YDS", 0.0)
-    hole_before = hole_intel_from_fixture(fx)
-    assert hole_before.bend is not None and hole_before.bend.straight is False
-    assert hole_before.bend.distance_yards == 395
-    assert format_bend_line(18, hole_before.bend) == "Hole 18 shape: doglegs left at ~395y"
-    bag = {"driver": 350, "3wood": 300}  # driver window (290-410) brackets the phantom 395y vertex
-    rec_before = generate_recommendation(hole_before, fx.yards, bag, handicap=15)
-    assert any("bends left at ~395" in line for line in rec_before.reasoning), (
-        f"pre-fix repro must reproduce the phantom bend line — reasoning: {rec_before.reasoning}"
-    )
+    # No bend data at all -> the corridor bend-cap structurally can't arm on
+    # this hole (there is no HoleBend.distance_yards to gate on), and the P2
+    # "runs through the corner" color line never fires either.
+    rec = generate_recommendation(hole, fx.yards, {"driver": 280, "3wood": 230}, handicap=15)
+    assert rec.club == "driver"
+    assert not any("runs through the corner" in line for line in rec.reasoning)
 
 
 def _hole_way_with_vertex(green_lonlat: tuple[float, float], north: float, lateral: float) -> dict:
@@ -301,3 +292,66 @@ def test_near_green_exclusion_boundary_synthetic():
     assert bend_outside is not None
     assert bend_outside.straight is False, f"a vertex 41y from the green must NOT be excluded, got {bend_outside}"
     assert abs(bend_outside.distance_yards - 359) <= 5
+
+
+def _hole_way_with_two_vertices(
+    green_lonlat: tuple[float, float], v1: tuple[float, float], v2: tuple[float, float],
+) -> dict:
+    """Same shape as ``_hole_way_with_vertex`` but with TWO interior vertices
+    (``v1``, ``v2``, each a ``(north, lateral)`` pair) — needed to reproduce
+    the argmax-masking shape A4 targets: a real, farther-from-green candidate
+    competing against a nearer-to-green, larger-deviation candidate."""
+    v1_lon, v1_lat = _point_north_east(_TEE_LON, _TEE_LAT, *v1)
+    v2_lon, v2_lat = _point_north_east(_TEE_LON, _TEE_LAT, *v2)
+    green_lon, green_lat = green_lonlat
+    return {
+        "type": "Feature", "properties": {"featureType": "hole"},
+        "geometry": {"type": "LineString", "coordinates": [
+            [_TEE_LON, _TEE_LAT], [v1_lon, v1_lat], [v2_lon, v2_lat], [green_lon, green_lat],
+        ]},
+    }
+
+
+def test_near_green_vertex_masks_a_farther_real_bend_synthetic(monkeypatch):
+    """A4's dedicated real-data-independent proof of the argmax-masking
+    mechanism it exists to close (the same shape Black 18 originally
+    surfaced, reproduced here synthetically since the corrected Black-18
+    geometry no longer exercises A4 at all — see the note in
+    ``test_h18_plays_straight_after_the_green_anchor_fix`` above).
+
+    Two candidate bend vertices on one synthetic hole:
+      - v1: a real, far-from-green corner (~250y out, ~150y remaining to the
+        green — well outside the 40y exclusion window), deviation ~20y.
+      - v2: a near-green vertex (~35y remaining to the green — INSIDE the
+        40y window), deviation ~35y — bigger than v1's, so it would win the
+        argmax on deviation alone if it weren't excluded.
+
+    With ``_BEND_NEAR_GREEN_EXCLUDE_YDS`` at its real 40.0, v2 is EXCLUDED
+    and v1 (the real, farther corner) wins the argmax: the hole reports the
+    genuine ~250y bend. Monkeypatched to 0.0 (A4 disabled), v2 is no longer
+    excluded, its larger deviation wins the argmax outright, and the hole
+    instead reports the WORSE, phantom near-green ~395y bend — the exact
+    failure mode A4 exists to prevent. Both legs of this assertion run
+    against the SAME fixture, isolating A4 as the one variable."""
+    green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 400, 0)
+    tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+    green_feat = _square_polygon("green", green_lon, green_lat)
+    way = _hole_way_with_two_vertices(
+        (green_lon, green_lat), v1=(250, -20), v2=(395, -35),
+    )
+    fc = _fc(tee_feat, green_feat, way)
+
+    # A4 armed at its real value: the near-green candidate is excluded, the
+    # farther real corner wins the argmax.
+    bend_armed = extract_hole_bend(fc)
+    assert bend_armed is not None and bend_armed.straight is False
+    assert bend_armed.distance_yards == 250 and bend_armed.deviation_yards == 20
+    assert format_bend_line(9, bend_armed) == "Hole 9 shape: doglegs right at ~250y"
+
+    # A4 disabled: the near-green candidate's larger deviation wins the
+    # argmax outright, producing the phantom near-green bend.
+    monkeypatch.setattr(hazards, "_BEND_NEAR_GREEN_EXCLUDE_YDS", 0.0)
+    bend_unarmed = extract_hole_bend(fc)
+    assert bend_unarmed is not None and bend_unarmed.straight is False
+    assert bend_unarmed.distance_yards == 395 and bend_unarmed.deviation_yards == 35
+    assert format_bend_line(9, bend_unarmed) == "Hole 9 shape: doglegs right at ~395y"
