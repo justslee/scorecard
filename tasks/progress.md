@@ -2372,3 +2372,32 @@ Unblock options for the owner to choose: (a) authorize bench execution on the ap
 Note the box is at 88% disk (~836MB free) — a 150-case satellite run writes ~150 composites; check
 headroom first. Engine + rubric + scenario work proceeds regardless; the packaged commands specify
 satellite per the directive.
+
+### Cycle-4 evidence addendum — the bench is provably blind (verified, all 3 bags)
+Ran `generate_recommendation` over all 8 committed hole fixtures x all 3 bench bags (owner hcp3
+driver300, short_hitter hcp20 driver210, bomber hcp8 driver320): **20 of 21 tee solves return
+driver**. The single exception (bomber on `bethpage_red_h6`, a 292y par 4 a 320y driver overflies)
+is the reachable-branch logic, not the corridor machinery. Neither the bend-cap nor the
+expected-strokes corridor model fires ANYWHERE on the bench, for any player.
+Case set verified independently: 150 cases + 4 canaries. Lie mix — fairway 50, rough 42, tee 28,
+bunker 24, greenside 3, recovery_trees 3 => trouble 69/150 = **46.0%**, ordinary (tee+fairway)
+78/150 = **52.0%**. Hole par mix is only 4x par-4 / 3x par-5 / 1x par-3.
+Also: `_SEVERITY_BY_TYPE` (hazards.py:121) hardcodes EVERY tree to "moderate", and `_tree_hazard`
+(hazards.py:846) computes the observation's lateral offset then DISCARDS it — `Hazard` carries no
+lateral field. So the bend-cap's severity filter discriminates nothing, and the cap cannot know
+whether the "corner trees" sit 5y or 60y off the line. Its arming condition carries zero
+information about danger.
+Deviation-as-a-FRACTION-of-corner-distance separates the cases cleanly: the pinned real dogleg is
+88/226 = 39%; the genuine dogleg fixtures 43-52%; the false positives that produce the 4-iron
+10-19%. A fixed yardage threshold (today's `_BEND_MIN_DEVIATION_YARDS = 15.0`) cannot separate them
+because the corner distances are all similar while the deviations differ 3x — it is the wrong SHAPE
+of criterion, not just the wrong number.
+
+### HOUSEKEEPING — stray commit in the PRIMARY checkout (harmless, needs a one-line cleanup)
+I mistakenly appended this addendum in the primary checkout `/Users/justinlee/projects/scorecard`
+(which sits on a STALE local `integration/next` @0fd7c5b, an ancestor of origin) and committed it
+there as `69bb095`. That commit is NOT pushed and its content is now on origin via this worktree
+instead. Cleaning it up requires a history-discarding reset, which the permission system correctly
+refused unattended. **Next person in that checkout: drop `69bb095` (e.g. `git reset --hard
+origin/integration/next`) before pulling** — otherwise progress.md will conflict on the next pull.
+Nothing was pushed from there; origin is clean and correct.
