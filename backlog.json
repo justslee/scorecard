@@ -962,6 +962,39 @@
         "noticeable": false,
         "depends_on": [],
         "why": "specs/caddie-bench-cycle4-plan.md §A5 (cycle-4 root cause #5, explicitly OUT OF SCOPE for that plan, backlogged loudly rather than silently fixed). `HoleBend.distance_yards`/`CorridorSample.distance_yards` (backend/app/caddie/types.py:157,169) are measured tee-anchored, along the hole's full mapped centerline from the TEE. But `generate_recommendation`'s positioning branch (the bend-cap + corridor-width block in aim_point.py) is shared by mid-hole strokes (e.g. a par-5 second shot from the fairway) with NO shot-origin offset applied — grep confirms no `already_played|from_tee|shot_origin` concept exists anywhere in the caddie module. A mid-hole re-solve can therefore misjudge whether a mapped corner or corridor pinch is still ahead of the player or is actually already behind them. The bench's fairway-lie par-5 cases are the observable surface (a positioning shot recomputed from a fairway lie reuses the same tee-anchored bend/corridor distances as the original tee shot). Not fixed here: doing so honestly requires threading the player's current along-hole position through the bend/corridor consumers, which is a real (if contained) design task, not a one-line patch. A code comment naming this limitation was added at the bend-cap gate in aim_point.py (cycle-4 commit 1)."
+    },
+    {
+        "id": "caddie-bench-recovery-scenario-suite",
+        "title": "Dedicated RECOVERY_TREES / recovery-shot bench suite (removed from the main slot rotation in cycle-4)",
+        "type": "minor",
+        "status": "ready",
+        "priority": "p3",
+        "risk": "low",
+        "noticeable": false,
+        "depends_on": [],
+        "why": "specs/caddie-bench-cycle4-plan.md §C(ii): the cycle-4 slot rebalance removes the RECOVERY_TREES slot from `_PAR45_SLOTS` (backend/tests/eval/caddie_bench/questions.py) — it substituted to ROUGH on 6 of the 7 pre-cycle-4 holes anyway (no mapped trees/woods on most fixtures), which was silently inflating the ROUGH count while never actually exercising a recovery-shot scenario. `QuestionType.RECOVERY` stays in the bank (bank-coverage is bank-side, `test_question_bank_loads_and_covers_every_type` still requires every QuestionType have a phrasing) but the main case matrix no longer samples it at all. A future cycle should build a DEDICATED recovery-shot suite (real tree/woods fixtures only — bethpage_red_h1/h5/h6 now carry real tree data after cycle-4 §C(i) and would be a natural source — never a synthetic/hand-placed tree line, per [[no-fake-data-fallbacks]]) rather than re-adding a slot that mostly measured rough shots under a recovery label."
+    },
+    {
+        "id": "caddie-reachable-branch-blind-to-corner-danger",
+        "title": "The reachable (\"go for it\") tee-shot branch never consults hole.bend — a driveable, sharply-doglegged short hole gets zero corner reasoning",
+        "type": "minor",
+        "status": "ready",
+        "priority": "p3",
+        "risk": "low",
+        "noticeable": false,
+        "depends_on": [],
+        "why": "Discovered while pinning cycle-4 commit 3 (specs/caddie-bench-cycle4-plan.md §C(i)) on the real `bethpage_red_h6.json` fixture (292y, a genuine 0.43-fraction dogleg with real guarding trees at carry 195): with the OWNER bag (driver 300y), the hole is reachable outright (`shot_kind=approach`, driver reaches the green in one), so `generate_recommendation` takes the reachable branch (`aim_point`/`compute_miss_side`/pin-light) — which has NO bend/corridor consultation at all, unlike the positioning branch's bend-cap. The recommendation is silently just 'driver' with zero mention of the sharp dogleg the player is being asked to cut across. This is plausibly the correct CLUB (a legitimately drivable short par 4), but the total absence of corner reasoning on a hole this sharp is a real gap, distinct from root cause #5 (caddie-shot-origin-offset-for-bend-and-corridor) above — that item is about MID-HOLE re-solves misjudging a tee-anchored corner; this one is about the FIRST-shot reachable branch never looking at the corner at all. Not fixed in cycle-4 (out of the plan's stated scope, A1-A5). A minimal fix would extend `compute_miss_side`/the reachable-branch reasoning to name the bend when `hole.bend` is a real (non-straight, evidence-backed) corner, mirroring the positioning branch's P2 color line. Verified via `test_red_h6_bend_cap_arms_end_to_end_with_real_evidence` (backend/tests/eval/caddie_bench/test_bench_offline.py), which proves the mechanism works for the SHORT_HITTER bag (non-reachable) but documents this gap for OWNER/BOMBER bags on the same hole."
+    },
+    {
+        "id": "caddie-bench-lazy-db-import",
+        "title": "caddie_bench's own modules (run_caddie_bench.py, judge_noise.py) can't be imported without a DATABASE_URL, even for DB-free flows like --render-only",
+        "type": "minor",
+        "status": "ready",
+        "priority": "p3",
+        "risk": "low",
+        "noticeable": false,
+        "depends_on": [],
+        "why": "Found in cycle-4 commit-4 review (eng-lead), documented rather than fixed this cycle (out of the plan's stated §E scope). `run_caddie_bench.py` (and `judge_noise.py`, which imports it for `_cost_usd`) import `harness.py` at MODULE load time, which transitively imports `app.caddie.strategy` -> `app.caddie.guide_writer` -> `app.caddie.voice_prompts` -> `app.caddie.session` -> `app.db.engine`, whose top-level `create_async_engine(os.environ['DATABASE_URL'])` call RAISES immediately if `DATABASE_URL` is unset — a pure import-time side effect, not a real dependency (SQLAlchemy's async engine never actually connects until a query runs, and neither `--render-only` nor most of `run_caddie_bench.py`'s other DB-free paths ever issue one). Practical effect: the cycle-4 §E3 `--render-only` fidelity check — documented and coded as 'gated ONLY on GOOGLE_MAPS_KEY' — actually requires a (never-connected) `DATABASE_URL` placeholder too, or it crashes with a confusing Postgres error before ever reaching its own gate check. Worked around this cycle by (a) correcting the docstrings/README to state the real requirement + a placeholder value (`postgresql+asyncpg://unused:unused@localhost:5432/unused`) in every packaged command, and (b) a subprocess pinning test (`test_render_only_packaged_command_actually_works_as_documented`, backend/tests/eval/caddie_bench/test_bench_offline.py) proving the packaged command works as documented and reproducing the crash without the placeholder. PREFERRED FIX (not done this cycle — touches app.caddie.session/voice_prompts/guide_writer/strategy, several production modules, too invasive for a bench-only plan): make the harness -> app.db.engine import chain lazy (defer `create_async_engine` to first actual use, or make the whole chain import-safe without a real DATABASE_URL) so `--render-only`'s documented contract becomes literally true."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

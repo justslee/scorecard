@@ -109,29 +109,46 @@ _geometry.json`, the plan's named fallback) is a follow-up.
 cycle-4 §E3, before any full satellite run)
 
 ```
-cd backend && uv run python -m tests.eval.caddie_bench.run_caddie_bench \
+cd backend && DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \
+    uv run python -m tests.eval.caddie_bench.run_caddie_bench \
     --render-only --holes bethpage_black_h7 bethpage_red_h6 bethpage_black_h8 --max-cases 3
 ```
 
 Renders composites for the selected cases and exits — NO synth/judge calls,
 no cost, and gated ONLY on `GOOGLE_MAPS_KEY` (satellite, the default) — it
-never needs `CADDIE_EVAL_LIVE`/`OPENAI_API_KEY`. Georegistration has never
-run against real tiles at scale before this cycle; a projection bug would
-mislead every judge call, so run this FIRST, eyeball the output, and only
-then run the full pilot below. Verification checklist: player pin on the
-sampled lie, green pin on the green, hazard outlines tracking real
-bunkers/water, centerline on the fairway, header/wind annotations legible —
-check this at the fitted zoom on a long hole (553y), a sharp dogleg, and a
-par 3 (the three holes in the command above).
+never needs `CADDIE_EVAL_LIVE`/`OPENAI_API_KEY`.
+
+**`DATABASE_URL` above is a REQUIRED PLACEHOLDER, never actually connected
+to** (defect found in cycle-4 review, documented rather than fixed this
+cycle — see backlog item `caddie-bench-lazy-db-import`): importing
+`run_caddie_bench.py` at all — even for `--render-only`, even `--help` —
+transitively imports `app.db.engine`, which raises at IMPORT TIME if
+`DATABASE_URL` is unset. This is a pure import-chain side effect, not a
+real database dependency (nothing in `--render-only`'s path issues a
+query) — any well-formed asyncpg URL works, including one nothing is
+listening on.
+
+Georegistration has never run against real tiles at scale before this
+cycle; a projection bug would mislead every judge call, so run this FIRST,
+eyeball the output, and only then run the full pilot below. Verification
+checklist: player pin on the sampled lie, green pin on the green, hazard
+outlines tracking real bunkers/water, centerline on the fairway,
+header/wind annotations legible — check this at the fitted zoom on a long
+hole (553y), a sharp dogleg, and a par 3 (the three holes in the command
+above).
 
 ## Live pilot run (NOT run by the builder — reviewer signs off on the judge
 rubric first, per the builder's contract; execute the `--render-only` check
 above FIRST)
 
 ```
-cd backend && CADDIE_EVAL_LIVE=1 OPENAI_API_KEY=... GOOGLE_MAPS_KEY=... uv run python -m \
+cd backend && DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \
+    CADDIE_EVAL_LIVE=1 OPENAI_API_KEY=... GOOGLE_MAPS_KEY=... uv run python -m \
     tests.eval.caddie_bench.run_caddie_bench --budget-usd 8.00
 ```
+
+(`DATABASE_URL` here is the same required-but-never-connected placeholder
+as `--render-only` above — see that section for why.)
 
 Judges against **real satellite imagery by default** (`--render-mode
 satellite`, owner directive 2026-07-25) — hard-requires `GOOGLE_MAPS_KEY`
@@ -145,7 +162,8 @@ this is cheap. Exit code 5 = render failure (see the module docstring for
 the full exit-code list).
 
 ```
-cd backend && CADDIE_EVAL_LIVE=1 OPENAI_API_KEY=... uv run python -m \
+cd backend && DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \
+    CADDIE_EVAL_LIVE=1 OPENAI_API_KEY=... uv run python -m \
     tests.eval.caddie_bench.run_caddie_bench --budget-usd 8.00 --render-mode vector
 ```
 

@@ -3,6 +3,142 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-25) — CADDIE BENCH CYCLE 4: bend-cap arms on evidence + aggression_realism + real fixtures + satellite hardening (builder, lane worktree-agent-a36e12e4dc633a855)
+
+Implemented `specs/caddie-bench-cycle4-plan.md` (approved fable plan) as 5 commits on
+`caddie-bench-c4`, each pushed to `integration/next` and independently verified by eng-lead
+in a separate worktree between commits. Owner incident: "the caddie still recommends a 4
+iron on a clear driver hole... ensure our test dataset is measuring on actual golfing
+tendencies and not be too conservative."
+
+**Commit 1** `40d144f` — engine fix. `CORNER_MIN_DEVIATION_FRACTION=0.30` (aim_point.py): the
+bend-cap only arms when a corner's chord deviation is >=30% of its own tee-anchored distance
+— separates the owner's false positives (dev/dist 0.10-0.19, real fixtures bethpage_black_h4/
+pebble_beach_h3) from every pinned genuine corner (0.39-0.52). `Hazard.lateral_yards`
+(types.py, additive) + `CORNER_TREE_MAX_LATERAL_YDS=45` (aim_point.py): corner-guarding tree
+evidence only counts within 45y of the line — defense-in-depth for REAL mapped data (inert on
+every hand-built test hazard, since `lateral_yards` is None there). `_BEND_NEAR_GREEN_EXCLUDE_
+YDS=40` (hazards.py::extract_hole_bend): a candidate bend vertex within 40y of the green is
+the green surround, not a dogleg — a DELIBERATE GLOBAL fix (not cap-local), since `HoleBend.
+straight` also drives the spoken hole-shape line and the P2 "corner is your landing zone"
+color line. New `test_bend_cap_corner_sharpness.py` (9 tests) is the headline proof: on the
+REAL committed fixtures (Black 4 + Pebble 3) with owner bag + one injected corner tree, the
+engine goes 4-iron -> driver, reproduced RED via `monkeypatch(CORNER_MIN_DEVIATION_FRACTION,
+0)`. Backlogged loudly (not silently fixed): `caddie-shot-origin-offset-for-bend-and-corridor`
+(root cause #5, tee-anchored geometry reused mid-hole with no shot-origin offset).
+MEASURED FINDING vs. the plan's own prediction: post-A4-fix, Black 18 does NOT become fully
+straight — a real second candidate vertex (24y dev at 275y, a genuine mapped wobble) gets
+promoted once the near-green artifact is excluded, so the P2 color line still fires for a
+typical 280-300y-driver bag (now citing ~275y, not the phantom ~395y). Does not affect the
+club-cap fix at all (0.087 fraction is far below the 0.30 arming threshold either way) —
+flagged in the test docstring and commit message rather than forced/hidden.
+Gates: ruff clean; must-not-regress set 402 passed; full offline suite 3306 passed (baseline
+3297), 154 skipped, 0 failed.
+
+**Commit 2** `36482c2` — bench: 11th judged dimension `aggression_realism` (schema.py,
+CORRECTNESS_DIMENSIONS 6->7), rubric text landed verbatim from the plan (FAILs both timid AND
+reckless tails; "score the club, never the tone"). `judge_prompt`/`judge_case`/
+`second_pass_if_needed` gain `bag_clubs`/`bag_handicap`/`hazards_payload`/`corridor_summary`
+kwargs (all defaulted None) — `run_caddie_bench.py::run()` now feeds the judge real stored
+club yardages + handicap, a compact mapped-hazard summary, and honest corridor evidence
+("unmapped — no danger-edge evidence" when absent, never invented). 5th canary (questions.py)
+— a self-contradicting TIMID answer the judge must score bad, closing the blind spot the
+owner's exact complaint lived in (a timid answer PASSED the pre-cycle-4 rubric outright).
+Dual-basis reporting (report.py): `weighted_correctness_score` (11-dim, new) +
+`weighted_correctness_score_legacy10` (10-dim, comparable with runs <= cycle 3);
+`delta_against` now compares like-for-like (prior 10-dim vs. this run's legacy10).
+Recomputed hand-computed test arithmetic from the documented formulas (never hand-waved) —
+caught TWO of the plan's own compressed arithmetic hints diverging from what the code
+actually produces (verified by executing `compute_noise_stats` directly): the headline test's
+68/72 literal matched the plan; the noise-stats `band_pessimistic` is **64/68**, not the
+plan's stated 68/72 — pinned with the real, code-verified number and the divergence stated in
+the test docstring.
+Gates: ruff clean; bench + must-not-regress 408 passed; full suite 3312 passed, 0 failed.
+
+**Commit 3** `089bfd8` — bench fixtures: `extract_fixtures.py --merge-red-trees` (gated,
+zero network) assembles Bethpage Red holes 1/5/6 from the committed Overpass fixture, then
+merges real tree/woods features from the committed `bethpage_red_trees.json` (27/9/1
+features, real OSM, captured read-only — no synthetic geometry enters the judged set).
+`bethpage_red_h1.json` (NEW): real tree lines -> `extract_corridor_profile` finally returns a
+live 31-sample profile (every OTHER real bend-capping fixture in the bench has None here).
+`bethpage_red_h5.json` (NEW): the owner's exact scenario — trees present, bend 0.217 (below
+the 0.30 arming fraction) -> DRIVER, never capped. `bethpage_red_h6.json` (UPGRADED in
+place): real 0.43 corner, real guarding trees -> the cap arms end-to-end with real
+`Hazard.lateral_yards`, not a hand-built None. DIVERGENCE FROM THE PLAN, verified: the plan
+says "cap arms for the owner bag" on red_h6, but on this fixture's real 292y yardage the
+OWNER bag's 300y driver reaches the green outright (shot_kind=approach — a legitimately
+drivable short par 4); the bend-cap only lives in the non-reachable/positioning branch, so it
+never runs for that bag on this hole. Proven instead against SHORT_HITTER (driver 210, not
+reachable) — the bench's own bag rotation already exercises the mechanism end to end. New
+backlog item `caddie-reachable-branch-blind-to-corner-danger` names this real, separate gap
+(the reachable branch has zero corner/bend reasoning at all).
+Slot rebalance (questions.py, C(ii)): `_PAR45_SLOTS` gains a 2nd TEE slot (CHALLENGE_WHY, the
+aggression surface) and drops RECOVERY_TREES (substituted to ROUGH on 6/7 holes anyway —
+hidden rough inflation; `QuestionType.RECOVERY` stays in the bank; new backlog item
+`caddie-bench-recovery-scenario-suite` for a future dedicated suite). `_PAR3_SLOTS` gains a
+2nd TEE slot (WIND_ADJUST). Measured (10 fixtures, 9 par-4/5 + 1 par-3, 3 bags): 189 total
+cases (174 advice + 10 FACT + 5 canaries) — MATCHES the plan's projection exactly. Per-lie mix
+on 174 advice cases: tee 60, fairway 54, rough 27, bunker 27, greenside 6 — tee+fairway 65.5%
+(~66%, matches plan), trouble (rough+bunker) 31.0% — diverges from the plan's naive 33%
+projection (bethpage_red_h1 has no mapped bunker, so its BUNKER slot substitutes to GREENSIDE
+via the existing fallback, a fixture-availability nuance the plan's uniform hand-count didn't
+account for). Both numbers verified by executing `build_cases` directly.
+Gates: ruff clean; bench + must-not-regress 412 passed; full suite 3316 passed, 0 failed.
+
+**Commit 4** `363708e` — bench render: satellite hardening (§E2) — `render.py::
+fetch_base_tile` now verifies the response content-type actually starts with `image/` (a
+Static Maps 200 with quota/billing HTML would otherwise be silently cached as a "tile");
+`run_caddie_bench.py::run()` wraps `render.render_case` in try/except RuntimeError — on
+failure, writes `runs/<id>/render_failures.jsonl`, prints a loud banner, and ABORTS with new
+exit code 5 (never falls back to vector — a mixed-basis run would corrupt the satellite-vs-
+vector comparison the owner's directive exists to produce; `results.jsonl` stays append-
+resumable, so aborting is cheap). New `--render-only` flag (§E3): renders composites for
+selected cases and exits, gated ONLY on `GOOGLE_MAPS_KEY` (never CADDIE_EVAL_LIVE/
+OPENAI_API_KEY, since it never calls synth/judge) — the one-time georegistration fidelity
+check for the owner's box, packaged command in README.md, run BEFORE any full satellite run
+(georegistration has never run against real tiles at scale before this cycle). README.md
+numbers/commands updated throughout (10 holes, 11-dim rubric, 189 cases, 5 canaries,
+--merge-red-trees, --render-only, the satellite default + exit-5 contract).
+Gates: ruff clean; bench + must-not-regress 417 passed; full suite 3321 passed, 0 failed.
+
+**Commit 5** (this entry) — records + one fix-in-place from eng-lead's commit-4 review:
+`--render-only`'s "gated ONLY on the maps key" contract was actually FALSE — importing
+`run_caddie_bench.py` at all (even `--render-only`, even `--help`) transitively imports
+`app.db.engine`, which raises at IMPORT TIME without `DATABASE_URL` set, a pure import-chain
+side effect (never an actual query). Fixed the DOCUMENTATION (module docstring, `render_only`
+docstring, `--render-only` argparse help, README.md's 3 packaged commands all now carry the
+placeholder `DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused`, stated
+as never-connected-to) rather than the import chain itself (touches `app.caddie.session`/
+`voice_prompts`/`guide_writer`/`strategy`, several production modules — too invasive for a
+bench-only plan). New pinning test `test_render_only_packaged_command_actually_works_as_
+documented` (subprocess-based — every other test in the file pre-sets `DATABASE_URL` at
+import time, which structurally hides this exact defect) proves both the crash without the
+placeholder AND that the corrected packaged command reaches --render-only's own gate message.
+New backlog item `caddie-bench-lazy-db-import` names the preferred (lazy-import) fix for a
+future cycle. Also corrected the plan file's §A1 rationale (one sentence noting A1's cap-local
+reasoning does NOT apply to A4, which is a deliberate global fix — per eng-lead's mid-run
+clarification); 2 more new backlog items (`caddie-bench-recovery-scenario-suite`,
+`caddie-reachable-branch-blind-to-corner-danger`) alongside the one already added in commit 1
+(`caddie-shot-origin-offset-for-bend-and-corridor`); this progress entry.
+Gates (commit 5, DB-import-chain fix + docs only): ruff clean; bench 101 passed (was 100).
+
+**Key-gated execution (owner's box, NOT run by the builder per the plan's contract):**
+`--render-only` fidelity check on 3 cases, then the full satellite run + old/new-basis
+side-by-side report — both require `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`, present only on the
+owner-authorized runner box, never the dev box.
+
+Frontend: verified `frontend/src/lib/types.ts` does NOT mirror `Hazard` (grep: zero matches)
+— no frontend gate needed for the additive `lateral_yards` field. (A DIFFERENT file,
+`frontend/src/lib/caddie/types.ts`, does have a separate, already-stale `Hazard` interface
+missing `carry_yards`/`line_side` too — pre-existing drift predating this plan, out of scope,
+not touched.)
+
+Every commit independently verified in a separate detached worktree by eng-lead between
+pushes (see `verify:` commits interleaved on `integration/next`) — no contradictions found;
+one number (bench-3's trouble%) computed on a different denominator (54/189=28.6% vs. this
+session's 54/174=31.0%, advice-only, matching the plan's own convention) — both are correct
+readings of the same underlying counts, just different denominators.
+
 ## IN-PROGRESS (2026-07-24) — CADDIE BENCH CYCLE 3 (eng-lead lane, worktree agent-a451657e208406d24)
 Base `origin/integration/next` @ `0fd7c5b` (post-ship v1.1.21, bench floor 77.0). Landing new bundle
 work on `integration/next`; do NOT ship/ping. Full-150 run under diagnosis: on the box at

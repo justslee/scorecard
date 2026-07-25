@@ -1464,3 +1464,59 @@ def test_render_only_vector_mode_runs_fully_offline(monkeypatch, tmp_path):
     assert exit_code == run_caddie_bench._EXIT_PASS
     composites = list(tmp_path.glob("*/composites/*.png"))
     assert len(composites) == 2
+
+
+# ── cycle-4 review finding (eng-lead, not in the original plan) — the       ──
+#    "--render-only needs only the maps key" documentation was FALSE: this  ──
+#    module's own import chain requires DATABASE_URL to already be set     ──
+#    (a pure import-time side effect, backlogged as caddie-bench-lazy-db-   ──
+#    import rather than fixed this cycle). Subprocess-based: every other    ──
+#    test in this file has DATABASE_URL pre-set at module import (line 19  ──
+#    above), which structurally CANNOT exercise the real, broken contract. ──
+
+
+def test_render_only_packaged_command_actually_works_as_documented():
+    """Proves the EXACT packaged command in README.md (placeholder
+    DATABASE_URL + no maps key) reaches --render-only's OWN gate-refusal
+    message — not an import-time crash — and that DROPPING the placeholder
+    reproduces the crash this test exists to document. A real subprocess
+    (not monkeypatch) is required: every other test in this module already
+    has DATABASE_URL set at import time (see the top of this file), which
+    would silently hide the exact defect under test."""
+    import subprocess
+    import sys
+
+    backend_dir = pathlib.Path(__file__).parent.parent.parent.parent
+    env_without_db = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    for key in ("GOOGLE_MAPS_KEY", "NEXT_PUBLIC_GOOGLE_MAPS_KEY"):
+        env_without_db.pop(key, None)
+    env_without_db["PYTHONPATH"] = str(backend_dir)
+
+    # (a) No DATABASE_URL at all -> import-time RuntimeError, NOT the
+    # --render-only gate-refusal message. This is the documented defect,
+    # reproduced here so a future fix (backlog: caddie-bench-lazy-db-import)
+    # has a RED test to turn GREEN.
+    result_no_db = subprocess.run(
+        [sys.executable, "-m", "tests.eval.caddie_bench.run_caddie_bench", "--render-only", "--max-cases", "1"],
+        cwd=backend_dir, env=env_without_db,
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "DATABASE_URL is not set" in result_no_db.stderr, (
+        f"expected the known import-time crash; got stderr={result_no_db.stderr!r}"
+    )
+
+    # (b) The EXACT placeholder from README.md -> reaches --render-only's
+    # OWN maps-key gate-refusal message (never a DB error) -- proves the
+    # packaged command in README.md is actually runnable as written.
+    env_with_placeholder = dict(env_without_db)
+    env_with_placeholder["DATABASE_URL"] = "postgresql+asyncpg://unused:unused@localhost:5432/unused"
+    result_with_placeholder = subprocess.run(
+        [sys.executable, "-m", "tests.eval.caddie_bench.run_caddie_bench", "--render-only", "--max-cases", "1"],
+        cwd=backend_dir, env=env_with_placeholder,
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "DATABASE_URL is not set" not in result_with_placeholder.stderr
+    assert "requires GOOGLE_MAPS_KEY" in result_with_placeholder.stderr, (
+        f"expected the render-only maps-key gate message; got stderr={result_with_placeholder.stderr!r}"
+    )
+    assert result_with_placeholder.returncode == run_caddie_bench._EXIT_GATE_REFUSAL

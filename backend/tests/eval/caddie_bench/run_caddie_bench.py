@@ -34,6 +34,17 @@ Invocation (never in CI — run this yourself, after a reviewer signs off on
 the judge rubric, per the builder's contract):
     cd backend && CADDIE_EVAL_LIVE=1 OPENAI_API_KEY=... uv run python -m \\
         tests.eval.caddie_bench.run_caddie_bench --budget-usd 8.00
+
+DATABASE_URL (defect found in cycle-4 review, documented rather than fixed
+this cycle — see backlog item caddie-bench-lazy-db-import): importing this
+module (even `--render-only`, even `--help`) pulls in `app.caddie.harness`
+-> `app.caddie.strategy` -> ... -> `app.db.engine`, which raises at IMPORT
+TIME if `DATABASE_URL` is unset — a pure side effect of the import chain,
+NOT a real database dependency (SQLAlchemy's `create_async_engine` never
+actually connects until a query runs, and this module never issues one).
+Every invocation in this file's docstrings/README needs a placeholder, e.g.
+`DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused` —
+it is never connected to, just needs to be a well-formed asyncpg URL.
 """
 
 from __future__ import annotations
@@ -413,6 +424,14 @@ def render_only(args: argparse.Namespace) -> int:
     a projection bug would mislead every judge call, so this is the gate
     before any full satellite run.
 
+    KNOWN DEFECT (found in cycle-4 review, documented not fixed — see the
+    module docstring's DATABASE_URL paragraph and backlog item
+    caddie-bench-lazy-db-import): reaching THIS gate at all requires
+    `DATABASE_URL` to already be set, because importing this module (at
+    the top of the file, before `main()` ever runs) transitively imports
+    `app.db.engine`. A placeholder value works (never actually connected
+    to) — see the packaged command in README.md.
+
     Verification checklist (see README.md for the full text): player pin
     on the sampled lie, green pin on the green, hazard outlines tracking
     real bunkers/water, centerline on the fairway, header/wind annotations
@@ -487,7 +506,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--render-only", action="store_true",
         help="Render composites for the selected cases and exit — no synth/judge calls, no cost. "
-        "Gated on GOOGLE_MAPS_KEY only (satellite mode). Use to verify georegistration before a full run.",
+        "Gated on GOOGLE_MAPS_KEY only (satellite mode) — but DATABASE_URL must still be set to a "
+        "placeholder (a never-connected asyncpg URL) or this module fails to even import; see "
+        "README.md for the exact command. Use to verify georegistration before a full run.",
     )
     args = parser.parse_args(argv)
 
