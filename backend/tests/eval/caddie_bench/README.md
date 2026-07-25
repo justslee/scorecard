@@ -191,6 +191,80 @@ before the first live run): pilot (189 cases) ~$4/full run, budget
 $8, hard cap `--budget-usd 40`. Tile cost ~$0.04 total (10 per-hole
 composites, cached forever).
 
+## Cycle-4 FINAL packaged run sequence (owner-authorized box, in this order)
+
+`GOOGLE_MAPS_KEY` + `OPENAI_API_KEY` live in the box's `backend/.env`. Load
+them into the environment WITHOUT printing them:
+
+```
+cd backend && set -a && . ./.env && set +a
+```
+
+Every command below needs `DATABASE_URL` — a **never-connected placeholder**
+satisfying an import-time side effect, not a real database (see the
+`--render-only` section above). `.env` on the box already sets a real one, so
+after sourcing you can omit it; it is written out here so each command is
+copy-pasteable standalone.
+
+**1 — fidelity check FIRST (no cost, no LLM call).** Georegistration has never
+run against real tiles at scale; a projection bug would mislead every judge
+call in the paid run. Eyeball the composites before spending anything.
+
+```
+DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \
+  uv run python -m tests.eval.caddie_bench.run_caddie_bench \
+  --render-only --holes bethpage_black_h7 bethpage_red_h6 bethpage_black_h8 --max-cases 3
+```
+
+Check: player pin on the sampled lie, green pin on the green, hazard outlines
+tracking real bunkers/water, centerline down the fairway, header/wind legible
+— on a 553y hole, a sharp dogleg, and a par 3. Composites land in
+`tests/eval/caddie_bench/runs/<run_id>/composites/`.
+
+**2 — full run (194 cases: 189 + 5 canaries; 184 reach the LLM judge, the 10
+FACT cases skip it).** Budget headroom over the ~$8-10 estimate so a near-done
+run is never killed by the cap:
+
+```
+DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \
+  CADDIE_EVAL_LIVE=1 uv run python -m tests.eval.caddie_bench.run_caddie_bench \
+  --budget-usd 14.00
+```
+
+Satellite is the default render mode. A tile failure aborts the run (exit 5)
+rather than silently falling back to vector; `--resume <run_id>` continues
+from `results.jsonl`. **Note the run id it prints** — everything below needs it.
+
+**3 — judge noise (~$1.5), the honest ceiling for the 100% goal.**
+
+```
+DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \
+  CADDIE_EVAL_LIVE=1 uv run python -m tests.eval.caddie_bench.judge_noise \
+  --run-id <RUN_ID> --sample-size 30 --budget-usd 3.00
+```
+
+(`judge_noise` needs the same `DATABASE_URL` placeholder — its own gate
+message doesn't mention it.)
+
+**4 — dual-basis headline + like-for-like delta (free, read-only, no LLM).**
+
+```
+DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \
+  uv run python -m tests.eval.caddie_bench.dual_basis_delta <RUN_ID> [PRIOR_RUN_ID]
+```
+
+Prints the **NEW basis** (11-dim, satellite — the honest number going forward)
+and the **LEGACY basis** (the same run scored over the original 10 dims). Only
+the legacy number is comparable to pre-cycle-4 runs, so the trajectory reads
+`53.4 -> 77.0 -> <legacy>` with `<new>` starting its own series. Pass the run
+that produced 77.0 as `PRIOR_RUN_ID` if its `results.jsonl` is still on the box.
+
+**Reading the delta honestly:** the case SET changed this cycle (150 -> 189
+cases, trouble lies 46.0% -> 28.6%) *and* the render basis changed to
+satellite. The movement therefore mixes the engine fix, a deliberately more
+realistic scenario mix, and a different judged substrate — it is **not** a
+pure caddie-quality delta and must not be reported as one.
+
 ## Case math (pilot, §2; rebalanced cycle-4 §C(ii))
 
 10 core holes (9 par-4/5 x 6 position slots + 1 par-3 x 4 slots) x 3 bags
