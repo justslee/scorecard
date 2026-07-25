@@ -3166,3 +3166,26 @@ The asymmetry is the whole signal: a straight line can never be LONGER than the 
 **geodesic > card + tolerance is geometrically impossible** and is the real invariant. Shorter is
 normal. The robust primary check is therefore "the selected green must be within N yards of the hole
 polyline's END", with the geodesic<=card+tol assert as the secondary.
+## CORRECTION — the scenario-mix numbers I published were WRONG. The builder's were right.
+Coordinator asked me to reconcile the 174-vs-179 advice-count discrepancy. Doing so proved **my**
+figure wrong, not the builder's.
+Root of my error: **`build_cases()` already CONTAINS the canary cases** (verified: 5 of the 189 ids
+start with `canary__`, and `build_canary_cases()` returns exactly those same 5 — overlap = 5, it is a
+subset VIEW, not an additional set). I had treated canaries as an extra set on top, so I both
+inflated the advice count (189 - 10 FACT = 179, forgetting to remove the 5 canaries) and invented a
+"grand total 194" that double-counted them.
+**Authoritative composition @c104cb3:**
+  `build_cases()` = **189** total executed = **174 advice + 10 FACT + 5 canary**
+  reach the LLM judge = **179** (advice + canaries; the 10 FACT cases skip the judge)
+  scored in the rubric headline = **174** (canaries are excluded from the headline)
+  TOTAL executed = **189**, NOT 194. There is no 194.
+**Authoritative mix, like-for-like on the ADVICE-ONLY headline basis (the only honest comparison):**
+  BEFORE @af468a0: 138 advice cases — trouble 69/138 = **50.0%**, ordinary 66/138 = **47.8%**
+  AFTER  @c104cb3: 174 advice cases — trouble 54/174 = **31.0%**, ordinary 114/174 = **65.5%**
+  => **trouble lies 50.0% -> 31.0%  ·  ordinary tee-and-fairway 47.8% -> 65.5%  ·  cases 150 -> 189**
+My earlier published "46.0% -> 28.6% / 52.0% -> 68.3%" was wrong at BOTH ends (both denominators
+included FACT and canary cases, which are not rubric-scored). The real improvement is LARGER than I
+reported (-19.0 pts of trouble, not -17.4). PR #155 and the earlier progress entry are corrected.
+The builder's original "174 advice / 31.0%" was correct and I overrode it with a worse number —
+recorded here because the failure mode matters: I "reconciled" two figures by re-deriving one of them
+from an assumption I never checked, and published the result as authoritative.
