@@ -2810,3 +2810,25 @@ Honest behavior (no fabricated bunker), just a projection that couldn't have bee
    no corner reasoning whatsoever. Worth a future cycle.
 Also backlogged: `caddie-bench-lazy-db-import` (the preferred real fix for the --render-only import
 chain) and `caddie-shot-origin-offset-for-bend-and-corridor` (tee-anchored geometry reused mid-hole).
+
+### Cycle-4 QA — **PASS** (verified in a clean detached worktree at 192a976, then removed)
+  ruff check .                     All checks passed
+  full offline suite               **3322 passed, 154 skipped, 0 failed** (baseline 3297, +25 net)
+  must-not-regress set (8 files)   **308 passed, 0 failed**
+  bench suites                     **101 passed, 0 failed**
+  determinism                      101 passed identically at PYTHONHASHSEED 0 / 42 / random
+  packaged --render-only command   runs exactly as documented: reaches the key gate (exit 2), no
+                                   Postgres error, no DB connection attempted; and without the
+                                   placeholder it still fails at import exactly as the README says
+  secret-leak test                 PASSES (plants SECRET-KEY-MUST-NEVER-LEAK, asserts absent +
+                                   <redacted> present); `git diff | grep -iE "AIza|api[_-]?key="` empty
+  do-not-touch paths               `git diff --stat -- '*.env*' 'deploy/*' 'backend/migrations/*'` EMPTY
+  frontend gates                   NOT APPLICABLE, proven not asserted: `git diff --stat
+                                   af468a0..192a976 -- frontend/` is EMPTY (zero frontend files), and
+                                   `Hazard` has no mirror in frontend/src/lib/types.ts. The separate
+                                   stale mirror in frontend/src/lib/caddie/types.ts is pre-existing
+                                   drift this cycle neither touches nor worsens.
+  Playwright E2E                   N/A — no frontend surface in this diff.
+Awaiting the fable adversarial reviewer (both tails of the new dimension, rubric-gaming, no-regression
+on merits, plus rulings on the two open questions I routed to it: the 0.30 knife edge and the
+one-config cap-side bench coverage).
