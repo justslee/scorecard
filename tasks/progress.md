@@ -2524,3 +2524,30 @@ Black 18 does NOT become `straight`; the near-green exclusion promotes a differe
 0.087), so the spoken line improves from a phantom "~395" to "~275" rather than disappearing. It
 flagged this in the commit message and the test instead of forcing the plan's predicted assertion.
 That is the behavior we want.
+
+### Cycle-4 commit 2/5 VERIFIED INDEPENDENTLY — `36482c2` (aggression_realism + evidence + dual basis)
+Clean detached-worktree verify at 36482c2: **3312 passed, 154 skipped, 0 failed**; ruff clean; bench
+suite **91 passed** (from 68 at base). The 4 canary failures I saw earlier in the shared lane
+worktree were the builder's mid-edit WIP, as suspected — resolved and green in the committed state.
+Checked against the rubric-gaming risk, item by item:
+ - `AGGRESSION_REALISM` is in `CORRECTNESS_DIMENSIONS` (6 -> 7, weight 2); `CRUX_DIMENSIONS` is
+   derived by complement so it correctly stays the same 4. Denominator independently recomputed by
+   me: 7x2x2 + 4x1x2 = **36** new basis vs 6x2x2 + 4x1x2 = **32** old. Correct.
+ - Rubric text is VERBATIM from the plan — both FAIL tails present, plus the anti-hedging sentence
+   ("Score the CLUB ACTUALLY RECOMMENDED, never the tone"), and a pinned offline test asserts the
+   string still contains both tails + the anti-hedging clause so a later edit cannot quietly soften
+   it. `CLUB_CORRIDOR` text untouched; the geometric-vs-risk division of labor is documented.
+ - New `TOO_TIMID` failure class names the owner's exact complaint in the Pareto.
+ - Evidence threading is real: the actual bag (club yardages + numeric handicap) REPLACES the
+   label-only line (a test asserts replacement, not mere appending); mapped hazards; and the corridor
+   sample at the recommended club's landing. Unmapped corridor renders the honest string
+   "unmapped — no danger-edge evidence (do not invent one)" — no fabricated width.
+   Evidence is recomputed in the runner rather than threaded through `CaseResult`, so results.jsonl
+   does not bloat with judge-only data. All new kwargs are defaulted, so callers that omit them stay
+   byte-identical (pinned by its own test).
+ - The hardcoded "10-dimension" prompt string is now derived from `len(JudgeDimension)`, pinned.
+ - 5th timid canary added (a self-contradicting lay-up that admits "nothing really out there").
+**Builder corrected the plan a SECOND time, honestly:** the plan predicted `band_pessimistic` would
+become 68/72; the builder recomputed it as **64/68** and wrote the divergence into the comment
+("diverges from a naive 'same delta as the 10-dim case' guess"). Every changed literal carries its
+derivation. No assertion was deleted or weakened.
