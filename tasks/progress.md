@@ -2928,3 +2928,13 @@ worktree is clean, and every completed thing is committed and pushed. Per the st
 need `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`; this machine has neither and prod-box execution was correctly
 denied by the permission system. Commands are packaged and verified runnable as written.
 NOT shipped, NOT pinged — per directive.
+Also verified independently: the case set is 150 (+4 canaries). Lie mix — fairway 50, rough 42,
+tee 28, bunker 24, greenside 3, recovery_trees 3 => trouble 69/150 = **46.0%**, ordinary
+(tee+fairway) 78/150 = **52.0%**. Hole par mix is only 4x par-4 / 3x par-5 / 1x par-3.
+And: `_SEVERITY_BY_TYPE` (hazards.py:121) hardcodes EVERY tree to "moderate", and `_tree_hazard`
+(hazards.py:846) computes the observation's lateral offset then discards it — `Hazard` has no
+lateral field. So the bend-cap's severity filter discriminates nothing and the cap cannot know
+whether the "corner trees" are 5y or 60y off the line. Its arming condition carries zero
+information about danger.
+Deviation-as-fraction-of-corner-distance cleanly separates the cases: pinned real dogleg 88/226 =
+39%; genuine fixtures 43-52%; the false positives that produce the 4-iron 10-19%.
