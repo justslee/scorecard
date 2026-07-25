@@ -26,6 +26,7 @@ from tests.eval.caddie_bench.geometry import GeometrySamplingError  # noqa: E402
 from tests.eval.caddie_bench.schema import (  # noqa: E402
     BAGS_PATH,
     HOLES_DIR,
+    QUESTIONS_V1_PATH,
     BagId,
     BenchCase,
     CaseResult,
@@ -38,6 +39,7 @@ from tests.eval.caddie_bench.schema import (  # noqa: E402
     QuestionType,
     ResolvedPosition,
     load_bags,
+    load_question_bank,
 )
 
 BAGS = load_bags(BAGS_PATH)
@@ -524,6 +526,46 @@ def test_canary_all_pass_gate_helper_matches_compute_headline():
     failing_canary = [_result("canary__hole__x", _judge(all_two=False))]
     assert judge_mod.canary_all_pass_gate(passing_canary) is True
     assert judge_mod.canary_all_pass_gate(failing_canary) is False
+
+
+# ── 5. cycle-4 (specs/caddie-bench-cycle4-plan.md §B4) — the TIMID canary ──
+#      the bench was structurally blind to the owner's actual complaint (a
+#      timid caddie) until this canary + aggression_realism existed — a
+#      judge that passes it has no teeth on that failure mode either.
+
+
+def test_timid_canary_is_present_in_build_canary_cases():
+    from tests.eval.caddie_bench import questions as q
+
+    fx_list = [geo.load_hole_fixture(p) for p in sorted(HOLES_DIR.glob("*.json"))]
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    canaries = q.build_canary_cases(fx_list, bank)
+    assert len(canaries) == 5, "cycle-4 adds the 5th (timid) canary"
+    timid = [c for c in canaries if c.canary_answer and "smart play is always the short club" in c.canary_answer]
+    assert len(timid) == 1, "the timid canary must be present exactly once"
+    assert timid[0].question_type == QuestionType.TEE_STRATEGY
+
+
+def test_timid_canary_all_pass_verdict_trips_the_canary_gate():
+    """A judge that PASSES the timid canary (scores it all-2/GOOD) must trip
+    canary_all_pass_gate exactly like the 4 reckless-tail canaries already
+    do — the gate has no special-casing by canary CONTENT, only by
+    `case_id`'s `canary__` prefix, so this proves the timid canary isn't
+    silently exempt."""
+    results = [_result("canary__hole__tee_strategy_timid", _judge(all_two=True))]
+    assert judge_mod.canary_all_pass_gate(results) is True
+
+
+# ── 6. cycle-4 §B2 — the aggression_realism rubric text can't be quietly
+#      softened: both FAIL tails and the anti-hedging sentence must survive.
+
+
+def test_aggression_realism_rubric_names_both_fail_tails_and_anti_hedging():
+    text = judge_mod._RUBRIC_TEXT[JudgeDimension.AGGRESSION_REALISM]
+    assert "FAIL (0) a conservative call" in text, "the timid tail must be named"
+    assert "FAIL (0) an aggressive call" in text, "the reckless tail must be named"
+    assert "never the tone" in text, "the anti-hedging sentence must survive"
+    assert "does NOT rescue a timid" in text and "does NOT rescue a reckless" in text
 
 
 # ── 5. Filename-glob pins (mirrors test_harness_has_teeth.py's run_tier2

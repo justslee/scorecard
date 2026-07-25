@@ -39,6 +39,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from app.caddie import hazards
 from tests.eval.caddie_bench import geometry as geo
 from tests.eval.caddie_bench import harness, judge as judge_mod, questions as q, render, report
 from tests.eval.caddie_bench.schema import (
@@ -234,9 +235,40 @@ async def run(args: argparse.Namespace) -> int:
         if case.question_type == QuestionType.FACT_DISTANCE:
             first_scores, second_scores, contested, judge_cost = None, None, False, 0.0
         else:
+            # cycle-4 §B3 — evidence the judge actually needs (never just the
+            # picture): the player's real bag, the mapped hazards, and (for a
+            # positioning shot) the corridor sample at the recommended club's
+            # landing distance. Recomputed here (deterministic, cheap — the
+            # same call harness.run_case already makes internally) rather
+            # than threaded through CaseResult, so results.jsonl never bloats
+            # with judge-only evidence.
+            intel = geo.hole_intel_from_fixture(fx)
+            hazards_payload = [h.model_dump() for h in intel.hazards] if intel.hazards else None
+            corridor_summary: Optional[str] = None
+            if result.engine_ref.get("shot_kind") == "positioning":
+                tsn = result.engine_ref.get("tee_shot_numbers") or {}
+                drive_total = tsn.get("drive_total_yards")
+                sample = (
+                    hazards.corridor_sample_at(intel.corridor, float(drive_total))
+                    if drive_total is not None else None
+                )
+                if sample is not None and sample.width_yards is not None:
+                    left_desc = f"{sample.left_source or '?'} L {sample.left_yards}y"
+                    right_desc = f"{sample.right_source or '?'} R {sample.right_yards}y"
+                    corridor_summary = (
+                        f"corridor at recommended club's landing (~{drive_total}y): "
+                        f"danger-to-danger width {sample.width_yards}y ({left_desc} / {right_desc})"
+                    )
+                else:
+                    corridor_summary = (
+                        "corridor width at landing zone: unmapped — no danger-edge evidence (do not invent one)"
+                    )
+
             first_scores, judge_usage = await judge_mod.judge_case(
                 case, result.resolved, result.engine_ref, result.answer, det_summary,
                 composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
+                bag_clubs=bag.clubs, bag_handicap=bag.handicap,
+                hazards_payload=hazards_payload, corridor_summary=corridor_summary,
             )
             judge_cost = _cost_usd(judge_mod._judge_model(), judge_usage.get("input_tokens", 0), judge_usage.get("output_tokens", 0)) if judge_usage else 0.0
             cost_log.append({
@@ -254,6 +286,8 @@ async def run(args: argparse.Namespace) -> int:
             second_scores, contested, judge2_usage = await judge_mod.second_pass_if_needed(
                 first_scores, result.det_checks, case, result.resolved, result.engine_ref, result.answer,
                 det_summary, composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
+                bag_clubs=bag.clubs, bag_handicap=bag.handicap,
+                hazards_payload=hazards_payload, corridor_summary=corridor_summary,
             )
             if judge2_usage:
                 judge2_cost = _cost_usd(
@@ -291,11 +325,20 @@ async def run(args: argparse.Namespace) -> int:
 
     all_results = report.load_results(results_path) if results_path.exists() else []
     headline = report.compute_headline(all_results)
+    # cycle-4 §D/§E — render_failure_count reads runs/<id>/render_failures
+    # .jsonl when present (§E2 populates it on a per-case render abort); 0 on
+    # every run before that file exists (e.g. this run had no failures, or
+    # predates §E2's file-writing).
+    render_failures_path = out_dir / "render_failures.jsonl"
+    render_failure_count = 0
+    if render_failures_path.exists():
+        with open(render_failures_path, encoding="utf-8") as f:
+            render_failure_count = sum(1 for line in f if line.strip())
     meta = report.RunMeta(
         run_id=run_id, synth_model=synth.model, judge_model=judge_mod._judge_model(),
         synth_effort=os.getenv("CADDIE_STRATEGY_REASONING_EFFORT", "none"),
         total_cost_usd=sum(r.cost_usd for r in all_results), wall_time_s=time.monotonic() - start_wall,
-        case_count=len(all_results),
+        case_count=len(all_results), render_mode=args.render_mode, render_failure_count=render_failure_count,
     )
     report_path = report.write_report(all_results, meta, Path(args.report_out) if args.report_out else out_dir / "report.md")
     print(f"Report written to: {report_path}")

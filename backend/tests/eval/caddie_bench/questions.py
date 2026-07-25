@@ -189,13 +189,26 @@ _CANARY_ANSWERS: tuple[tuple[QuestionType, str], ...] = (
         "You need to carry it 310 yards to clear that bunker, then it plays like 280, then it's "
         "really only 350 total, so just carry the 310 and you're fine at 280.",
     ),
+    # cycle-4 (specs/caddie-bench-cycle4-plan.md §B4) — the TIMID canary. The
+    # 4 canaries above are all RECKLESS-tail poison pills; the bench was
+    # structurally blind to the owner's actual complaint (a caddie that's too
+    # conservative) until aggression_realism existed to fail this on its
+    # merits. Self-contradicting on its own terms (names no evidence, then
+    # admits "nothing really out there") — the judge MUST score it bad.
+    (
+        QuestionType.TEE_STRATEGY,
+        "Let's just take the 4-iron and lay it back safe out there, driver is way too "
+        "risky on this hole, no reason to take on trouble even though there's nothing "
+        "really out there, smart play is always the short club.",
+    ),
 )
 
 
 def build_canary_cases(hole_fixtures: list[geo.HoleFixture], bank: list[Phrasing]) -> list[BenchCase]:
-    """4 poison-pill cases (§2/§5c) — a deliberately BAD canned answer the
-    judge MUST score bad. The run fails (exit 1) if the judge passes any of
-    these (see run_caddie_bench.py / test_bench_teeth.py)."""
+    """5 poison-pill cases (§2/§5c, 4 -> 5 in cycle-4) — a deliberately BAD
+    canned answer the judge MUST score bad. The run fails (exit 1) if the
+    judge passes any of these (see run_caddie_bench.py / test_bench_teeth
+    .py)."""
     cases: list[BenchCase] = []
     for i, (qtype, bad_answer) in enumerate(_CANARY_ANSWERS):
         fx = hole_fixtures[i % len(hole_fixtures)]

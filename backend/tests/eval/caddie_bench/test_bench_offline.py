@@ -275,9 +275,11 @@ async def test_harness_end_to_end_offline_produces_a_sample_report(tmp_path):
     meta = report.RunMeta(run_id="offline-smoke", synth_model="canned", judge_model="canned", case_count=len(results), total_cost_usd=0.0, wall_time_s=0.1)
     md = report.write_report(results, meta, tmp_path / "report.md")
     text = md.read_text()
-    assert "Weighted correctness score" in text
+    # cycle-4 (§D): headline wording changed to name the dual basis explicitly.
+    assert "Weighted correctness (11-dim, NEW basis" in text
+    assert "Old-basis weighted correctness (10-dim" in text
     assert "Canary outcome" in text
-    # All 4 canaries scored all_fail here (2 sampled) -> canary gate PASS.
+    # All 5 canaries scored all_fail here (2 sampled) -> canary gate PASS.
     headline = report.compute_headline(results)
     assert headline.canary_all_pass is False
 
@@ -467,18 +469,31 @@ def test_compute_noise_stats_respects_shot_reachability_na_and_computes_expected
     assert nc["q_pass_repeat"] == pytest.approx(1.0)
 
     # Hand-computed (see docstring in judge_noise.compute_noise_stats for the
-    # formulas): shot_reachability contributes num=2*1.0=2.0/den=2*2=4 (its
-    # one true-pass case-dim scores [2, 0], mean 1.0); the other 5
-    # correctness dims (weight 2, both case-dims true-pass at 2.0 mean)
-    # contribute 5*(2*2.0)/5*(2*2)=20.0/20; the 4 crux dims (weight 1)
-    # contribute 4*(1*2.0)/4*(1*2)=8.0/8. Total 30.0/32 = 93.75%.
-    assert stats["ceiling_expected"] == pytest.approx(30 / 32)
+    # formulas). cycle-4 (specs/caddie-bench-cycle4-plan.md §F): recomputed
+    # for the 11-dim rubric (aggression_realism added -> 7 correctness dims
+    # weighted 2, 4 crux dims weighted 1 unchanged by complement) — the
+    # per-case full-applicability denominator is now 2*2*2 + 4*1*2 = 36 (was
+    # 32). shot_reachability contributes num=2*1.0=2.0/den=2*2=4 (its one
+    # true-pass case-dim scores [2, 0], mean 1.0); the other 6 correctness
+    # dims (weight 2, both case-dims true-pass at 2.0 mean) contribute
+    # 6*(2*2.0)/6*(2*2)=24.0/24; the 4 crux dims (weight 1) contribute
+    # 4*(1*2.0)/4*(1*2)=8.0/8. Total (2.0+24.0+8.0)/(4+24+8) = 34.0/36 =
+    # 94.4...%. Verified by executing compute_noise_stats directly against
+    # this exact fixture, not hand arithmetic alone.
+    assert stats["ceiling_expected"] == pytest.approx(34 / 36)
     # band_optimistic: every case-dim's max(a,b) -> shot_reachability's only
-    # pair maxes to 2 (perfect), everything else already 2 -> 60/60 = 100%.
+    # pair maxes to 2 (perfect), everything else already 2 -> unaffected by
+    # the new dimension (a 12th all-2 case-dim pair scales num and den
+    # identically) -> stays 1.0 (100%).
     assert stats["band_optimistic"] == pytest.approx(1.0)
     # band_pessimistic: shot_reachability's only pair mins to 0 (num
-    # contribution drops from 4 to 0) -> (60-4)/60 = 56/60.
-    assert stats["band_pessimistic"] == pytest.approx(56 / 60)
+    # contribution drops from 4 to 0); the new denominator (see ceiling
+    # comment above) is 4(SR) + 6*8(other correctness) + 4*4(crux) = 68 ->
+    # (68-4)/68 = 64/68. NOTE: this diverges from a naive "same delta as the
+    # 10-dim case" guess (which would suggest 68/72) — 64/68 is the actual
+    # value the code produces (verified directly against compute_noise_stats,
+    # not derived by analogy).
+    assert stats["band_pessimistic"] == pytest.approx(64 / 68)
 
 
 def test_compute_noise_stats_dimension_with_zero_applicable_pairs_reports_none_not_zero():
@@ -549,7 +564,10 @@ def test_build_cases_produces_the_planned_case_count():
     bank = load_question_bank(QUESTIONS_V1_PATH)
     cases = q.build_cases(fixtures, bank)
     canaries = [c for c in cases if c.canary]
-    assert len(canaries) == 4
+    # cycle-4 (specs/caddie-bench-cycle4-plan.md §B4): 4 -> 5, the new timid
+    # canary (the bench was structurally blind to the owner's actual
+    # complaint until aggression_realism + this canary existed).
+    assert len(canaries) == 5
     ids = [c.id for c in cases]
     assert len(ids) == len(set(ids)), "case ids must be unique"
     assert len(cases) >= 100
@@ -698,15 +716,20 @@ def test_compute_headline_excludes_shot_reachability_off_positioning_shots():
     everything else 2).
 
     Hand-computed BEFORE this fix (both cases' shot_reachability counted in
-    the weighted score): the 5 other correctness dims (weight 2, both cases
-    pass) contribute num=8/den=8 each = 40/40; shot_reachability (weight 2,
-    values [2, 0]) contributes num=4/den=8; the 4 crux dims (weight 1, both
-    cases pass) contribute num=4/den=4 each = 16/16. Total: 60/64 = 93.75%.
+    the weighted score). cycle-4 (specs/caddie-bench-cycle4-plan.md §F):
+    recomputed for the 11-dim rubric (aggression_realism added -> 7
+    correctness dims weighted 2, 4 crux dims unchanged by complement) — the
+    6 OTHER correctness dims (weight 2, both cases pass) contribute
+    num=8/den=8 each = 48/48; shot_reachability (weight 2, values [2, 0])
+    contributes num=4/den=8; the 4 crux dims (weight 1, both cases pass)
+    contribute num=4/den=4 each = 16/16. Total: (48+4+16)/(48+8+16) =
+    68/72 = 94.4...% (verified: matches a direct weighted-sum computation
+    over JudgeDimension/CORRECTNESS_DIMENSIONS for this exact fixture).
 
     AFTER this fix (the approach case's shot_reachability dropped from BOTH
     numerator and denominator, per the plan's contract): shot_reachability
     now only counts the positioning case's value=2, contributing num=4/den=4.
-    Total: 60/60 = 100%.
+    Total: 68/68 = 100% (was 60/60 pre-cycle-4, at 10 dims).
     """
     from tests.eval.caddie_bench.schema import CaseResult, JudgeDimension, ResolvedPosition
 
@@ -741,8 +764,9 @@ def test_compute_headline_excludes_shot_reachability_off_positioning_shots():
     assert headline.weighted_correctness_score == pytest.approx(1.0)
 
     # The before-fix number, proving this is a real fix and not a no-op.
-    before_fix_weighted = 60 / 64
-    assert before_fix_weighted == pytest.approx(0.9375)
+    # cycle-4 (§F): recomputed for the 11-dim rubric — 68/72, see docstring.
+    before_fix_weighted = 68 / 72
+    assert before_fix_weighted == pytest.approx(0.9444444444444444)
     assert headline.weighted_correctness_score > before_fix_weighted
 
 
@@ -782,6 +806,81 @@ def test_judge_prompt_shot_kind_gloss_is_conditional_on_positioning():
     assert "shot_kind=positioning" in positioning_text
     sr_line = next(line for line in positioning_text.split("\n") if line.startswith("- shot_reachability:"))
     assert "approach" not in sr_line.lower()
+
+
+def test_judge_prompt_omits_evidence_lines_when_not_given():
+    """cycle-4 (§B3): every kwarg (bag_clubs/bag_handicap/hazards_payload/
+    corridor_summary) defaults None — an old caller (or any offline test)
+    that doesn't pass them gets the pre-cycle-4 label-only bag line and no
+    hazards/corridor evidence lines at all (never a fabricated 'unmapped'
+    placeholder the caller never asked for)."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="evidence-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400}
+
+    text, _ = judge_mod.judge_prompt(case, resolved, ref, "answer text", "det summary")
+    assert "Player bag: owner" in text
+    assert "MAPPED HAZARDS" not in text
+    # The club_corridor RUBRIC dimension always mentions "corridor" (unrelated
+    # to this kwarg) -- only the EVIDENCE line (corridor_summary, opt-in) is
+    # under test here.
+    assert "corridor at recommended club's landing" not in text
+    assert "corridor width at landing zone: unmapped" not in text
+
+
+def test_judge_prompt_renders_bag_hazards_and_corridor_evidence_when_given():
+    """cycle-4 (§B3): with real evidence supplied, the judge sees actual
+    stored club yardages + handicap (not just a bag label), a compact
+    hazard summary, and the corridor evidence line verbatim — the "one
+    sentence of punitive evidence" aggression_realism needs to grade risk
+    posture, not vibes off the picture alone."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="evidence-test-2", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400}
+
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary",
+        bag_clubs={"driver": 300, "7iron": 180}, bag_handicap=3.0,
+        hazards_payload=[{"type": "trees", "side": "right", "carry_yards": 195, "penalty_severity": "moderate"}],
+        corridor_summary="corridor width at landing zone: unmapped — no danger-edge evidence (do not invent one)",
+    )
+    assert "driver 300" in text and "7iron 180" in text and "handicap 3.0" in text
+    assert "Player bag: owner" not in text, "the real bag must REPLACE the label-only line, not just append"
+    assert "MAPPED HAZARDS" in text and "trees R 195y moderate" in text
+    assert "corridor width at landing zone: unmapped — no danger-edge evidence (do not invent one)" in text
+
+
+def test_rubric_instructions_header_names_the_real_dimension_count():
+    """cycle-4 (§B3): the hardcoded 'fixed 10-dimension rubric' string must
+    track len(JudgeDimension) so it never silently drifts stale again after
+    aggression_realism (or any future dimension) is added."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import JudgeDimension, ResolvedPosition
+
+    case = BenchCase(
+        id="dim-count-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400}
+    text, _ = judge_mod.judge_prompt(case, resolved, ref, "answer text", "det summary")
+    assert f"a fixed {len(JudgeDimension)}-dimension rubric" in text
+    assert len(JudgeDimension) == 11
 
 
 def test_det_check_pass_rate_overall_aggregates_across_every_check():
@@ -983,6 +1082,7 @@ def test_check_real_call_canary_flags_a_synthetic_100pct_degraded_98ms_run_inval
     INVALID — the assertion the bug silently skipped."""
     headline = report.HeadlineStats(
         case_count=10, dimension_pass_rate={}, weighted_correctness_score=0.0,
+        weighted_correctness_score_legacy10=0.0,
         correctness_dims_pass_rate=0.0, crux_dims_pass_rate=0.0, degraded_rate=1.0,
         contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
         det_check_pass_rate_overall=1.0, fact_routing_accuracy=None, fact_case_count=0,
@@ -996,6 +1096,7 @@ def test_check_real_call_canary_flags_a_synthetic_100pct_degraded_98ms_run_inval
 def test_check_real_call_canary_passes_a_healthy_run():
     headline = report.HeadlineStats(
         case_count=10, dimension_pass_rate={}, weighted_correctness_score=0.9,
+        weighted_correctness_score_legacy10=0.9,
         correctness_dims_pass_rate=0.9, crux_dims_pass_rate=0.9, degraded_rate=0.1,
         contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
         det_check_pass_rate_overall=1.0, fact_routing_accuracy=None, fact_case_count=0,
@@ -1009,6 +1110,7 @@ def test_check_real_call_canary_passes_a_healthy_run():
 def test_check_real_call_canary_never_flags_an_empty_run():
     headline = report.HeadlineStats(
         case_count=0, dimension_pass_rate={}, weighted_correctness_score=0.0,
+        weighted_correctness_score_legacy10=0.0,
         correctness_dims_pass_rate=0.0, crux_dims_pass_rate=0.0, degraded_rate=0.0,
         contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
         det_check_pass_rate_overall=0.0, fact_routing_accuracy=None, fact_case_count=0,
