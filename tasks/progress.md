@@ -3,6 +3,82 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-25) — caddie-green-anchor-nearest-centerline-end: prod green mis-anchor fix (builder, lane worktree-agent-a39d54b0135bdf23e)
+
+Implemented `specs/caddie-green-anchor-nearest-centerline-end-plan.md` exactly:
+`hazards.py::_derive_tee_green` no longer picks the FIRST `featureType ==
+"green"` feature by file order — it now selects the candidate NEAREST the
+hole path's own last vertex (`_select_green_nearest_path_end`, mirroring the
+already-validated bench fix, `_point_dist_sq_m` reused, `min()` over ALL
+candidates). `path=` threaded keyword-only into `_derive_tee_green` (D2);
+hoisted above all 3 internal call sites (`extract_hole_bend`,
+`extract_hole_hazards`, `extract_corridor_profile`) so the green anchor and
+the carry/bend/corridor frame always agree on the same line. Green resolves
+BEFORE tee selection (D3) so the no-arg back-tee pick reads the corrected
+green. Key-free WARNING (`logging.getLogger("looper.hazards")`, new) when
+the selected green still sits >30y off the path end; selection never
+rejects (D4).
+
+**Before/after (measured via the real ingestion path over the committed
+`bethpage_overpass.json`, all 5 Bethpage courses, 90 holes):**
+
+| course | hole | greens | old→end | new→end | old tee→green | new tee→green | Δy |
+|---|---|---|---|---|---|---|---|
+| Black | 9 | 2 | 2.9y | 2.9y | 430.3y | 430.3y | 0.0 (unchanged, byte-identical) |
+| Black | 18 | 2 | 105.4y | 3.3y | 508.3y | 412.6y | **-95.7y** (card 411) |
+| Blue | 14 | 2 | 108.4y | 0.6y | 392.4y | 367.9y | **-24.5y** |
+| Green | 18 | **3** | 84.1y | 1.3y | 347.2y | 385.1y | **+37.9y** |
+| Yellow | 9 | 2 | 133.2y | 1.3y | 432.7y | 346.5y | **-86.2y** |
+| Red | — | 0 | — | — | — | — | clean (0/18) |
+
+Checked in as `specs/caddie-green-anchor-audit.md` (via new
+`backend/scripts/audit_green_selector.py --fixture`, the offline mode; the
+`--course-id` prod-DB mode is implemented but NOT run — prod access is
+gated this session per the plan's §3.1 GATE note).
+
+New `backend/tests/test_green_anchor_selection.py` (21 tests, all pass): the
+real Black 18 defect + before-repro pin, Black 9 (correct-by-luck, pinned
+geometrically not by file order), the Green 18 THREE-green case (proves
+`min()` over all candidates, not a two-way comparison), synthetic D1/D3
+boundary units (adversarial/reversed file order, arg-as-selector,
+order-dependent-fallback-unchanged, the D3 tee/green ordering coupling,
+single-green byte-identity), and the honest-failure + key-free-warning
+caplog cases.
+
+**Gates:** `ruff check .` clean. Full offline `pytest`: baseline (4ac6bbb)
+3339 passed/154 skipped/0 failed → **3359 passed / 154 skipped / 1 failed**
+(3339 + 21 new − 1, see flag below). No local Postgres; DB-backed
+integration tests skip locally, run in CI.
+
+**FLAG for eng-lead — one pre-existing test now fails, NOT edited (hard
+rule):** `tests/test_bend_cap_corner_sharpness.py::
+test_h18_near_green_vertex_excluded_demotes_to_the_real_minor_wobble` (from
+a DIFFERENT, earlier plan, `specs/caddie-bench-cycle4-plan.md §A`) calls
+`extract_hole_bend(fc)` with no tee/green args on the SAME 2-green Black 18
+fixture — before this fix, that call silently used hazards.py's OWN
+(buggy) first-by-file-order green pick (the 105.4y-off one), so the test's
+pinned numbers (a "275y, dev 24y, real minor wobble" plus a "395y phantom
+artifact") were themselves computed against the mis-anchored green. Post-fix,
+`extract_hole_bend` now uses the corrected green and Black 18 resolves to
+`straight=True, deviation_yards=7` — i.e. it now reports "plays straight,"
+which matches the owner's own documented ground truth quoted verbatim in
+hazards.py's module docstring: "Black 18... plays dead straight" (411y).
+This is very likely a CORRECT, desirable side effect of the root-cause fix
+(the old test encoded behavior computed under the exact bug being fixed
+here) — but it is outside this plan's stated scope (`hazards.py` +new tests
++new audit script only), so per the hard "never edit tests to make them
+pass" rule I have NOT touched it. Recommend a fast follow-up to update that
+test's assertions to the new (straight) numbers, or retire the stale
+"real minor wobble" framing — eng-lead's call, not mine to make unilaterally.
+
+Files: `backend/app/caddie/hazards.py`, `backend/tests/
+test_green_anchor_selection.py` (new), `backend/scripts/
+audit_green_selector.py` (new), `specs/caddie-green-anchor-audit.md` (new).
+No frontend files touched. Silent (backend-only geometry correctness fix —
+not directly visible on TestFlight, but corrects spoken caddie numbers on
+Black 18/9, and would correct Blue 14 / Green 18 / Yellow 9 if those
+courses are among the 12 prod-mapped courses — TBD, prod audit pending).
+
 ## DONE (2026-07-25) — CADDIE BENCH CYCLE 4 commit 7: h18 green mis-anchor fix + geometry precondition + F1/severity-cap judge hardening (builder, lane worktree-agent-a36e12e4dc633a855)
 
 Implemented the diagnosed h18 fix (commit `3d935f9` diagnosis) as commit 7 on
