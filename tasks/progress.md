@@ -2308,3 +2308,52 @@ Sequence run inline/foreground, no backgrounding:
 Verified, not asserted: every gate state read from `gh ... --json` structured fields; every prod fact
 read key-free off the box via SSM; TestFlight state read from the ASC REST API with a JWT this session
 minted itself. Nothing scraped from human-readable CLI text.
+
+## AWAITING — caddie-bench cycle 4 (under-clubbing + rubric blindness) — 2026-07-25
+Base: `origin/integration/next` @ f44aaf8 (cycle-3 landed, bundle PR #155). Lane branch
+`caddie-bench-c4` in worktree `.claude/worktrees/agent-a36e12e4dc633a855`.
+
+### DIAGNOSIS COMPLETE (payload evidence, not theory) — two defects
+**A. The bend-cap is the under-clubber, and it preempts the (sane) expected-strokes model.**
+Reproduced on the REAL committed hole fixtures with the owner bag (hcp 3, driver 300): adding ONE
+moderate-severity mapped tree at the DETECTED corner flips the pick off driver —
+  bethpage_black_h4  par5 517y  bend@265 dev51  driver -> **4iron** (232y total, leave 285 vs 218)
+  pebble_beach_h3    par4 381y  bend@265 dev48  driver -> **4iron** (232y total, leave 150 vs 82)
+  bethpage_black_h7  par5 553y  bend@210 dev110 driver -> **6iron** (197y total, leave 355 vs 254)
+  bethpage_red_h16   par5 500y  bend@270 dev121 driver -> 3wood
+That is exactly the owner's "4 iron on a clear driver hole".
+Mechanism (aim_point.py:1292-1330, the corridor-v1 bend-cap):
+ 1. `_BEND_MIN_DEVIATION_YARDS = 15.0` (hazards.py:118) — 15y of chord deviation on a 400-500y
+    hand-drawn centerline is mapping noise, not a dogleg. bethpage_black_h18 (a straight hole)
+    reports straight=False, dev=41.
+ 2. The gate is evidence-free about WIDTH: it needs only ONE moderate tree with carry_yards in
+    [corner-20, corner+40]. Every tree-lined parkland hole satisfies that. It never asks whether the
+    corner is blind, whether the trees are on the inside of the bend, or whether the corridor at the
+    driver's landing zone is actually narrow.
+ 3. It is a hard structural override that runs BEFORE the expected-strokes model and then becomes
+    that model's `ceiling_total_yards` — so a spurious cap is UNRECOVERABLE. Sweep proof that the
+    E-model is not the problem: at uniform corridor widths 10y..160y, for both the owner (hcp 3) and
+    the short hitter (hcp 20), `_select_club_expected_strokes` returns driver at EVERY width.
+    The E-model would have said driver; the bend-cap silently preempts it.
+ 4. It caps to `bend.distance_yards - 5` with no relation to the bag — a corner at 210y hands a 300y
+    driver a 6-iron and a 355y leave on a par 5.
+ 5. (Latent, adjacent) `HoleBend.distance_yards` / `CorridorSample.distance_yards` are TEE-ANCHORED
+    but the code path is deliberately shared with later strokes, with no shot-origin offset.
+
+**B. The bench is structurally blind to (A) — this is why it said 77%.**
+ - 7 of 8 hole fixtures yield `hole.corridor = None` (a corridor needs tree/woods/water danger
+   evidence on BOTH sides), so corridor Stages B/C never execute in the bench at all.
+ - No fixture has a moderate-severity tree hazard near a corner, so the bend-cap never fires either.
+ - Net: across the whole 150-case bench the tee-club machinery is INERT — the engine returns driver
+   on every hole for the owner bag. The bench cannot observe the defect the owner is reporting.
+ - Rubric: `CLUB_CORRIDOR` is judged purely off the rendered map IMAGE; the judge prompt carries NO
+   corridor width, NO hazard list, NO bag, NO handicap (only the label "owner"). It is asymmetric by
+   construction — it penalizes "a reflexive driver call" only, never timidity. A 4-iron on a clear
+   hole scores 2/2.
+ - Scenario mix today (measured, 150 cases): fairway 50, rough 42, tee 28, bunker 24, greenside 3,
+   recovery_trees 3 -> 46% trouble lies vs 52% ordinary tee-and-fairway.
+
+### NEXT / IF THIS LANE DIES
+Fable plan -> builder -> adversarial reviewer (BOTH tails) -> qa. Do NOT re-run the diagnosis; it is
+recorded above. Prior bench run `20260724-055332` retry loop is DEAD (no process on the box) — no
+collision risk. Never touch main; never force-push. Land on `integration/next` / PR #155 as NOTICEABLE.
