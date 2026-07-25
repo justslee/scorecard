@@ -2451,3 +2451,40 @@ reporting + render mode stamped in the report; satellite content-type guard + ex
 Five commits, sequenced in the plan's §G. On builder completion: FRESH adversarial reviewer (must
 falsify BOTH tails of the new dimension, prove no rubric gaming, prove the engine fix keeps the
 proven lay-up/dogleg/hcp-30 cases green ON THEIR MERITS), then qa (full gates).
+
+### Cycle-4 AUDIT — near-green bend exclusion + 0.30 fraction threshold, on 26 REAL holes
+Ran before/after over every locally-available real hole: the 8 committed bench fixtures + all 18
+Bethpage Red holes assembled from the committed Overpass fixture (`_parse_course_geometry_response`
+-> `assemble_osm_course`, the same path `test_14` uses). No DB needed.
+
+**(1) Near-green vertex exclusion (`_BEND_NEAR_GREEN_EXCLUDE_YDS = 40`) — SAFE, verified.**
+Exactly ONE hole of 26 flips to straight: `bethpage_black_h18`, whose "bend" vertex is **17y from the
+green** — precisely the defect the rule targets (it makes the caddie say "doglegs left at ~395" about
+a 411y hole that plays dead straight). Every other bend vertex sits **134-346y** from the green:
+Red 6 150y, Red 11 140y, Red 8 136y, pebble_h3 134y, Black 4 252y, Red 16 285y, Black 7 346y.
+Margin is enormous; no genuine dogleg is anywhere near the boundary. The coordinator's feared case
+(a short sharp par-4 dogleg with its true vertex inside 40y of the green) does NOT occur in any real
+hole available locally. Still add the boundary pin test — the audit shows the rule is safe, not that
+the case is impossible.
+
+**(2) The 0.30 fraction threshold is NOT in a clean gap on the larger sample — reviewer must weigh.**
+The plan's calibration table (8 holes) showed a clean void: false positives 0.10-0.19, genuine
+corners 0.39-0.52. Across all 18 Red holes the deviation fractions form a CONTINUUM straddling 0.30:
+  0.07 (h18) 0.08 (h8) 0.18 (h15) 0.22 (h5) 0.22 (h11) 0.26 (h10) 0.27 (h2) 0.29 (h14)
+  | 0.30 threshold |
+  0.33 (h3) 0.35 (h9) 0.43 (h6) 0.45 (h16)
+So h14 (0.29) and h3 (0.33) get OPPOSITE treatment despite being near-identical geometry — the
+threshold is a knife edge through a populated region, not a cut through a void.
+Practical impact TODAY is nil: the Overpass fixture carries no tree features, so none of these holes
+arms the cap at all (`test_14` pins all 14 par-4/5s -> driver). The risk is latent and lands when
+trees are ingested for these courses. This does NOT invalidate 0.30 (it still cleanly separates every
+hole we have EVIDENCE about), but the reviewer must decide whether a knife-edge scalar is acceptable
+or whether the pre-named `turn_angle_deg` fallback (measured gap: sweeps 20-32deg, corners 51-62deg)
+is the better-conditioned criterion. Flagging, not deciding.
+
+**(3) Attribution correction (per coordinator).** Because "unknown lateral never disqualifies",
+`Hazard.lateral_yards` is None on all cached pre-field JSONB and on every hand-built test hazard —
+so the lateral gate is INERT there. The reported false positives (19% / 18% / 10%) are closed by the
+**0.30 fraction gate ALONE**. The lateral bound is defense-in-depth for real mapped data only, and
+must get its own coverage (measured-lateral 44y-caps / 46y-doesn't / None-caps) or it ships
+unexercised. Do not credit it for closing the owner's incident.
