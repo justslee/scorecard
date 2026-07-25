@@ -2551,3 +2551,38 @@ Checked against the rubric-gaming risk, item by item:
 become 68/72; the builder recomputed it as **64/68** and wrote the divergence into the comment
 ("diverges from a naive 'same delta as the 10-dim case' guess"). Every changed literal carries its
 derivation. No assertion was deleted or weakened.
+
+### Cycle-4 commit 3/5 VERIFIED INDEPENDENTLY — `089bfd8` (real tree fixtures + mix rebalance)
+Clean verify at 089bfd8: **3316 passed, 154 skipped, 0 failed**; ruff clean.
+**Fixture honesty: PASS.** All 10 hole fixtures are REAL data — 9 assembled from the committed OSM
+Overpass fixture with tree/woods features merged verbatim from the committed real OSM tree capture,
+1 (pebble_beach_h3) a prod stored-course FeatureCollection. **No synthetic hole entered the judged
+set.** Provenance strings name the assembly path, the merge source, and explicitly label derived
+yardages as DERIVED, not measured (e.g. red_h1: "Yardage 465 DERIVED (straight-line tee->green) —
+labeled, not measured"). This is exactly the [[no-fake-data-fallbacks]] discipline.
+**Scenario mix — MEASURED BY ME (not the plan's projection):**
+  fixtures 8 -> **10** (par mix 5x par-4, 4x par-5, 1x par-3)
+  advice+fact cases 150 -> **189**; canaries 4 -> 5; TOTAL 154 -> **194**
+  lie mix: tee 65, fairway 64, rough 27, bunker 27, greenside 6
+  TROUBLE  69/150 = 46.0%  ->  54/189 = **28.6%**   (plan projected 33% — actual is better)
+  ORDINARY 78/150 = 52.0%  -> 129/189 = **68.3%**   (plan projected 66%)
+The plan's projected counts (174 advice / 189 total) were off; the real figures are 189 advice+fact /
+194 total. Recording the measured numbers, not the projection.
+**Is the machinery actually live now? PARTIALLY — worth the reviewer's attention.**
+  corridor profile present: `bethpage_red_h1` (31 samples) and `bethpage_black_h8` (16, a par 3 where
+    it is structurally unused). So the E-model corridor path now executes on a real par-4 — it never
+    did before.
+  measured tree laterals now present on 4 fixtures: red_h1 (18), pebble_h3 (15), red_h6 (6), red_h5 (3)
+    — so `CORNER_TREE_MAX_LATERAL_YDS` is no longer inert on the bench.
+  **bend-cap arms end-to-end in exactly ONE of 27 hole x bag tee configurations:** `bethpage_red_h6`
+    x `short_hitter` -> 6iron with the "runs through the corner" note. Before cycle 4 it armed in
+    ZERO of 21. Real improvement, but thin: a regression that broke the cap entirely would be caught
+    by only that single bench config (the unit suites cover it far better).
+  The clear-hole side is well covered: red_h1 (straight, live corridor, 18 measured tree laterals),
+    red_h5 (0.22), pebble_h3 (0.18), black_h4 (0.19) all correctly say DRIVER with real tree evidence
+    present — these are precisely the owner's complaint shape.
+  black_h7 (0.52) and red_h16 (0.45) stay driver because those fixtures carry no tree evidence —
+    correct honest behavior (no evidence -> no cap), not a regression.
+FLAG FOR REVIEWER: cap-side bench coverage is one configuration. Consider whether that is sufficient
+or whether a second genuinely-tight hole should be ingested before the bench is trusted to detect a
+cap regression.
