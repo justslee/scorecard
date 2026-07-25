@@ -221,9 +221,11 @@ tracking real bunkers/water, centerline down the fairway, header/wind legible
 — on a 553y hole, a sharp dogleg, and a par 3. Composites land in
 `tests/eval/caddie_bench/runs/<run_id>/composites/`.
 
-**2 — full run (194 cases: 189 + 5 canaries; 184 reach the LLM judge, the 10
-FACT cases skip it).** Budget headroom over the ~$8-10 estimate so a near-done
-run is never killed by the cap:
+**2 — full run (189 cases total = 174 advice + 10 FACT + 5 canaries; 179 reach
+the LLM judge, since the 10 FACT cases skip it; the rubric headline scores the
+174 advice cases, canaries excluded).** Note `build_cases()` already CONTAINS
+the canaries — they are not an additional set, and there is no "194". Budget
+headroom over the ~$8-10 estimate so a near-done run is never killed by the cap:
 
 ```
 DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused \

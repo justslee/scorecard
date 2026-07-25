@@ -3189,3 +3189,50 @@ reported (-19.0 pts of trouble, not -17.4). PR #155 and the earlier progress ent
 The builder's original "174 advice / 31.0%" was correct and I overrode it with a worse number —
 recorded here because the failure mode matters: I "reconciled" two figures by re-deriving one of them
 from an assumption I never checked, and published the result as authoritative.
+
+### Cycle-4 commit 7/7 VERIFIED INDEPENDENTLY — `59baa50` (h18 green mis-anchor + geometry precondition)
+Clean detached-worktree verify at 59baa50:
+  full offline suite  **3339 passed, 154 skipped, 0 failed**   ruff clean
+  bench               **118 passed**
+  must-not-regress    **317 passed** — I resolved the ambiguity the builder honestly flagged: it
+                      could not reconstruct my loosely-labelled "9-file / 317" set from the notes.
+                      The set is exactly: test_corridor_bend_cap, test_corner_tree_forward_bound,
+                      test_tee_club_expected_strokes, test_corridor_width_selection,
+                      test_tee_club_tree_severity_calibration, test_corridor_profile,
+                      test_tee_shot_numbers, test_hazards, test_bend_cap_corner_sharpness -> 317.
+  `git diff --stat c104cb3..59baa50 -- backend/app/` is EMPTY — zero production files touched.
+**Green fix verified across all 10 fixtures** (`tee->green` vs card, and green-to-centerline-end):
+  bethpage_black_h18  card 411  tee->green **412.7** (was 508.5)  green 3.3y from the line end  FIXED
+  every other fixture byte-identical; greens 0.2-5.1y from their centerline end; and
+  bethpage_black_h7 still legitimately reads 478.6 against a 553 card (a real dogleg) — the
+  precondition correctly does NOT flag it, because it asserts no lower bound.
+Precondition: green must be <=15y from the polyline's last vertex (real 0.2-5.1y, the bug 105.4y),
+plus geodesic <= card + 10y (the geometrically impossible direction only). Runs at fixture LOAD, so a
+bad fixture can never reach a paid run.
+
+### PRODUCTION DEFECT ESCALATED (not fixed here — backlogged p1 for its own review cycle)
+`caddie-green-anchor-nearest-centerline-end`. Reproduced through the REAL prod path
+(`app.services.osm_ingest.assemble_osm_course` -> `app.caddie.hazards._derive_tee_green`) on
+**Bethpage Black — the owner's course**:
+  holes with >1 green: **9 and 18**
+  hole  9 (par 4, centerline 477y): prod picks a green 2.9y from the end -> 430y. Correct, but only
+                                    by luck of file order — one re-ingest from flipping.
+  hole 18 (par 4, centerline 415y): prod picks a green **105.4y** from the end -> reads **508y**
+                                    instead of ~412y. **~102 yards wrong, live.**
+  Bethpage Red is clean (0/18), which is why my first scoping pass called this merely latent.
+Everything anchored to that green is wrong on Black 18: distance-to-green, `approach_bearing_deg`,
+green depth/width, and every hazard's `distance_from_green`. Prod's green priority is documented as
+"first one found" — the same bug class prod already fixed for TEES ("Finding A fix, 2026-07-16",
+multi-tee holes picking the first stored tee by file order) but never for greens. Fix is the same
+rule now used in the bench: select the green nearest the hole polyline's last vertex.
+
+### LESSON — the bench must validate its own inputs, not just its outputs (coordinator's note)
+Both of the reviewer's blockers and this green mis-anchor are the same class: **the instrument was
+feeding the judge wrong or partial ground truth while presenting it as authoritative.** A truncated
+hazard list shown as complete, a canary on a hole where its answer isn't the failure it's meant to
+probe, and a banner reading 508y on a 411y hole would each have silently corrupted the new-basis
+headline — and none would have shown up as a test failure, because every gate was green throughout.
+Going forward the bench treats its INPUTS as things to be proven, not assumed: fixture geometry is
+now validated at load (tee/green anchoring vs the hole's own centerline), evidence passed to the
+judge must disclose when it is partial, and a probe must be pinned to a case where the behavior it
+probes is unambiguous. Cheap, deterministic, offline — and it runs before any money is spent.
