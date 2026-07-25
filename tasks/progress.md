@@ -3483,3 +3483,16 @@ corrects FUTURE sampling, so it also needs a re-sample/backfill — a prod DATA 
 cycle. Plus: ingest last-wins centerline (p2), the spatial join's missing per-hole cardinality
 check (p2 — the ROOT ENABLER that retires this whole class at the source), and get_course's
 missing ORDER BY (p3, the amplifier that makes "correct by luck" unstable).
+
+## PROD MULTI-GREEN AUDIT (2026-07-25, coordinator, read-only SSM) — the green-anchor blast radius
+The green-anchor fix (@0f0ba97) corrects far more than the 4 fixture holes: **23 holes across the
+ingested courses carry >1 green polygon**, i.e. every one was resolved by file order (coin flip):
+Augusta 5 (3 greens) + 18 · Bethpage Black 9 + 18 · Cypress Point 14 + 18 (3) · Kiawah 9 + 18 ·
+Muirfield Village 18 (**4 greens**) · Oakmont 14 · Pebble Beach 13 · Pine Valley 4 + 7 (3) + 18 ·
+Pinehurst No. 2 8 + 9 + 15 (4) · (+6 more beyond the printed head). Consequence pre-fix: wrong
+distance-to-green, approach bearing, green depth/width, hazard distance-from-green on any of those
+holes where file order picked a foreign green. The fix selects the green nearest the hole path's
+last vertex — correct greens sit 0.6-3.3y off, mis-anchored ones 84-133y (no ambiguous middle).
+FOLLOW-UPS (filed): `course_elevation._feature_center` has the same defect for BOTH tee and green
+and is the WRITER that persists elevation/green_slope to the DB (p1 — needs a re-sample/backfill,
+prod data change, its own cycle); the spatial join never asserts one-green-per-hole (root enabler).
