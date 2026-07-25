@@ -2357,3 +2357,18 @@ Mechanism (aim_point.py:1292-1330, the corridor-v1 bend-cap):
 Fable plan -> builder -> adversarial reviewer (BOTH tails) -> qa. Do NOT re-run the diagnosis; it is
 recorded above. Prior bench run `20260724-055332` retry loop is DEAD (no process on the box) — no
 collision risk. Never touch main; never force-push. Land on `integration/next` / PR #155 as NOTICEABLE.
+
+### BLOCKED (needs owner authorization) — satellite render fidelity check, cycle 4
+Owner directive folded in: bench runs must use `--render-mode satellite` (real Google imagery), not the
+vector composite, and a one-time overlay-fidelity check must run against real tiles before the full run.
+Status: **cannot execute from this lane.**
+ - No `GOOGLE_MAPS_KEY` / `OPENAI_API_KEY` locally (checked key-free: both unset in env, no `backend/.env`).
+ - The only host holding them is the EC2 **production** app box (`i-0826ae70df62d9fe8`); it does have the
+   repo, `uv`, a venv with PIL+httpx, and both keys (verified key-free via SSM).
+ - Executing the render there was DENIED by the permission classifier — the authorization arrived via a
+   coordinator message, not from the owner directly. Not worked around, by design.
+Unblock options for the owner to choose: (a) authorize bench execution on the app box, or (b) provision
+`GOOGLE_MAPS_KEY` + `OPENAI_API_KEY` locally, or (c) run the packaged commands himself.
+Note the box is at 88% disk (~836MB free) — a 150-case satellite run writes ~150 composites; check
+headroom first. Engine + rubric + scenario work proceeds regardless; the packaged commands specify
+satellite per the directive.
