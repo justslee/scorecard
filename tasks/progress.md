@@ -3236,3 +3236,40 @@ Going forward the bench treats its INPUTS as things to be proven, not assumed: f
 now validated at load (tee/green anchoring vs the hole's own centerline), evidence passed to the
 judge must disclose when it is partial, and a probe must be pinned to a case where the behavior it
 probes is unambiguous. Cheap, deterministic, offline — and it runs before any money is spent.
+
+## GREEN-ANCHOR PROD FIX (`caddie-green-anchor-nearest-centerline-end`) — lane opened @4ac6bbb
+
+### BLAST RADIUS IS WIDER THAN ESCALATED — reproduced first-hand, all 5 Bethpage courses
+The escalation checked Black + Red only. I re-ran the REAL ingestion path
+(`osm._parse_course_geometry_response` -> `osm_ingest.assemble_osm_course` -> `hazards._derive_tee_green`)
+over the committed `backend/tests/fixtures/bethpage_overpass.json`, which carries ALL FIVE Bethpage
+courses (Black, Blue, Green, Red, Yellow — 90 holes). Multi-green holes and the OLD-vs-NEW pick:
+
+| course | hole | greens | centerline | OLD -> green (off end) | NEW -> green (off end) | delta |
+|--------|------|--------|-----------|------------------------|------------------------|-------|
+| Black  |  9 | 2 | 476.3y | 429.8y (2.8y)   | 429.8y (2.8y) |  +0.0y  correct BY LUCK |
+| Black  | 18 | 2 | 414.2y | 507.7y (105.3y) | 412.1y (3.3y) | **-95.6y WRONG** |
+| Blue   | 14 | 2 | 381.7y | 392.0y (108.2y) | 367.5y (0.6y) | **-24.5y WRONG** |
+| Green  | 18 | 3 | 400.5y | 346.8y (84.0y)  | 384.7y (1.3y) | **+37.8y WRONG** |
+| Yellow |  9 | 2 | 380.2y | 432.2y (133.0y) | 346.1y (1.3y) | **-86.1y WRONG** |
+| Red    |  — | 0 | — | — | — | clean (0/18) |
+
+**FOUR live-wrong holes, not one.** Also note Bethpage Green 18 carries **THREE** green polygons —
+the predicate must handle n>2, not just a two-way choice. The separation is stark and is what makes a
+distance threshold defensible: correctly-anchored greens sit **0.6-3.3y** from their centerline end;
+every mis-anchored one sits **84-133y** away. Nothing lands in between.
+Pattern: the affected holes are 9s and 18s (holes that finish beside the clubhouse, where greens of
+different courses crowd together) — consistent with the assembler's nearest-hole spatial join pulling
+in a neighbouring course's green.
+Probe is READ-ONLY, offline, no DB. The prod DB audit (all 12 mapped courses, via SSM) is still owed —
+these 5 courses are fixture-derived; whether Blue/Green/Yellow are among the 12 ingested is TBD.
+
+## AWAITING
+- **Plan (fable)** -> `specs/caddie-green-anchor-nearest-centerline-end-plan.md`. On return: hand to
+  `builder`. Predicate to mirror = `tests/eval/caddie_bench/geometry.py::_select_green_nearest_polyline_end`
+  (landed 59baa50, validated).
+- **Explore sweep** — does first-match-by-file-order repeat for other feature classes (fairway/bunker/
+  tee sets)? On return: fix only if trivially safe, else FILE a backlog item.
+Outcomes: builder lands on this worktree branch -> reviewer (fable, adversarial: predicate must not
+mis-select on long/dogleg holes; zero regression on single-green holes) + qa (full gates) -> PR #155
+checklist NOTICEABLE. Do NOT ship/ping this cycle (directive).
