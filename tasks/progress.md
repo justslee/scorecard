@@ -2426,3 +2426,28 @@ is a non-issue. Net: the "fail loudly, never mixed-basis" requirement is already
 design choice is abort-whole-run vs record-per-case-and-continue.
 `Hazard` lives only in `backend/app/caddie/types.py` (NOT in frontend types.ts or models.py), so a
 lateral-offset field on it is backend-internal — no shared-types sync, no frontend gate.
+
+## AWAITING — builder on specs/caddie-bench-cycle4-plan.md (landed @378bd54)
+The fable plan is written and pushed. It CORRECTED two of my working hypotheses with fresh
+measurement, which is exactly why it was worth running:
+ - Red 6's legit corner trees sit on the OUTSIDE of the bend (line_side right on a LEFT dogleg,
+   29y/35y lateral) — so an "inside-of-bend trees only" filter would have broken the pinned legit
+   cap on its merits. REJECTED. The honest signal is lateral proximity to the played line.
+ - Demoting the bend-cap to an E-model candidate is equivalent to DELETING it (E has no
+   through-the-corner cost model, and corridor is None at every real corner, so there is no honest
+   data to build one). REJECTED — the cap stays hard; the fix goes in the ARMING layer.
+ - New find: `bethpage_black_h18`'s "dogleg at 395" vertex is the green surround, 16y short of the
+   green -> `_BEND_NEAR_GREEN_EXCLUDE_YDS = 40.0`.
+ - New find: `tests/fixtures/bethpage_red_trees.json` already holds REAL OSM tree data for Red 1/5/6,
+   so the bench can be made to see the defect with real geometry — no synthetic holes in the judged
+   set (which also matters under the satellite directive: a fake hole has no real imagery).
+Chosen design: `CORNER_MIN_DEVIATION_FRACTION = 0.30` in the cap gate only (not `extract_hole_bend`,
+whose `straight` is consumed by tools.py:786 + aim_point.py:1524); `Hazard.lateral_yards` (additive,
+already computed-and-discarded) + `CORNER_TREE_MAX_LATERAL_YDS = 45.0`, unknown never disqualifies;
+`aggression_realism` as an 11th dim in the 2x class with a both-tails rubric + anti-hedging clause +
+`too_timid` failure class + a 5th timid canary; judge gets bag distances, handicap, hazard list and
+corridor width at the landing zone; mix 46% trouble -> 33%; dual-basis (11-dim / 10-dim legacy)
+reporting + render mode stamped in the report; satellite content-type guard + exit code 5.
+Five commits, sequenced in the plan's §G. On builder completion: FRESH adversarial reviewer (must
+falsify BOTH tails of the new dimension, prove no rubric gaming, prove the engine fix keeps the
+proven lay-up/dogleg/hcp-30 cases green ON THEIR MERITS), then qa (full gates).
