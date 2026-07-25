@@ -3264,12 +3264,31 @@ in a neighbouring course's green.
 Probe is READ-ONLY, offline, no DB. The prod DB audit (all 12 mapped courses, via SSM) is still owed —
 these 5 courses are fixture-derived; whether Blue/Green/Yellow are among the 12 ingested is TBD.
 
+### DONE so far this lane
+- Fable plan written + committed @00e74b4 -> `specs/caddie-green-anchor-nearest-centerline-end-plan.md`.
+  Key decisions: anchor = played line's LAST vertex (else valid `green=` arg as selector, else
+  first-stored); thread `path=` keyword-only into `_derive_tee_green`; green resolves BEFORE tee
+  selection (the no-arg back-tee branch reads green_pt); honest failure = always take the nearest
+  (ranking, not validation) + key-free WARNING past 30y, never raise, never go mute.
+- Adversarial file-order sweep DONE; 4 findings FILED in backlog.json @2e4b8c9. The pattern DOES
+  repeat — worst is `course_elevation._feature_center` (p1): first-by-file-order for BOTH green AND
+  tee, and it is the WRITER that persists elevation/green_slope, so bad values are baked into the DB
+  and consumers cannot detect them. Its tee half is the 2026-07-16 "Finding A" defect never applied
+  there. NOT fixed here (needs a re-sample/backfill = a prod DATA change, its own cycle).
+
+### BLOCKED (needs owner sanction, not a code problem)
+The 12-course PROD audit could not run: the permission classifier blocks unsanctioned prod-host
+shell/DB commands (SSM to i-0826ae70df62d9fe8 is Online and the runbook is written, plan §3.1).
+Mitigation: the audit script gets a `--fixture` offline mode reproducing the §0 table for 5 courses
+/ 90 holes with no DB, so the evidence is real and reproducible without prod. Ask the owner to
+authorize the prod run to complete the 12-course table.
+
 ## AWAITING
-- **Plan (fable)** -> `specs/caddie-green-anchor-nearest-centerline-end-plan.md`. On return: hand to
-  `builder`. Predicate to mirror = `tests/eval/caddie_bench/geometry.py::_select_green_nearest_polyline_end`
-  (landed 59baa50, validated).
-- **Explore sweep** — does first-match-by-file-order repeat for other feature classes (fairway/bunker/
-  tee sets)? On return: fix only if trivially safe, else FILE a backlog item.
-Outcomes: builder lands on this worktree branch -> reviewer (fable, adversarial: predicate must not
-mis-select on long/dogleg holes; zero regression on single-green holes) + qa (full gates) -> PR #155
-checklist NOTICEABLE. Do NOT ship/ping this cycle (directive).
+- **builder** on `specs/caddie-green-anchor-nearest-centerline-end-plan.md`, based @00e74b4,
+  landing on `integration/next`. Scope: hazards.py fix + `tests/test_green_anchor_selection.py` +
+  `scripts/audit_green_selector.py` (+ checked-in `specs/caddie-green-anchor-audit.md` from the
+  offline fixture mode). Gates: ruff clean + full offline pytest (baseline 3339/154/0).
+  Outcomes: DONE -> dispatch reviewer (fable, adversarial) + qa in parallel; BLOCKED/deviation ->
+  read its report, do NOT re-run it, re-dispatch with the correction.
+Then: PR #155 checklist entry NOTICEABLE ("caddie: correct green anchoring on multi-green holes —
+Bethpage Black 18 was ~102y wrong"), backlog flip, progress. Do NOT ship/ping this cycle (directive).
