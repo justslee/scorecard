@@ -3359,12 +3359,44 @@ Mitigation: the audit script gets a `--fixture` offline mode reproducing the §0
 / 90 holes with no DB, so the evidence is real and reproducible without prod. Ask the owner to
 authorize the prod run to complete the 12-course table.
 
+### builder DONE @910b790 — and its escalation is CONFIRMED CORRECT (eng-lead ruling)
+Builder landed the fix + 21 tests + the audit script, and correctly REFUSED to edit a test that
+went red, escalating instead. I verified its claim independently rather than taking it.
+
+**The red test:** `test_bend_cap_corner_sharpness.py::test_h18_near_green_vertex_excluded_demotes_
+to_the_real_minor_wobble`. It calls `extract_hole_bend(fc)` with NO green arg, so it resolved the
+green through `hazards._derive_tee_green` — the buggy first-by-file-order path. Its pinned numbers
+were therefore computed against a chord aimed at a NEIGHBOURING hole's green, 105y off the line end.
+
+**Measured post-fix (my own run, not the builder's):**
+  `extract_hole_bend` on bethpage_black_h18 -> `straight=True, deviation_yards=7`
+  spoken line: "Hole 18 shape: plays straight — no significant bend"
+The test previously asserted `straight is False` and "doglegs left at ~275y".
+
+**This is CONFIRMATION, not a regression.** That test's OWN docstring opens with
+"bethpage_black_h18 (par 4, 411y, **plays dead straight per the owner**)" — and then pinned a
+dogleg. The 24y "wobble" was an artifact of measuring vertex deviation against a chord pointed at
+the wrong green; with the correct chord the hole measures 7y, below the 15y straight threshold.
+The fix makes the caddie agree with the owner about his own home hole.
+
+**BUT there is a real cost I will not accept silently:** A4 (`_BEND_NEAR_GREEN_EXCLUDE_YDS`, the
+near-green vertex exclusion) had EXACTLY ONE test — this one. I measured it: with the corrected
+green, h18 is `straight=True, deviation 7` **whether A4 is enabled or disabled (exclude=40 vs 0)**.
+So h18 is no longer a vehicle for A4 at all; simply re-pinning it to "straight" would leave A4 with
+ZERO coverage. Confirmed by grep: `_BEND_NEAR_GREEN_EXCLUDE_YDS` appears only in hazards.py, an
+aim_point.py comment, and this one test.
+
+**RULING (re-dispatched to builder):** update the h18 pins to the corrected reality WITH the
+reason, and ADD synthetic coverage for A4 so the mechanism keeps a real pin independent of h18's
+data. This is not "editing a test to make it pass" — the test's premise was invalidated by a
+correctness fix, and the mechanism it covered gets stronger, not weaker, coverage.
+
+**Open question FILED, not resolved here:** A4 was built to exclude a "green-surround artifact" on
+h18 — an artifact that only existed because the green was mis-anchored. Whether A4 is still
+load-bearing on correctly-anchored data, or was a symptom-fix for this same root cause, is worth a
+look in its own cycle. Do NOT rip it out on this evidence; it remains a reasonable global guard.
+
 ## AWAITING
-- **builder** on `specs/caddie-green-anchor-nearest-centerline-end-plan.md`, based @00e74b4,
-  landing on `integration/next`. Scope: hazards.py fix + `tests/test_green_anchor_selection.py` +
-  `scripts/audit_green_selector.py` (+ checked-in `specs/caddie-green-anchor-audit.md` from the
-  offline fixture mode). Gates: ruff clean + full offline pytest (baseline 3339/154/0).
-  Outcomes: DONE -> dispatch reviewer (fable, adversarial) + qa in parallel; BLOCKED/deviation ->
-  read its report, do NOT re-run it, re-dispatch with the correction.
+- **builder (round 2)** on the A4/h18 test ruling above, based @910b790. Then reviewer + qa.
 Then: PR #155 checklist entry NOTICEABLE ("caddie: correct green anchoring on multi-green holes —
 Bethpage Black 18 was ~102y wrong"), backlog flip, progress. Do NOT ship/ping this cycle (directive).
