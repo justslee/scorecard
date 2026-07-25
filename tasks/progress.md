@@ -2488,3 +2488,39 @@ so the lateral gate is INERT there. The reported false positives (19% / 18% / 10
 **0.30 fraction gate ALONE**. The lateral bound is defense-in-depth for real mapped data only, and
 must get its own coverage (measured-lateral 44y-caps / 46y-doesn't / None-caps) or it ships
 unexercised. Do not credit it for closing the owner's incident.
+
+### CORRECTION — my earlier "baselines" were measured in the WRONG tree (my error, now fixed)
+The baselines I recorded above (3256 passed / 221 / 68) were run with an absolute path into the
+PRIMARY checkout `/Users/justinlee/projects/scorecard/backend`, which sits on a STALE
+`integration/next` (@0fd7c5b, pre-cycle-3), NOT in this lane's worktree. Same root cause as the
+stray-commit housekeeping note above: absolute paths pointing at the primary checkout instead of the
+worktree. **Do not trust the 3256 figure.**
+TRUE baseline, measured in a clean detached worktree at af468a0 (the real pre-fix base):
+  **3297 passed, 154 skipped, 0 failed.**  The builder's own reported baseline (3297) was CORRECT;
+mine was wrong, and I had passed the wrong number to the builder in its brief. No harm done — the
+builder measured its own.
+LESSON (worth carrying): in a worktree lane, never hardcode `/Users/justinlee/projects/scorecard/...`
+— always operate on the lane's own worktree path, or use relative paths from the tool's cwd.
+
+### Cycle-4 commit 1/5 VERIFIED INDEPENDENTLY (not merely reported) — `40d144f`
+Clean detached-worktree verification at 40d144f (the lane worktree itself was dirty with the
+builder's in-flight commit-2 edits, so a run there would have been meaningless — 4 transient WIP
+failures in `test_bench_offline.py` canary tests were exactly that, not regressions):
+  full offline suite  **3306 passed, 154 skipped, 0 failed** (= baseline 3297 +9 new tests, zero
+                      regressions — matches the builder's report exactly)
+  ruff check .        All checks passed
+  must-not-regress    **221 passed** (bend-cap, corner-tree-forward-bound, tee-club expected
+                      strokes, corridor width/profile, tree-severity calibration, tee-shot numbers)
+**The owner's incident is fixed — confirmed with MY OWN repro harness, not the builder's test:**
+  bethpage_black_h4  (dev/dist 0.19)  4iron -> **driver**
+  pebble_beach_h3    (dev/dist 0.18)  4iron -> **driver**
+  bethpage_black_h18 (now bend@275 dev24, frac 0.087)      driver
+**And the genuine corners still cap, on their merits:**
+  bethpage_black_h7  (0.52) -> 6iron (unchanged)
+  bethpage_red_h16   (0.45) -> 3wood (unchanged)
+  bethpage_red_h6    (0.43) -> driver via the reachable branch (unchanged)
+Builder honesty note worth recording: it reported that the PLAN's own prediction was WRONG — post-fix
+Black 18 does NOT become `straight`; the near-green exclusion promotes a different vertex (275y, frac
+0.087), so the spoken line improves from a phantom "~395" to "~275" rather than disappearing. It
+flagged this in the commit message and the test instead of forcing the plan's predicted assertion.
+That is the behavior we want.
