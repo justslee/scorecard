@@ -2586,3 +2586,31 @@ The plan's projected counts (174 advice / 189 total) were off; the real figures 
 FLAG FOR REVIEWER: cap-side bench coverage is one configuration. Consider whether that is sufficient
 or whether a second genuinely-tight hole should be ingested before the bench is trusted to detect a
 cap regression.
+
+### Cycle-4 commit 4/5 VERIFIED INDEPENDENTLY — `363708e` (satellite render hardening)
+Clean verify at 363708e: **3321 passed, 154 skipped, 0 failed**; ruff clean.
+ - Content-type guard added: a Static Maps **200 with a non-image body** (quota/billing HTML) now
+   raises instead of being cached as a "tile" — `raise_for_status()` only caught non-2xx, so this
+   was a genuine silent-corruption hole. Message is key-redacted.
+ - Per-case loud failure: `render_failures.jsonl` + new `_EXIT_RENDER_FAILURE = 5`, run aborts
+   (results.jsonl is append-resumable, so aborting is cheap and a mixed-basis run is impossible).
+ - `--render-only` fidelity mode added, not requiring an OpenAI key.
+ - **Key hygiene: PASS.** Swept the whole diff — no key material anywhere; README examples use `...`
+   placeholders. The builder added a NEGATIVE SECURITY TEST that plants a fake key
+   (`SECRET-KEY-MUST-NEVER-LEAK`) in the env and asserts it never appears in the raised exception.
+   That is the right instinct given this project's prior secret-echo incident.
+
+**DEFECT I FOUND (reported to builder for commit 5): `--render-only` is not actually maps-key-only.**
+It is documented and code-commented as "Gated ONLY on the maps key (never CADDIE_EVAL_LIVE/
+OPENAI_API_KEY)", but it dies BEFORE its key check with an unrelated import-time error:
+  `RuntimeError: DATABASE_URL is not set` (from `app/db/engine.py:15`, at import time)
+A **dummy** `DATABASE_URL` that is never connected to is sufficient to get past it — proven: with
+`DATABASE_URL='postgresql+asyncpg://u:p@localhost:5432/x'` the command reaches its correct
+"requires GOOGLE_MAPS_KEY" message. So it is a pure import-time side effect, not a real DB
+dependency. It matters because the fidelity check GATES the paid satellite run and is meant to be
+runnable anywhere with just the maps key; on a clean machine it emits a confusing Postgres error
+suggesting a database the user does not need. It stays hidden precisely because the prod box has
+DATABASE_URL set. Asked the builder to make the import lazy (preferred, makes the documented
+contract true) or else correct the docs and put a never-connected placeholder in the packaged
+command — plus a pinning test, and to check the FULL run command for the same undocumented
+requirement so the packaged commands are runnable exactly as written.
