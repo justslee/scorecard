@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import ClerkTokenBridge from "@/components/ClerkTokenBridge";
 import AuthGate from "@/components/AuthGate";
-import { setAuthDiag } from "@/lib/auth-diag";
+import { recordFapiResponse, setAuthDiag } from "@/lib/auth-diag";
 import { getNativeToken, setNativeToken } from "@/lib/native-token-store";
 import { IdentityBridge } from "@/lib/identity";
 
@@ -56,6 +56,7 @@ import { IdentityBridge } from "@/lib/identity";
 // requestInit.headers is a Headers instance and requestInit.url is the built URL.
 type FapiRequestInit = RequestInit & { url?: URL };
 type FapiResponse = {
+  status?: number;
   headers?: Headers;
   payload?: { errors?: Array<{ code?: string }> };
 };
@@ -69,9 +70,11 @@ async function nativeOnBeforeRequest(requestInit: FapiRequestInit): Promise<void
   //     (instead of a cookie). Requires Native API enabled in the Dashboard.
   requestInit.url?.searchParams.append("_is_native", "1");
 
-  // Track the intercepted path for the diagnostic overlay.
+  // Track the intercepted path for the diagnostic overlay. This is a
+  // REQUEST-time field — see auth-diag.ts for why it must never be paired
+  // with the after-hook's `lastResponse`, which can describe a different call.
   const path = requestInit.url?.pathname ?? null;
-  setAuthDiag({ isNativeSent: true, lastFapiPath: path });
+  setAuthDiag({ isNativeSent: true, lastRequestPath: path });
 
   // (c) Inject the persisted JWT from the native token store (empty string = first launch).
   let jwt = "";
@@ -95,7 +98,7 @@ async function nativeOnBeforeRequest(requestInit: FapiRequestInit): Promise<void
 
 // ── After-response: capture the echoed JWT ────────────────────────────────────
 async function nativeOnAfterResponse(
-  _requestInit: FapiRequestInit,
+  requestInit: FapiRequestInit,
   response: FapiResponse,
 ): Promise<void> {
   // Detect the "Native API not enabled" configuration error.
@@ -117,7 +120,13 @@ async function nativeOnAfterResponse(
   // CapacitorHttp enabled (capacitor.config.ts), fetch() routes through iOS
   // NSURLSession which bypasses CORS — all response headers are readable.
   const authHeader = response?.headers?.get("authorization");
-  setAuthDiag({ authHeaderReceived: Boolean(authHeader) });
+  // Atomic record: path/status/authHeaderPresent all describe THIS response
+  // only — never merge-writable fields from an unrelated call (see auth-diag.ts).
+  recordFapiResponse({
+    path: requestInit.url?.pathname ?? null,
+    status: typeof response?.status === "number" ? response.status : null,
+    authHeaderPresent: Boolean(authHeader),
+  });
 
   if (authHeader) {
     try {
@@ -148,7 +157,7 @@ function useNativeFapiHooks(enabled: boolean): void {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setAuthDiag({ lastError: `hook-register: ${msg}` });
-      console.error("[authdiag] native FAPI hook registration failed:", err);
+      console.error("[auth] native FAPI hook registration failed:", err);
     }
     return () => {
       try {

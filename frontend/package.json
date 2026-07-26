@@ -6,6 +6,7 @@
     "dev": "next dev",
     "prebuild": "node scripts/assert-no-auth-bypass.mjs",
     "build": "next build",
+    "postbuild": "node scripts/assert-no-auth-diag.mjs",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "patch-package",
