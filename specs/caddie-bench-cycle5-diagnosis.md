@@ -229,3 +229,65 @@ cycle.** Re-check it at the next full run before spending a change on it.
 All three are the same standing pattern: **the engine framed something badly and the model faithfully
 repeated it.** None of them is a judge change, a validator loosening, or persona padding. The judge,
 the det-checks, the canaries and the side-flip validator are all to be left exactly as they are.
+
+---
+
+## ADDENDUM — RC-3's threshold, MEASURED (eng-lead, before the plan landed)
+
+The plan must not let the builder guess this cut, so I measured it first. Source: every hazard
+extracted by the production path (`app.caddie.hazards.extract_hole_hazards` via the bench's
+`hole_intel_from_fixture`) over all 10 committed hole fixtures — **78 hazards total**.
+
+`distance_from_green` for everything inside 60y, with its lateral offset and side:
+
+| dist | lateral | side | type | hole |
+|---|---|---|---|---|
+| 20.0 | 2.8 | center | bunker | black_h5 |
+| 20.0 | 19.3 | left | bunker | red_h6 |
+| 21.0 | 17.4 | right | bunker | black_h5 |
+| 21.0 | 21.3 | left | bunker | black_h8 |
+| 21.0 | 17.5 | left | bunker | red_h6 |
+| 23.0 | 10.3 | left | bunker | black_h5 |
+| 24.0 | 7.4 | center | bunker | black_h4 |
+| 24.0 | 19.8 | left | bunker | black_h7 |
+| 25.0 | 18.8 | left | bunker | red_h5 |
+| 26.0 | 18.4 | right | bunker | black_h7 |
+| 26.0 | 22.5 | right | bunker | red_h5 |
+| 33.0 | 19.1 | right | bunker | red_h16 |
+| 34.0 | 33.8 | right | **trees** | pebble_h3 |
+| 35.0 | 8.8 | center | bunker | black_h8 |
+| 35.0 | 29.9 | right | **trees** | red_h1 |
+| 36.0 | 35.4 | right | **trees** | red_h1 |
+| 36.0 | 33.9 | right | **trees** | pebble_h3 |
+| 39.0 | 25.4 | right | **trees** | red_h6 |
+| 42.0 | 11.4 | left | bunker | red_h16 |
+| 46.0 | 10.0 | left | water | black_h8 |
+| 46.0 | 45.3 | left | **trees** | red_h1 |
+| 47.0 | 25.0 | left | **trees** | red_h1 |
+| 49.0 | 7.7 | center | bunker | black_h4 |
+| 51.0 | 18.3 | right | bunker | red_h16 |
+| 60.0 | 13.7 | left | bunker | red_h5 |
+
+**The finding: `distance_from_green <= 20` is a knife edge through the densest cluster in the
+whole distribution.** Eleven greenside bunkers sit between 20 and 26 yards; the current cut admits
+exactly **2** of them and excludes **9**. This is the `CORNER_MIN_DEVIATION_FRACTION`-at-0.30 scar
+repeating verbatim — a threshold placed inside a populated region rather than through a void. It is
+also exactly what the judge kept reporting unprompted ("bunkers 22-33 yards short of the green",
+"11-19 yards laterally").
+
+**Where the real voids are.** On distance, the only genuine gap in this region is **26 → 33**
+(7 yards empty); above that the distribution is continuous (33,34,35,35,36,36,39,42,46,46,47,49,51,60,
+63,65,67,72,...), so there is no clean distance-only cut above 26. On lateral offset, the tight
+greenside BUNKERS run 2.8–22.5y while the flanking TREE lines at 34–47y run 25.4–45.3y — a second,
+independent separation.
+
+**So the honest criterion is two-axis, not a widened single number:** greenside evidence =
+`distance_from_green` inside roughly the high-20s **AND** lateral offset inside roughly 25y. That
+cut sits in a real void on *both* axes and cleanly separates "sand guarding this green" from
+"tree line well off the line". A distance-only widening to ~35 would sweep in the pebble_h3 /
+red_h1 / red_h6 tree lines at 25–45y lateral, which are not greenside miss evidence and would
+trade one wrong claim for another.
+
+The builder must re-derive this table itself (the command above is reproducible in ~10s offline,
+zero DB) and justify the final constants against it — but the measurement is done and the answer is
+not "bump 20 to 25". Handing this to the plan/builder so no one picks a number by feel.
