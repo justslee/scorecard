@@ -3663,3 +3663,33 @@ empty-zone `preferred="short"` default (the 10 positioning-path side-flip degrad
 unfixed pending the post-cycle-5 measured run.
 
 Commits: `564ad54` (A), `d6d1c9d` (B), `9e0f477` (C). All on `origin/integration/next`.
+
+## AWAITING (2026-07-25) — cycle 5: reviewer(fable) + qa on @d27347c
+BUILDER DONE. Four commits landed + pushed to origin/integration/next:
+  564ad54  A/RC-1  remove leave_plays_like_yards end-to-end
+  d6d1c9d  B/RC-2  stop narrating absent data unprompted (3 prompt surfaces, verbatim)
+  9e0f477  C/RC-3  two-axis greenside evidence window
+  d27347c  records (progress + backlog item caddie-greenside-lateral-margin-remeasure)
+Builder gates: ruff clean; pytest 3378 passed / 154 skipped / 0 failed (baseline 3361/154/0 + 17 new
+tests, zero new skips, no deselects, zero pre-existing assertions edited); frontend lint + tsc clean;
+voice smoke 278/278.
+NOTABLE — the builder FALSIFIED part of the plan and was right to: my ADDENDUM's raw 78-hazard table
+was correct, but the PLAN's *derived* "restricted to lateral<=24" list dropped a real row
+(distance_from_green=35.0, lateral=8.8, bethpage_black_h8 bunker), so the true void is 35->42, not
+33->42. It therefore landed GREENSIDE_EVIDENCE_DISTANCE_YDS=38.5 (centered, margins 3.5/3.5) instead
+of the plan's 36.0, and kept MAX_LATERAL=24.0 (jointly-restricted void 22.5->29.9, margins 1.5/5.9).
+This deviation is pre-authorized by the plan's own §3.1 "constants follow the measurement" rule; the
+fable reviewer is tasked with independently re-deriving it and ruling on whether 38.5 is honest.
+C §3.4 audit = RIDE (not deferred): 174 advice cases, 50 with diffs, all confined to
+{miss_side, reasoning, aim_point}, on the 5 predicted holes + 7 reasoning-only additions on black_h4;
+zero diffs on black_h18, zero on tee-lie par-4/5 positioning, zero flips away from an evidence-backed
+side.
+PROCESS DEFECT TO REMEMBER: my progress-checkpoint commit b30240b accidentally swept ~14 lines of the
+builder's in-flight aim_point.py edits into it, because I ran `git add -A` while a builder was working
+in the SAME worktree. Nothing lost, but commit boundaries in this range are not reliable for
+attribution — reviewer was told to review the whole range e942a7c..d27347c. LESSON: an eng-lead must
+never `git add -A` in a lane a builder is live in; stage explicit paths.
+ON REVIEWER+QA RETURN: iterate on BLOCKING only -> update PR #155 checklist -> records.
+DO NOT ship, DO NOT ping the owner this cycle. Packaged box commands + the ADVANCE predictions table
+go in the final report.
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
