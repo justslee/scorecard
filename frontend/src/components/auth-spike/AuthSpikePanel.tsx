@@ -21,14 +21,28 @@
  * or rawNonce — enforced by scripts/assert-no-credential-log.mjs.
  */
 
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { useAuth, useClerk, useSignIn, useSignUp } from "@clerk/react";
 import { Capacitor } from "@capacitor/core";
-import NativeAuthDiag from "@/components/NativeAuthDiag";
+import dynamic from "next/dynamic";
 import { getGolferProfileAsync } from "@/lib/api";
 import { claimShape, decodeJwtPayload, assertJwtParity, type JwtClaimShape } from "@/lib/auth-spike/jwt-parity";
 import { generateNonce } from "@/lib/auth-spike/nonce";
 import { nativeAppleIdToken, nativeGoogleIdToken } from "@/lib/auth-spike/native-social";
+
+// This spike panel previously statically imported NativeAuthDiag, which
+// bundled it into every build regardless of NEXT_PUBLIC_AUTH_DIAG — the same
+// "always ships" defect the P0 login-blocked fix closes for the real sign-in
+// screen (specs/p0-login-blocked-plan.md §1). NativeAuthDiag is now dev/sim
+// -only; this spike page (itself dev-only, gated by NEXT_PUBLIC_AUTH_SPIKE)
+// must not be a second unconditional-import path that reintroduces it into
+// the shipped bundle. Same build-time-conditional pattern as SignInClient.tsx.
+let NativeAuthDiag: ComponentType | null = null;
+if (process.env.NEXT_PUBLIC_AUTH_DIAG === "1") {
+  NativeAuthDiag = dynamic(() => import("@/components/NativeAuthDiag"), {
+    ssr: false,
+  });
+}
 
 // ── Ugly, plain styles — deliberately not yardage-book (spike UI, never shipped) ──
 const box: React.CSSProperties = {
@@ -255,7 +269,7 @@ export default function AuthSpikePanel() {
         <pre style={pre}>{log.join("\n")}</pre>
       </div>
 
-      <NativeAuthDiag />
+      {NativeAuthDiag ? <NativeAuthDiag /> : null}
     </div>
   );
 }

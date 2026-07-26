@@ -130,7 +130,7 @@ Shared types: none touched.
 ## What the owner must do on his device
 1. **Nothing destructive — do NOT delete or reinstall the app.** No settings change, no Clerk Dashboard action.
 2. When the fixed build lands on TestFlight: update and open the app. The debug panel will be gone — that is the fix, not a missing feature.
-3. Tap **Continue with Google** and sign in normally. The auth path itself was verified healthy in the simulator (a stale or garbage stored token is overwritten by a fresh one on the first request of every launch), so once the panel stops covering the button, sign-in should just work.
+3. **CORRECTED during implementation (builder, 2026-07-26):** both OAuth buttons are hard-disabled in this build (`frontend/src/components/auth/OAuthButtons.tsx` has a local `const OAUTH_LIVE = false` — enabling SSO is blocked on credentials that don't exist in this repo, untouched by this P0). The owner's ONLY working path is tapping **"Continue with email"**, which currently sits underneath the diag panel. Use that button and sign in normally. The auth path itself was verified healthy in the simulator (a stale or garbage stored token is overwritten by a fresh one on the first request of every launch), so once the panel stops covering the button, sign-in should just work.
 4. If sign-in STILL fails with the panel gone, that is new signal — it would point at the one untested residual case (revoked-client rotating-token, section 5) and we run that experiment immediately.
 
 ## Northstar note
