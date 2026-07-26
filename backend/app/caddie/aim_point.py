@@ -776,11 +776,15 @@ def compute_tee_shot_numbers(
     could diverge). `leave_exact_yards` is the raw closing arithmetic
     (`to_green_yards - drive_total_yards`, SIGNED — may be <= 0 on a
     residual sub-boundary case); `leave_yards` is its round-to-5, floored-at-
-    0 spoken form. `leave_plays_like_yards` keeps today's plays-like-frame
-    number as a labeled extra, never the primary leave
-    (specs/caddie-numbers-coherence-plan.md §2.2's documented leave-frame
-    redefinition — the raw frame is what the golfer's own arithmetic checks,
-    so it's the frame the caddie now speaks).
+    0 spoken form — the ONLY spoken leave. The plays-like-frame "labeled
+    extra" from specs/caddie-numbers-coherence-plan.md §2.2 is GONE
+    (cycle-5, RC-1 — supersedes that section's labeled-extra decision):
+    `adjusted_yards - club_dist` mixed THIS shot's wind-adjusted distance
+    with a CALM stored yardage and re-attributed the whole wind adjustment
+    to a next shot with a different bearing, club, and lie — it was never a
+    solve of anything, and the bench proved the model spoke it verbatim as
+    a bad number. If a plays-like for the next shot is ever wanted, it must
+    come from an actual solve of that shot.
     """
     if drive_yards is not None:
         drive_carry_yards, drive_total_yards = drive_yards

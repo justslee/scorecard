@@ -3552,3 +3552,33 @@ coordinator to execute on the box; predictions are recorded IN ADVANCE in the fi
 If the plan file never lands (planner died): re-dispatch the Plan agent with the same brief; the
 diagnosis + both addenda are already committed, so nothing is lost.
 On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## AWAITING (2026-07-25) — cycle 5: BUILDER IN FLIGHT on the fable plan @e942a7c
+Fable plan LANDED: `specs/caddie-bench-cycle5-plan.md` (525 lines, commit `e942a7c`). It independently
+reproduced my 78-hazard table byte-for-byte and then REFINED the cut: within the lateral-qualified
+population (lateral <= 24y) the distance void is **33 -> 42**, not 26 -> 33 — so the constants are
+distance <= 36.0 / lateral <= 24.0, which correctly admits the judge-cited 33y/19.1-lateral red_h16
+bunker that my "high-20s" reading would have excluded. It also found the STRUCTURAL source of
+`preferred="short"` on 121/162 cases: `Hazard.side == line_side` on the whole OSM path, so
+compute_miss_side's front/back buckets are always empty and the l/r-vs-f/b tie-break lands on "short".
+Key plan decisions: (A) REMOVE `leave_plays_like_yards` entirely rather than keep-and-hide (consumer
+set is closed + grep-verified; pydantic extra-ignore makes deletion cache-safe); (B) verbatim
+replacement sentences on three prompt surfaces, with the strategy brain dropping absence-narration
+outright (it provably never sees the player's question) and the two conversational mouths merely
+RESCOPED to the asked case; (C) the widened greenside band is EARNED ONLY BY A MEASURED LATERAL —
+`lateral_yards=None` keeps today's <=20 window, which makes every hand-built fixture and legacy cache
+byte-identical by construction and carries the ~752 tee-parity pins with no approach_framed gate.
+Plan also corrected my Addendum 3: test_caddie_caching's guard interpolates the constants on BOTH
+sides, so B is expected to need ZERO test edits (the Addendum-3 discipline is retained as contingency).
+BUILDER dispatched on the plan; it commits + pushes per step. Ride/defer gate on commit 3 (§3.4
+offline whole-bench before/after audit) — any diff outside the criterion => it defers C, lands A+B,
+escalates.
+ON BUILDER RETURN: fresh adversarial `reviewer` on **fable** (must verify BY EXECUTION; must confirm
+no judge/det-check/canary/side-flip-validator weakening; must specifically audit B's prompt diff for
+survival of the never-invent contract and for absence of persona padding; must re-derive C's void
+margins) + `qa` (full gates) -> iterate on BLOCKING only -> ff onto integration/next -> PR #155
+checklist -> records.
+DO NOT ship, DO NOT ping the owner this cycle. Packaged box commands + ADVANCE predictions are in the
+final report (predictions: numbers_coherence 74.9->88-95, natural_speech 60.9->~70, miss_side
+63.7->70-75, hazard 65.4->72-78, degrade rate materially down).
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
