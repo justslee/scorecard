@@ -353,6 +353,55 @@ _SPOKEN_SIDE_WORD: dict[str, str] = {
 }
 
 
+# Greenside-evidence criterion (cycle-5 RC-3, specs/caddie-bench-cycle5-plan.md
+# §3). Measured over all 10 committed bench fixtures via the production
+# extraction path (78 hazards — table in the cycle-5 diagnosis ADDENDUM and
+# this commit's message). The old lateral-blind `distance_from_green <= 20`
+# cut was a knife edge through the densest cluster in the distribution
+# (eleven greenside bunkers at 20-26y: 2 admitted, 9 excluded) — the
+# CORNER_MIN_DEVIATION_FRACTION scar repeating. The widened band is EARNED
+# by a measured lateral: tight greenside bunkers measure 2.8-22.5y off the
+# played line while the flanking tree lines run 29.9-35.4y within the same
+# distance band — so GREENSIDE_EVIDENCE_MAX_LATERAL_YDS = 24.0 sits in that
+# (22.5 -> 29.9, margins 1.5/5.9) lateral void.
+#
+# Builder re-derivation note (this commit): the plan's own §0/§3.2 comment
+# stated the distance void restricted to lateral<=24y as "..., 26, 33 | void
+# | 42, ..." (i.e. 33->42) — but the re-derived table (byte-identical to the
+# diagnosis ADDENDUM's raw 78-hazard listing) shows a bunker at
+# distance_from_green=35.0, lateral=8.8 (bethpage_black_h8) that both the
+# diagnosis ADDENDUM's prose and the plan's derived comment omitted from
+# that filtered list. The TRUE void is 35 -> 42 (7y wide), not 33 -> 42.
+# Per the plan's own decision rule ("the constants follow the measurement if
+# the honest voids differ"), GREENSIDE_EVIDENCE_DISTANCE_YDS = 38.5 sits
+# centered in the CORRECTED void (margins 3.5/3.5) — still admits the
+# judge-cited 33y/19.1-lateral bunker (red_h16) a "high-20s" cut would
+# exclude, and additionally, correctly, admits the 35y/8.8-lateral bunker
+# that was missed. `lateral_yards is None` (legacy cached JSONB / hand-built
+# fixtures) NEVER earns the widened band and NEVER disqualifies the near
+# band — unknown is unknown, and every pre-cycle-4 course keeps today's
+# behavior byte-identical until re-ingest measures it.
+# Falsification watch (backlog: caddie-greenside-lateral-margin-remeasure):
+# the lateral void is 1.5y from its near edge (22.5) on current fixtures;
+# any new fixture landing a greenside bunker at 23-24.5y lateral re-opens
+# this cut, and the pre-named fallback is type-aware evidence qualification
+# (a discrete bunker/water feature vs one observation point of a tree
+# LINE), not another nudged number.
+GREENSIDE_EVIDENCE_NEAR_YDS: float = 20.0
+GREENSIDE_EVIDENCE_DISTANCE_YDS: float = 38.5
+GREENSIDE_EVIDENCE_MAX_LATERAL_YDS: float = 24.0
+
+
+def _greenside_evidence(h: Hazard) -> bool:
+    if h.distance_from_green <= GREENSIDE_EVIDENCE_NEAR_YDS:
+        return True  # today's window, lateral-blind — byte-compatible with all legacy data
+    return (
+        h.distance_from_green <= GREENSIDE_EVIDENCE_DISTANCE_YDS
+        and h.lateral_yards is not None
+        and h.lateral_yards <= GREENSIDE_EVIDENCE_MAX_LATERAL_YDS
+    )
+
+
 def compute_miss_side(
     hole: HoleIntelligence,
     player_stats: Optional[PlayerStatistics],
@@ -393,7 +442,7 @@ def compute_miss_side(
     }
 
     for h in hole.hazards:
-        if h.side in side_severity and h.distance_from_green <= 20:
+        if h.side in side_severity and _greenside_evidence(h):
             side_severity[h.side].append(h.penalty_severity)
 
     # Find worst and best sides
@@ -441,7 +490,7 @@ def compute_miss_side(
     def side_hazard_desc(side: str) -> str:
         hazards_on_side = [
             h for h in hole.hazards
-            if h.side == side and h.distance_from_green <= 20
+            if h.side == side and _greenside_evidence(h)
         ]
         if not hazards_on_side:
             return "open"
@@ -504,9 +553,11 @@ def compute_miss_side(
             # cycle-3 commit 4 (Target 2a): BOTH sides open on an
             # approach-framed turn — the "safe side, easy recovery" claim in
             # the `else` branch below is evidence-free (no side's own
-            # mapped hazard drove the pick), and on bethpage h18 the map
-            # shows short trouble just outside the `distance_from_green <=
-            # 20` evidence window, making the claim visibly wrong. Honest
+            # mapped hazard drove the pick). cycle-5 RC-3 widened the
+            # evidence window from the old lateral-blind `distance_from_green
+            # <= 20` cut to the two-axis `_greenside_evidence` criterion
+            # above — this branch is what's left for the truly-empty case:
+            # no hazard on either side clears that criterion. Honest
             # degrade (contract option 2): state there is no strong
             # miss-side mapping instead of an unsupported "safe" claim.
             # `preferred`/`avoid` SELECTION is untouched — only these two
@@ -544,9 +595,9 @@ def _greenside_hazards_line(hazards: list[Hazard]) -> Optional[str]:
     """P2 hazard-awareness seed (approach-solve plan §1.3), reachable branch
     only, gated on `approach_framed` by the caller: types+sides only, no
     numbers — reads the exact same greenside population `compute_miss_side`
-    does (`distance_from_green <= 20`). `None` when nothing is mapped near
-    the green (never a placeholder line)."""
-    near = [h for h in hazards if h.distance_from_green <= 20]
+    does (the two-axis `_greenside_evidence` criterion, cycle-5 RC-3). `None`
+    when nothing is mapped near the green (never a placeholder line)."""
+    near = [h for h in hazards if _greenside_evidence(h)]
     if not near:
         return None
     parts: list[str] = []
