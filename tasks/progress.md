@@ -3853,3 +3853,37 @@ DECISION: build Clerk-`/v1/environment`-driven enablement detection + wire the h
 each button enabled ONLY when (provider enabled in Clerk) AND (its native config is present), so we
 never ship a live-looking button that fails on tap (no-fake-data principle). Report the 3 blockers
 as owner/ops actions. P0 fixes A+B take priority and are built/reviewed FIRST.
+
+### FALSIFIED (2026-07-26, iOS-sim ground truth) — there is only ONE defect
+The sim reproduction (iPhone 17, build from current source, real pk_live) OVERTURNED the
+"Defect B = missing Authorization header" framing. Evidence:
+- `auth-hdr=false` is an ORDERING ARTIFACT, not a rejection signal. `authHeaderReceived` is one
+  module-global overwritten by EVERY FAPI response; `/v1/environment` responses carry no
+  `authorization` header (probe: header-count 0 for /v1/environment, 1 for /v1/client), so a
+  transient `false` shows up in every HEALTHY run. And `lastFapiPath` is written by the BEFORE
+  hook while `authHeaderReceived` is written by the AFTER hook — the two fields routinely
+  describe DIFFERENT requests. The owner's `auth-hdr=false … path=/v1/client` pairing is
+  meaningless as evidence.
+- The stale-token wedge DID NOT REPRODUCE. Keychain poisoned (via the migrateFromPreferences
+  legacy path) with both an `exp`-2023 well-formed JWT and literal garbage → healthy readout
+  `auth-hdr=true tok=true`. Direct FAPI probe: `GET /v1/client?_is_native=1` with empty /
+  stale / garbage authorization ALL return HTTP 200 + a fresh `authorization` header minting a
+  new client. Nothing clears the token on rejection, but `setNativeToken()` runs on every
+  /v1/client response so a bad value is OVERWRITTEN on the first request of each launch —
+  self-healing by overwrite, confirmed across relaunches.
+- **THE ACTUAL BLOCKER IS DEFECT A.** Sim screenshot (/tmp/looper-baseline5.png): the panel
+  (`position:fixed; bottom; left:8; right:8; zIndex:9999; pointerEvents:"auto"`) covers the
+  ENTIRE bottom third of the sign-in screen — only the Apple pill shows above it; the Google
+  button, the divider, and the email/password form are all underneath and untappable. The
+  owner's "This logging thing is blocking me from logging in" is LITERALLY true.
+- origin=capacitor://localhost confirmed and NOT causal: Capacitor READS `server.iosScheme` and
+  REJECTS `https` (WKWebView won't register a handler for reserved schemes), falling back to
+  `capacitor`. So `frontend/capacitor.config.ts:9-16` documents a state that never existed on iOS.
+  Config is correct and IS bundled — Capacitor ignores it. Do NOT change the scheme in a P0
+  (origin change repartitions WebView storage + Clerk origin allowlist).
+- SIMTEST.md step 2 is wrong: `CODE_SIGNING_ALLOWED=NO` cannot write the Keychain
+  (errSecMissingEntitlement -34018) so `tok` can never be true under it.
+SCOPE NOW: build-time exclusion of the panel from production + make the diagnostic honest
+(per-path auth-hdr, non-occluding in dev) + correct the two false docs. NO changes to
+token-injection/clearing internals. Residual untested case (a REAL revoked client JWT with
+rotating-token reuse detection) → filed as a follow-up, not built this cycle.
