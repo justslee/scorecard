@@ -17,6 +17,27 @@ set -euo pipefail
 REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 FRONTEND="$REPO/frontend"
 
+# ── Debug flags: HARD-PINNED OFF for every shipped build ─────────────────────
+# These are compile-time flags that must NEVER be baked into a TestFlight build.
+# We pin them explicitly (not conditionally) so a stray value already exported in
+# the shipping shell CANNOT leak into an upload.
+#
+# Why this exists (P0, 2026-07-26): the NativeAuthDiag panel shipped in every
+# TestFlight build for ~a month and rendered as a fixed, full-width,
+# pointerEvents:auto slab over the bottom third of the sign-in screen, covering
+# the "Continue with email" button — the owner's only working sign-in path. He
+# was locked out of the app. The panel is now excluded from production bundles at
+# BUILD TIME (frontend/next.config.ts + the conditional imports), and
+# frontend/scripts/assert-no-auth-diag.mjs scans the emitted out/ as `postbuild`.
+# BUT that scan only hard-fails when the panel appears with the flag UNSET; with
+# the flag SET it merely warns ("DIAG BUILD — NOT SHIPPABLE") and exits 0, so the
+# scan alone would not stop a panel-bearing upload. This pin is what closes that
+# gap. See specs/p0-login-blocked-plan.md.
+export NEXT_PUBLIC_AUTH_DIAG=""
+# Compile-time sign-in-gate bypass — assert-no-auth-bypass.mjs hard-fails the
+# build if this is "1" (wired as `prebuild`); pinned here as defence in depth.
+export NEXT_PUBLIC_AUTH_BYPASS=""
+
 # Public client config — baked into the bundle at build time (not secret).
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.looperapp.org}"
 # PRODUCTION Clerk instance (clerk.looperapp.org). Publishable keys are public.
