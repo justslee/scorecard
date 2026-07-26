@@ -3496,3 +3496,38 @@ last vertex — correct greens sit 0.6-3.3y off, mis-anchored ones 84-133y (no a
 FOLLOW-UPS (filed): `course_elevation._feature_center` has the same defect for BOTH tee and green
 and is the WRITER that persists elevation/green_slope to the DB (p1 — needs a re-sample/backfill,
 prod data change, its own cycle); the spatial join never asserts one-green-per-hole (root enabler).
+
+## AWAITING (2026-07-25) — caddie-bench CYCLE 5: diagnosis DONE, fable plan next
+Diagnosis measured from run `20260725-230324` (189 cases, satellite, 11-dim) results.jsonl on box
+i-0826ae70df62d9fe8 via read-only SSM. Written to `specs/caddie-bench-cycle5-diagnosis.md`.
+Bases: NEW 86.5% (11-dim) / legacy 85.2% (10-dim); trajectory 53.4 -> 77.0 -> 85.2 like-for-like.
+BRIEF'S LEAD HYPOTHESIS FALSIFIED: natural_speech is NOT dragged by degrades any more —
+DEGRADED 60.0% (n=25) vs CLEAN 61.3% (n=137). Cycle-4's degraded-line work closed that gap
+(cycle-3 was 32% vs 63.2%). So speech is a register problem, and the judge's own reasons name it.
+THREE ROOT CAUSES, all "engine framed it badly, model faithfully repeated it", all pinned to lines:
+- RC-1 numbers_coherence 74.9% (2x): `aim_point.py:794` leave_plays_like_yards = adjusted_yards -
+  club_dist — mixes THIS shot's wind-adjusted distance with a calm club number, so it is not a solve
+  of the next shot ("a 5-yard leave plays like 20"). 40/40 failing cases spoke the ENGINE's number
+  verbatim; 0 confabulated. 41/42 failures are positioning. numbers_coherence on the 76 positioning
+  cases = 46.1%. Fix = suppress the unsolved leave plays-like from the spoken payload.
+- RC-2 natural_speech 60.9%: the "No green slope is mapped" closer. negative-disclaimer answers
+  n=101 (62%) score 54.5% vs 69.4% for no-mention and 83.3% for a real read. Judge names it in 22
+  of 30 clean-failure speech critiques ("map metadata", "system readout", "robotic"). Source =
+  strategy.py _strategy_system() "say plainly what you don't know" + "one green note when the read
+  is available". Fix = keep never-invent, drop narrate-the-absence. ONE prompt-surface change,
+  needs explicit reviewer scrutiny that anti-confabulation survives.
+- RC-3 miss_side 63.7% + hazard 65.4% (both 2x): `aim_point.py:509-520` cycle-3 c4 branch fires on
+  68/162 cases (42%) scoring 52.9%/52.9% vs 74.5%/79.8% for named-side. Its own comment names the
+  cause: the `distance_from_green <= 20` evidence window; the judge keeps citing bunkers at 22-33y
+  short / 11-19y lateral. Hazards ARE in reasoning[] — payload-classification gap, not a mouth gap.
+  Also the degrade engine: 22 of 24 `validator:side-flip` degrades ride `preferred="short"`.
+  Fix = re-MEASURE the window off committed fixtures (never guess a threshold) + widen. HIGHEST risk
+  (live compute_miss_side), needs fable-grade review.
+DEGRADE TAXONOMY (first cycle with c2 data): 29/189 = 15.3% — validator:side-flip 24 (82.8%),
+validator:pin:favor-side 4, exception:ReadTimeout 1. Degrades now cost strategic_depth (28.0% vs
+87.6%), not speech. Do NOT touch the side-flip validator — fix RC-3 and they stop being generated.
+FACT routing 80%: both misroutes are the same phrasing `fact_distance_04` on 2 holes; n=10 too small
+— recorded, NOT fixed.
+NEXT: fable Plan -> builder (A,B,C) -> fresh adversarial reviewer (fable, by execution) -> qa full
+gates -> land on integration/next / PR #155. Do NOT ship, do NOT ping the owner this cycle.
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
