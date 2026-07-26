@@ -3898,3 +3898,59 @@ the bundle PR (NOTICEABLE: "fix: login blocked by diag overlay"). There is curre
 bundle PR (#155 merged) — a fresh one must be created.
 SSO scope-add: NOT built this cycle — blocked on 3 missing prerequisites (Google iOS + server
 client IDs, Apple entitlement/Services ID, Info.plist URL scheme); reported to owner as ops work.
+
+## DONE (2026-07-26) — p0-login-fix: build-time exclusion of NativeAuthDiag + doc truth (builder, @b59cb78)
+
+Implemented specs/p0-login-blocked-plan.md on branch `p0-login-fix` (base dd27869), pushed
+@b59cb78. Reviewer/qa not yet run — ready for the next stage of the pipeline.
+
+**Root-cause fix (§1):** SignInClient.tsx's dynamic import of NativeAuthDiag is now build-time
+conditional on `NEXT_PUBLIC_AUTH_DIAG` (statement-form `let`/`if`, matching the plan's documented
+fallback). NativeAuthDiag.tsx dropped the `isNative` runtime arm entirely — that WAS the bug — kept
+a flag-only `if (!authDiagEnabled) return null` as a second layer, and now defaults to a small
+collapsed chip (never a slab) that expands/collapses on tap.
+
+**Plan-contradicting findings, both fixed (noted per CLAUDE.md "minimal sound adjustment"):**
+1. The plan's inline-TERNARY mechanism did not survive Next 16/Turbopack — verified empirically,
+   the panel's compiled code kept appearing in `out/` regardless of ternary vs statement form.
+   Root cause (found by reading `next/dist/lib/static-env.js`): Next only inlines a `NEXT_PUBLIC_*`
+   var as a build-time literal (needed for real dead-code elimination) when the key is PRESENT in
+   `process.env` at build time — an unset var compiles to a genuine runtime lookup that no JS
+   restructuring can eliminate. Fixed by force-defining `NEXT_PUBLIC_AUTH_DIAG` via
+   `next.config.ts`'s `env` field (new file touch, not in the plan's table).
+2. A SECOND unconditional import site: `AuthSpikePanel.tsx` (pre-existing `/dev/auth-spike` spike
+   page) statically imported and unconditionally rendered `NativeAuthDiag`, independently defeating
+   the bundle-scan proof. Fixed with the same build-time-conditional pattern (new file touch).
+Both required to make the plan's own load-bearing deliverable — a scan-proven-clean `out/` — true.
+The postbuild scan (`scripts/assert-no-auth-diag.mjs`) was proven with teeth both directions:
+clean build (flag unset) → 0 markers, exit 0; deliberate `NEXT_PUBLIC_AUTH_DIAG=1` build → panel
+found, "DIAG BUILD — NOT SHIPPABLE" warning, exit 0 (build not blocked, by design).
+
+**auth-diag.ts (§2):** replaced the global `authHeaderReceived` + free-floating `lastFapiPath`
+(independently overwritten by different hooks — the exact artifact that manufactured the falsified
+"stale-token wedge") with an atomic `lastResponse` record + `responseByPath` map, written only by
+the after-response hook. Regression-tested: an `/v1/environment` response (no header) followed by
+`/v1/client` (header) now leaves `auth-hdr(/v1/client)=true` with `lastResponse.path` always
+matching what it actually describes.
+
+**Doc truth (§3, comment-only):** `capacitor.config.ts`'s iosScheme block corrected (WebView origin
+is `capacitor://localhost` on iOS, never `https://localhost`) + softened CapacitorHttp's CORS
+rationale (FAPI exposes the header via CORS already). `ios/SIMTEST.md` corrected to a
+Keychain-writing signing flag and documents the new `NEXT_PUBLIC_AUTH_DIAG=1` requirement for a
+diag build.
+
+**Plan text correction:** §"What the owner must do" step 3 was wrong — both OAuth buttons are
+hard-disabled (`OAuthButtons.tsx` `OAUTH_LIVE=false`); the owner's only working path is "Continue
+with email", not "Continue with Google". Fixed in the plan file for the record.
+
+**Backlog:** filed `clerk-native-revoked-client-token-probe` (LOW, targeted textual edit,
+diff-checked, JSON re-parsed clean — 92 items).
+
+**Gates (all green, evidence captured):** `npm run lint` 0 errors (1 pre-existing unrelated
+warning); `npx tsc --noEmit` clean; `npm run build` green incl. postbuild scan (both directions
+proven); `npx vitest run` 155 files / 2865 tests passing (baseline 153/2850 + 15 new tests across
+2 new files, zero regressions); `npx tsx voice-tests/runner.ts --smoke` 278/278; `cd backend &&
+ruff check .` clean. No local Postgres used.
+
+**Not yet run:** `/security-review` + `/code-review` (plan requires both before "done" — auth-
+surface adjacency). Next: reviewer + qa, then fast-forward `integration/next` + open the bundle PR.
