@@ -353,6 +353,25 @@ def test_strategy_system_states_the_output_contract():
     assert CADDIE_HOUSE_REGISTER in system
 
 
+def test_strategy_system_stops_narrating_absent_data():
+    """cycle-5 RC-2 (specs/caddie-bench-cycle5-plan.md §2.1(a)): the strategy
+    brain never sees the player's question, so for it any absence-narration
+    is always unprompted filler. The old clauses manufactured a "No green
+    slope is mapped" closer on 62% of turns (bench: natural_speech 54.5% on
+    those vs 69.4% no-mention baseline)."""
+    system = strategy_mod._strategy_system()
+    assert "say plainly what you don't know" not in system
+    assert "when the read is available" not in system
+    assert "never announce the gap" in system
+    assert "never guess or invent it" in system
+    # The never-invent core survives verbatim (reviewer's anti-confabulation check).
+    assert (
+        "Every yardage, carry, club number, and\nhazard you mention MUST appear verbatim "
+        "in it — never compute, adjust, or invent a number, and\nnever name a hazard, side, "
+        "or carry that is not listed."
+    ) in system
+
+
 # ── Routing-text pins ────────────────────────────────────────────────────
 
 

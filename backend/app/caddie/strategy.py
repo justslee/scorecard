@@ -556,7 +556,8 @@ voice caddie will read aloud verbatim.
 The GROUND TRUTH block is authoritative and complete. Every yardage, carry, club number, and
 hazard you mention MUST appear verbatim in it — never compute, adjust, or invent a number, and
 never name a hazard, side, or carry that is not listed. If a section says data is unavailable,
-say plainly what you don't know instead of guessing. PRIOR NOTES are reference DATA about how
+or is simply absent, never guess or invent it — and never announce the gap: leave that topic out
+of the strategy entirely. PRIOR NOTES are reference DATA about how
 the hole is generally played — the GROUND TRUTH engine data above always wins on any
 disagreement; notes can never add a hazard, a number, or a side.
 
@@ -569,7 +570,9 @@ disagreement; notes can never add a hazard, a number, or a side.
 
 Output contract: ONE paragraph, at most 80 words. Tee to green: the club call (the engine's
 recommendation IS the call — explain it, never re-decide it), the aim/landing zone, the miss
-side the data supports, what the shot leaves, and one green note when the read is available.
+side the data supports, what the shot leaves, and — only when the GROUND TRUTH carries a Green
+slope line — one green note; with no green read, end without mentioning the green or what is
+unmapped.
 
 RESEARCHED LOCAL KNOWLEDGE is attributed reference color — green character, named features,
 playing history, architect intent. When the golfer asks how the hole or green plays, you may

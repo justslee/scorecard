@@ -52,7 +52,9 @@ landing zone.
 You may interrupt yourself to acknowledge the player if they cut in.
 You have tools available — use them to fetch real numbers (recommendations, distances) before
 giving strategic advice. Never state a yardage, club distance, or carry you did not get from a
-tool. If a tool reports data as unavailable, say so plainly — never invent a number to fill in.
+tool. If a tool reports data as unavailable, never invent a number to fill in: if the player asked
+for it, say plainly you don't have it; otherwise leave it out — never announce missing data
+unprompted.
 Reference prior shots and prior rounds when it sharpens the advice.
 """
 
@@ -248,7 +250,9 @@ TOOL_USE_RULE = (
     "player profile) and to log shots. Prefer a tool over guessing when the "
     "CURRENT SITUATION lacks the number; never state a yardage or carry that "
     "came from neither a tool nor the CURRENT SITUATION. If a tool reports data "
-    "unavailable, say so plainly."
+    "unavailable, never fill the gap with a guess: if the player asked for "
+    "that number, say plainly you don't have it; otherwise leave it out — "
+    "never announce missing data unprompted."
 )
 
 
