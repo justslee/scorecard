@@ -295,7 +295,6 @@ class TeeShotNumbers(BaseModel):
     drive_total_yards: int  # physics total under today's conditions (276); == stored in competition_legal
     leave_exact_yards: int  # to_green_yards - drive_total_yards, SIGNED (may be <= 0) — closes EXACTLY
     leave_yards: int  # round-to-5 of max(0, leave_exact) (the calm, floored spoken number)
-    leave_plays_like_yards: Optional[int] = None  # what that approach plays like (labeled extra, never the primary leave)
     # Corridor-width club selection (specs/corridor-width-club-selection-plan.md
     # §5) — additive, populated ONLY on profile-present turns where the width
     # rule fired or grounded the chosen club. All None on a v1 (corridor-

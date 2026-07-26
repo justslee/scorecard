@@ -42,7 +42,7 @@ def _fixture_numbers(**overrides) -> TeeShotNumbers:
         hole_number=1, to_green_yards=466, yardage_basis="tee-card",
         plays_like_yards=466, club="driver", club_stored_yards=300,
         drive_carry_yards=266, drive_total_yards=276,
-        leave_exact_yards=190, leave_yards=190, leave_plays_like_yards=190,
+        leave_exact_yards=190, leave_yards=190,
     )
     base.update(overrides)
     return TeeShotNumbers(**base)

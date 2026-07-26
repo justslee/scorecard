@@ -110,6 +110,31 @@ def test_numbers_close_ignores_mph_wind_speed_never_false_reds_on_it():
     assert result.passed, f"a wind-mph clause must never false-RED numbers_close ({result.detail})"
 
 
+def test_numbers_close_goes_red_on_the_removed_leave_plays_like_arithmetic():
+    """cycle-5 RC-1 (specs/caddie-bench-cycle5-plan.md §1): the OLD
+    `leave_plays_like_yards = round(max(0, adjusted_yards - club_dist) / 5)
+    * 5` arithmetic is no longer a field on `TeeShotNumbers` AND is no
+    longer in `harness._known_numbers`'s whitelist. A synth that still
+    speaks that number must go RED instead of being whitelisted — pins the
+    tightening (diagnosis Addendum 2: the whitelist is why only 2/42 of the
+    real failures tripped this det-check) so a future re-whitelist can't
+    slip back silently."""
+    fx = _fixture("bethpage_black_h5.json")
+    resolved, engine_ref, hazards, clubs = _engine_and_hazards(fx, LieCategory.TEE, bag_id=BagId.SHORT_HITTER)
+    n = engine_ref.tee_shot_numbers
+    assert n is not None, "sanity: need a tee_shot_numbers block"
+    old_plays_like = round(max(0, n.plays_like_yards - n.club_stored_yards) / 5) * 5
+    known = harness._known_numbers(engine_ref)
+    assert old_plays_like not in known, (
+        "sanity: the old plays-like arithmetic must not coincide with a "
+        "still-known number, or this test proves nothing"
+    )
+
+    mutant_answer = f"{engine_ref.club} off the tee, that leaves about {old_plays_like} in."
+    result = harness.check_numbers_close(mutant_answer, hazards, engine_ref, clubs)
+    assert not result.passed, "the removed leave-plays-like arithmetic must no longer be whitelisted"
+
+
 # ── approach-solve plan §4.3 teeth ──────────────────────────────────────
 
 

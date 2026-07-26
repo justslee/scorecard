@@ -23,7 +23,7 @@ os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 
 import pytest  # noqa: E402
 
-from app.caddie.aim_point import generate_recommendation  # noqa: E402
+from app.caddie.aim_point import compute_tee_shot_numbers, generate_recommendation  # noqa: E402
 from app.caddie.club_selection import DEFAULT_CLUB_DISTANCES  # noqa: E402
 from app.caddie.session import RoundSession  # noqa: E402
 from app.caddie import tools as tools_mod  # noqa: E402
@@ -359,3 +359,36 @@ def test_corridor_fields_set_appends_exact_numbers():
         " Corridor: pinches to ~30 at 220; Driver's zone needs ~45, "
         "Hybrid's ~36 fits."
     ) in line
+
+
+# ── T-N8: RC-1 removal pin (specs/caddie-bench-cycle5-plan.md §1) ───────────
+#
+# `leave_plays_like_yards` was `round(max(0, adjusted_yards - club_dist) / 5)
+# * 5` — this shot's wind-adjusted distance minus the CALM stored club
+# distance, re-attributed to a next shot with a different bearing, club, and
+# lie. It is gone. This pin builds a shape where the old arithmetic would
+# have produced a wildly different number from the real leave (raw leave 5
+# vs. the old plays-like frame's 65) and proves neither the field nor the
+# spoken clause exists any more.
+
+
+def test_leave_plays_like_removed_end_to_end():
+    hole = _hole(yards=200)
+    n = compute_tee_shot_numbers(
+        hole=hole,
+        distance_yards=200,
+        adjusted_yards=230,  # this shot's wind-adjusted distance
+        club="7 iron",
+        club_dist=165,  # calm stored distance for the selected club
+        weather=None,
+        shot_bearing=0.0,
+        competition_legal=False,
+        drive_yards=(190, 195),  # explicit (carry, total) -> leave_exact = 200 - 195 = 5
+    )
+    assert n.leave_exact_yards == 5
+    assert n.leave_yards == 5
+    assert "leave_plays_like_yards" not in TeeShotNumbers.model_fields
+
+    line = format_tee_numbers_line(n)
+    assert "leaves about 5 in" in line
+    assert "(plays like" not in line

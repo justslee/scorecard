@@ -154,7 +154,7 @@ def _known_numbers(engine_ref: CaddieRecommendation) -> set[int]:
     if tsn is not None:
         for v in (
             tsn.to_green_yards, tsn.plays_like_yards, tsn.club_stored_yards, tsn.drive_carry_yards,
-            tsn.drive_total_yards, tsn.leave_exact_yards, tsn.leave_yards, tsn.leave_plays_like_yards,
+            tsn.drive_total_yards, tsn.leave_exact_yards, tsn.leave_yards,
             tsn.corridor_pinch_width_yards, tsn.corridor_pinch_distance_yards,
             tsn.corridor_club_window_yards, tsn.corridor_width_yards, tsn.corridor_alt_leave_yards,
             tsn.corridor_alt_total_yards,

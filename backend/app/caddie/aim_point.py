@@ -795,7 +795,6 @@ def compute_tee_shot_numbers(
 
     leave_exact_yards = distance_yards - drive_total_yards
     leave_yards = round(max(0, leave_exact_yards) / 5) * 5
-    leave_plays_like_yards = round(max(0, adjusted_yards - club_dist) / 5) * 5
 
     return TeeShotNumbers(
         hole_number=hole.hole_number,
@@ -808,7 +807,6 @@ def compute_tee_shot_numbers(
         drive_total_yards=drive_total_yards,
         leave_exact_yards=leave_exact_yards,
         leave_yards=leave_yards,
-        leave_plays_like_yards=leave_plays_like_yards,
     )
 
 

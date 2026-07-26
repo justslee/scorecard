@@ -348,8 +348,6 @@ def format_tee_numbers_line(n: TeeShotNumbers) -> str:
         leave_clause = "that reaches the green"
     else:
         leave_clause = f"leaves about {n.leave_yards} in"
-        if n.leave_plays_like_yards is not None and n.leave_plays_like_yards != n.leave_yards:
-            leave_clause += f" (plays like ~{n.leave_plays_like_yards})"
 
     line = (
         f"Tee-shot numbers for hole {n.hole_number} (AUTHORITATIVE — they close: "

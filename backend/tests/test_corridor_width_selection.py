@@ -340,7 +340,7 @@ def test_08_swap_note_numbers_are_payload_only():
         int(v) for v in (
             n.hole_number, n.to_green_yards, n.plays_like_yards, n.club_stored_yards,
             n.drive_carry_yards, n.drive_total_yards, n.leave_exact_yards, n.leave_yards,
-            n.leave_plays_like_yards, n.corridor_trouble_pct, n.corridor_alt_trouble_pct,
+            n.corridor_trouble_pct, n.corridor_alt_trouble_pct,
             n.corridor_alt_leave_yards, n.corridor_alt_total_yards,
         )
         if v is not None
