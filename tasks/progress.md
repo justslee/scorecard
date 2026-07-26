@@ -3887,3 +3887,14 @@ SCOPE NOW: build-time exclusion of the panel from production + make the diagnost
 (per-path auth-hdr, non-occluding in dev) + correct the two false docs. NO changes to
 token-injection/clearing internals. Residual untested case (a REAL revoked client JWT with
 rotating-token reuse detection) → filed as a follow-up, not built this cycle.
+
+## AWAITING (2) — builder on p0-login-fix @dd27869 implementing specs/p0-login-blocked-plan.md
+Scope: build-time exclusion of NativeAuthDiag from prod (postbuild bundle-scan proof), honest
+per-path diagnostic, doc truth fixes (capacitor.config.ts comments, SIMTEST.md signing flags),
+backlog follow-up `clerk-native-revoked-client-token-probe`. NO token-flow changes.
+On outcomes: builder green → reviewer(fable, /security-review + /code-review) + qa in parallel →
+BLOCKING findings back to builder → then fast-forward `integration/next` to this branch and open
+the bundle PR (NOTICEABLE: "fix: login blocked by diag overlay"). There is currently NO open
+bundle PR (#155 merged) — a fresh one must be created.
+SSO scope-add: NOT built this cycle — blocked on 3 missing prerequisites (Google iOS + server
+client IDs, Apple entitlement/Services ID, Info.plist URL scheme); reported to owner as ops work.
