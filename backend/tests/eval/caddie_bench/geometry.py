@@ -41,6 +41,17 @@ class GeometrySamplingError(RuntimeError):
     mislabel (§5c)."""
 
 
+class GeometryPreconditionError(RuntimeError):
+    """Raised when a fixture's OWN tee/green geometry contradicts itself
+    (a mis-anchored green) or its own card yardage (a geometrically
+    impossible tee->green distance) — a bench PRECONDITION, never a silent
+    skip, so a bad fixture can never reach a paid run. Motivating case:
+    `bethpage_black_h18` carries two `green` polygons (an OSM data quirk —
+    the fixture also includes a neighbouring hole's green); picking the
+    wrong one produced a "411y hole, 508y to green" composite banner that
+    would have poisoned every judged case on that hole."""
+
+
 # ── Fixture loading ──────────────────────────────────────────────────────────
 
 
@@ -60,7 +71,12 @@ _HOLE_NUM_RE = re.compile(r"_h(\d+)$")
 def load_hole_fixture(path: Path) -> HoleFixture:
     """Load one committed `{_provenance, par, yards, features}` fixture.
     Raises loudly (never silently drops a bad fixture) on a missing required
-    key or a filename that doesn't carry the `_h<N>` hole-number suffix."""
+    key or a filename that doesn't carry the `_h<N>` hole-number suffix.
+
+    Also runs `validate_tee_green_geometry` (bench precondition) before
+    returning — the earliest possible point a bad fixture could reach a
+    paid run, since every caller (`run_caddie_bench.py`, `judge_noise.py`,
+    the offline tests) loads fixtures through this one function."""
     blob = json.loads(path.read_text())
     for key in ("par", "features"):
         if key not in blob:
@@ -69,7 +85,7 @@ def load_hole_fixture(path: Path) -> HoleFixture:
     m = _HOLE_NUM_RE.search(stem)
     if not m:
         raise ValueError(f"{path}: filename must end in '_h<N>' (hole number) — got {stem!r}")
-    return HoleFixture(
+    fx = HoleFixture(
         fixture_id=stem,
         hole_number=int(m.group(1)),
         par=int(blob["par"]),
@@ -77,6 +93,8 @@ def load_hole_fixture(path: Path) -> HoleFixture:
         features=blob["features"],
         provenance=blob.get("_provenance", ""),
     )
+    validate_tee_green_geometry(fx)
+    return fx
 
 
 def hole_intel_from_fixture(fx: HoleFixture) -> HoleIntelligence:
@@ -107,14 +125,16 @@ def _features_of_type(fc: dict, feature_type: str) -> list[dict]:
 
 
 def _tee_green_lonlat(fc: dict) -> tuple[Optional[tuple[float, float]], Optional[tuple[float, float]]]:
-    """(tee, green) as (lon, lat) tuples. Green = first green polygon's
-    centroid, falling back to the hole polyline's last vertex. Tee = the
+    """(tee, green) as (lon, lat) tuples. Green = the `green` polygon whose
+    centroid is NEAREST the hole polyline's last vertex (see
+    `_select_green_nearest_polyline_end`), falling back to the hole
+    polyline's last vertex when there's no green feature at all. Tee = the
     hole polyline's first vertex (OSM `golf=hole` is digitized tee->green —
     same convention `hazards._derive_tee_green` relies on), falling back to
     the nearest tee-polygon centroid."""
     polyline = _hole_polyline(fc.get("features", []))
     green_feats = _features_of_type(fc, "green")
-    green = _feature_point(green_feats[0]) if green_feats else None
+    green = _select_green_nearest_polyline_end(green_feats, polyline)
     if green is None and polyline:
         green = polyline[-1]
     tee = polyline[0] if polyline else None
@@ -122,6 +142,99 @@ def _tee_green_lonlat(fc: dict) -> tuple[Optional[tuple[float, float]], Optional
         tee_feats = _features_of_type(fc, "tee")
         tee = _feature_point(tee_feats[0]) if tee_feats else None
     return tee, green
+
+
+def _select_green_nearest_polyline_end(
+    green_feats: list[dict], polyline: Optional[list[tuple[float, float]]],
+) -> Optional[tuple[float, float]]:
+    """Pick the `green` feature whose `_feature_point` is nearest the hole
+    polyline's own last vertex — never the first one found by file order.
+
+    Same bug class as `app.caddie.hazards._derive_tee_green`'s tee-side fix
+    ("Finding A fix, 2026-07-16" — a multi-tee hole was silently picking the
+    FIRST stored tee feature by file order, anchoring every carry/bend/
+    corridor number to the wrong box). Here it's a multi-GREEN fixture:
+    `bethpage_black_h18`'s FeatureCollection carries two `green` polygons —
+    its own (3.3y from the polyline's last vertex) and a neighbouring
+    hole's (105.4y away, first by file order) — and "first found" silently
+    picked the wrong one, producing a "411y hole, 508y to green" reading.
+
+    With a single green (all 9 other committed fixtures) or no polyline to
+    measure against, this is BYTE-IDENTICAL to the old "first found"
+    behavior — there's nothing to choose between."""
+    if not green_feats:
+        return None
+    if len(green_feats) == 1 or not polyline:
+        return _feature_point(green_feats[0])
+    anchor = polyline[-1]
+    candidates = [pt for f in green_feats if (pt := _feature_point(f)) is not None]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda pt: haversine_yards(anchor, pt))
+
+
+# ── Bench precondition: fixture geometry must be internally consistent ─────
+#
+# Real committed greens (measured across all 10 fixtures, see the extraction
+# script output in the commit message) sit 0.2-5.1y from the hole
+# polyline's own last vertex; the mis-anchor this precondition guards
+# against (h18's wrong green, before the fix above) sits 105.4y away — over
+# 20x the worst real case. 15y is comfortably inside that gap: 3x the
+# largest real green's offset, well under 1/7 of the bug's magnitude.
+_GREEN_ANCHOR_TOLERANCE_YARDS = 15.0
+
+# A straight tee->green line can never be LONGER than the played path along
+# it, so `geodesic > card_yards + tolerance` is geometrically impossible —
+# this is the only safe direction to assert. The opposite direction
+# (geodesic < card) is NORMAL and expected on a real dogleg: measured,
+# `bethpage_black_h7` is a legitimate card=553 / geodesic=478.6 (-74.4y) —
+# the played line bends around a corner the straight tee->green chord cuts
+# across. A symmetric `abs(geodesic - card) < N` band would FALSE-FAIL
+# every real dogleg like h7 outright (the exact trap this precondition must
+# NOT fall into) — there is deliberately NO lower-bound check here. Real
+# fixtures' positive overages (measurement noise) are all <= 1.7y; the bug
+# was +97.5y. 10y sits well above the former and well below the latter.
+_CARD_YARDAGE_OVERAGE_TOLERANCE_YARDS = 10.0
+
+
+def validate_tee_green_geometry(fx: HoleFixture) -> None:
+    """Bench precondition (fails LOUDLY at fixture load, never a silent
+    skip): the fixture's own tee/green geometry must be internally
+    consistent before any case can ever be built against it.
+
+    1. The selected green must sit within `_GREEN_ANCHOR_TOLERANCE_YARDS`
+       of the hole polyline's own last vertex — catches a mis-anchored
+       green (the actual `bethpage_black_h18` defect) directly.
+    2. `tee->green geodesic <= card_yards + _CARD_YARDAGE_OVERAGE_
+       TOLERANCE_YARDS` — the only geometrically-impossible direction (see
+       the tolerance constants above for why there is no lower bound).
+
+    Raises `GeometryPreconditionError` naming the fixture and both numbers
+    on either failure."""
+    polyline = _hole_polyline(fx.features.get("features", []))
+    tee, green = _tee_green_lonlat(fx.features)
+
+    if polyline and green is not None:
+        anchor = polyline[-1]
+        offset = haversine_yards(green, anchor)
+        if offset > _GREEN_ANCHOR_TOLERANCE_YARDS:
+            n_greens = len(_features_of_type(fx.features, "green"))
+            raise GeometryPreconditionError(
+                f"{fx.fixture_id}: selected green sits {offset:.1f}y from the hole polyline's own "
+                f"last vertex (tolerance {_GREEN_ANCHOR_TOLERANCE_YARDS}y) out of {n_greens} candidate "
+                "green feature(s) — looks like a mis-anchored/wrong green was selected"
+            )
+
+    if tee is not None and green is not None and fx.yards is not None:
+        geodesic = haversine_yards(tee, green)
+        limit = fx.yards + _CARD_YARDAGE_OVERAGE_TOLERANCE_YARDS
+        if geodesic > limit:
+            raise GeometryPreconditionError(
+                f"{fx.fixture_id}: tee->green geodesic {geodesic:.1f}y exceeds card yardage "
+                f"{fx.yards}y (+ {_CARD_YARDAGE_OVERAGE_TOLERANCE_YARDS}y tolerance = {limit:.1f}y) — "
+                "a straight line can never be longer than the played path along it, so this is "
+                "geometrically impossible and points at a mis-anchored tee or green"
+            )
 
 
 def _green_depth_width_yards(fc: dict, bearing: Optional[float]) -> tuple[Optional[float], Optional[float]]:

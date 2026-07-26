@@ -22,7 +22,7 @@ os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 import pytest  # noqa: E402
 
 from tests.eval.caddie_bench import extract_fixtures, geometry as geo, harness  # noqa: E402
-from tests.eval.caddie_bench import questions as q  # noqa: E402
+from tests.eval.caddie_bench import judge_noise, questions as q  # noqa: E402
 from tests.eval.caddie_bench import render, report, run_caddie_bench  # noqa: E402
 from tests.eval.caddie_bench.geometry import GeometrySamplingError, _in_any, _point_in_polygon_feature  # noqa: E402
 from tests.eval.caddie_bench.schema import (  # noqa: E402
@@ -77,6 +77,46 @@ def test_bags_load_all_three():
     assert "driver" in bags[BagId.OWNER].clubs
 
 
+# ── cycle-3 commit 2: CaseResult schema round-trip (additive fields) ───────
+
+
+def test_case_result_old_format_line_loads_with_degrade_fields_defaulted_none(tmp_path):
+    """An old (pre-instrumentation) results.jsonl line — written before
+    `degrade_reason`/`raw_synth_text` existed — must still round-trip: the
+    two new fields default to None, `extra='forbid'` notwithstanding."""
+    old_line = json.dumps({
+        "case_id": "holeA__slot0__owner__x",
+        "resolved": {"lat": 1.0, "lng": 2.0, "lie": "tee", "distance_to_green_yards": 400.0, "shot_bearing_deg": 0.0},
+        "intent": "advice", "answer": "old-format answer", "degraded": True,
+        "engine_ref": {"club": "driver"}, "det_checks": [], "cost_usd": 0.0, "latency_ms": 100.0,
+    })
+    path = tmp_path / "old_run.jsonl"
+    path.write_text(old_line + "\n")
+
+    results = report.load_results(path)
+    assert len(results) == 1
+    assert results[0].degrade_reason is None
+    assert results[0].raw_synth_text is None
+
+
+def test_case_result_new_format_line_round_trips_degrade_fields(tmp_path):
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    result = CaseResult(
+        case_id="holeA__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1.0, lng=2.0, lie=LieCategory.TEE, distance_to_green_yards=400.0, shot_bearing_deg=0.0),
+        intent="advice", answer="new-format answer", degraded=True, engine_ref={"club": "driver"},
+        degrade_reason="validator:side-flip", raw_synth_text="the raw pre-validation text",
+    )
+    path = tmp_path / "new_run.jsonl"
+    path.write_text(result.model_dump_json() + "\n")
+
+    loaded = report.load_results(path)
+    assert len(loaded) == 1
+    assert loaded[0].degrade_reason == "validator:side-flip"
+    assert loaded[0].raw_synth_text == "the raw pre-validation text"
+
+
 # ── 2. Fixture load for all pilot holes ──────────────────────────────────
 
 
@@ -98,6 +138,193 @@ def test_extract_fixtures_filename_matches_pattern_for_extracted_holes():
     naming convention `geometry.load_hole_fixture` depends on."""
     for fx in _all_hole_fixtures():
         assert fx.fixture_id.split("_h")[-1].isdigit()
+
+
+# ── 2c. cycle-4 commit 7 — tee/green geometry PRECONDITION. h18's fixture   ──
+#       carries two `green` polygons (its own + a neighbour's); picking the ──
+#       first by file order produced "411y hole, 508y to green". Fixed in   ──
+#       `_tee_green_lonlat` (nearest-the-polyline-end selection, mirroring  ──
+#       `hazards._derive_tee_green`'s tee-side "Finding A" fix) and guarded ──
+#       going forward by `validate_tee_green_geometry`, which now runs on   ──
+#       EVERY `load_hole_fixture` call -- a bad fixture fails at load,      ──
+#       never reaches a paid run.                                          ──
+
+
+def test_all_committed_fixtures_pass_the_tee_green_geometry_precondition():
+    """Every committed fixture (10, incl. the h18 fix) must pass
+    `validate_tee_green_geometry` cleanly. `_all_hole_fixtures()` already
+    proves this implicitly -- `load_hole_fixture` runs the precondition on
+    every load and would raise -- but this test makes the guarantee
+    explicit and pins the fixture count so coverage can't silently shrink."""
+    fixtures = _all_hole_fixtures()
+    assert len(fixtures) == 10, f"expected exactly the 10 committed pilot fixtures, found {len(fixtures)}"
+    for fx in fixtures:
+        geo.validate_tee_green_geometry(fx)  # must not raise -- already ran once at load time, run again explicitly
+
+
+def test_bethpage_black_h18_green_selects_the_holes_own_green_not_the_neighbours():
+    """Direct repro/pin of the actual defect: h18's FeatureCollection
+    carries 2 `green` polygons -- its own (3.3y from the hole polyline's
+    last vertex) and a neighbouring hole's (105.4y away, first by file
+    order). The selected green must be near the hole's OWN polyline end,
+    and the resulting tee->green distance must land close to the 411y card
+    yardage -- not the ~508y the file-order bug produced."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_black_h18.json")
+    tee, green = geo._tee_green_lonlat(fx.features)
+    assert tee is not None and green is not None
+    to_green_yards = geo.haversine_yards(tee, green)
+    assert 400 <= to_green_yards <= 420, (
+        f"expected ~412y (near the 411y card), got {to_green_yards:.1f}y -- the pre-fix bug produced ~508y"
+    )
+
+
+def _square_ring(center_lon: float, center_lat: float, half_size_m: float = 5.0) -> list[list[float]]:
+    """A tiny closed-ring square (GeoJSON Polygon outer ring) centered on
+    (center_lon, center_lat) -- enough for `_feature_point`'s centroid to
+    land exactly on the center, for synthetic precondition fixtures below."""
+    offsets = [(-half_size_m, -half_size_m), (half_size_m, -half_size_m), (half_size_m, half_size_m), (-half_size_m, half_size_m)]
+    ring = [list(geo._from_xy(center_lat, center_lon, dx, dy)) for dx, dy in offsets]
+    ring.append(ring[0])
+    return ring
+
+
+def test_validate_tee_green_geometry_rejects_a_mis_anchored_green():
+    """Synthetic negative: a `green` feature far from the hole polyline's
+    own last vertex must be REJECTED -- this is the actual defect class
+    `bethpage_black_h18` hit (a neighbouring hole's green, 105.4y off,
+    picked as THE green)."""
+    base_lat, base_lon = 40.700000, -73.500000
+    tee_lonlat = (base_lon, base_lat)
+    green_end_lonlat = geo._from_xy(base_lat, base_lon, 0.0, 400 * geo._M_PER_YARD)
+    # The mis-anchored green sits 200y east of the polyline's own end --
+    # comfortably outside the 15y anchor tolerance.
+    bad_green_lonlat = geo._from_xy(green_end_lonlat[1], green_end_lonlat[0], 200 * geo._M_PER_YARD, 0.0)
+    fc = {
+        "features": [
+            {
+                "properties": {"featureType": "hole"},
+                "geometry": {"type": "LineString", "coordinates": [list(tee_lonlat), list(green_end_lonlat)]},
+            },
+            {
+                "properties": {"featureType": "green"},
+                "geometry": {"type": "Polygon", "coordinates": [_square_ring(*bad_green_lonlat)]},
+            },
+        ]
+    }
+    fx = geo.HoleFixture(fixture_id="synthetic_bad_green_h1", hole_number=1, par=4, yards=400, features=fc, provenance="synthetic")
+    with pytest.raises(geo.GeometryPreconditionError, match="synthetic_bad_green_h1"):
+        geo.validate_tee_green_geometry(fx)
+
+
+def test_validate_tee_green_geometry_accepts_a_legitimate_dogleg():
+    """Synthetic dogleg: a straight tee->green chord meaningfully SHORTER
+    than the card yardage (the played line bends around a corner) must be
+    ACCEPTED -- mirrors the real `bethpage_black_h7` case (card 553,
+    geodesic 478.6, a legitimate -74.4y). There is deliberately NO lower
+    bound in `validate_tee_green_geometry` -- this proves it: a naive
+    symmetric `abs(geodesic - card) < N` band would reject this fixture
+    outright, which is exactly the trap the precondition must not fall
+    into."""
+    base_lat, base_lon = 40.700000, -73.500000
+    tee_lonlat = (base_lon, base_lat)
+    # L-shaped bend: tee -> 300y north -> 300y east. Arc length 600y (~ the
+    # 600y card yardage below); the straight tee->green CHORD is only
+    # ~424y -- meaningfully shorter than the card.
+    corner_lonlat = geo._from_xy(base_lat, base_lon, 0.0, 300 * geo._M_PER_YARD)
+    green_end_lonlat = geo._from_xy(corner_lonlat[1], corner_lonlat[0], 300 * geo._M_PER_YARD, 0.0)
+    fc = {
+        "features": [
+            {
+                "properties": {"featureType": "hole"},
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [list(tee_lonlat), list(corner_lonlat), list(green_end_lonlat)],
+                },
+            },
+            {
+                "properties": {"featureType": "green"},
+                "geometry": {"type": "Polygon", "coordinates": [_square_ring(*green_end_lonlat)]},
+            },
+        ]
+    }
+    fx = geo.HoleFixture(fixture_id="synthetic_dogleg_h1", hole_number=1, par=5, yards=600, features=fc, provenance="synthetic")
+    chord_yards = geo.haversine_yards(tee_lonlat, green_end_lonlat)
+    assert chord_yards < 600 - 100, "sanity: this test means nothing unless the chord is meaningfully shorter than the card yardage"
+    geo.validate_tee_green_geometry(fx)  # must NOT raise
+
+
+# ── 2b. cycle-4 §C(i) — the merged-tree Red fixtures make the tee-club     ──
+#       machinery LIVE. Extraction invariants, zero network (committed).   ──
+
+
+_OWNER_BAG_CLUBS: dict[str, int] = {
+    "driver": 300, "3wood": 270, "4iron": 230, "5iron": 215, "6iron": 195,
+    "7iron": 180, "8iron": 170, "9iron": 155, "pw": 140, "gw": 127, "sw": 115, "lw": 90,
+}
+
+
+def test_red_h1_has_a_live_corridor_profile():
+    """Red 1 (real tree lines merged onto the Overpass geometry) finally
+    gives the corridor-width E-model machinery a real profile to run
+    against -- `extract_corridor_profile` is `None` on every OTHER real
+    bend-capping fixture in the bench (the plan's own §0 finding)."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_red_h1.json")
+    intel = geo.hole_intel_from_fixture(fx)
+    assert intel.corridor is not None
+    assert len(intel.corridor) >= 20, "expected a real multi-sample profile, not a token one"
+
+
+def test_red_h5_stays_driver_for_the_owner_bag():
+    """Red 5: a genuinely clear hole with right-side tree color (105-170y)
+    but a bend well below the 0.30 arming fraction (measured 64/295 =
+    0.217, matching the plan's §0 diagnosis table) -- the owner's exact
+    scenario: trees present, bend below threshold -> DRIVER, never capped."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_red_h5.json")
+    intel = geo.hole_intel_from_fixture(fx)
+    assert intel.bend is not None and not intel.bend.straight
+    assert intel.bend.deviation_yards < 0.30 * intel.bend.distance_yards
+    from app.caddie.aim_point import generate_recommendation
+    rec = generate_recommendation(intel, fx.yards, _OWNER_BAG_CLUBS, handicap=3.0)
+    assert rec.club == "driver"
+
+
+def test_red_h6_bend_cap_arms_end_to_end_with_real_evidence():
+    """Red 6: the genuinely-tight case -- real 0.43 corner (measured
+    83/195) with real guarding trees at a measured lateral offset within
+    CORNER_TREE_MAX_LATERAL_YDS. Proves the FULL cap mechanism (fraction
+    gate + real Hazard.lateral_yards from real extraction, not a hand-built
+    None) fires end to end on committed geometry.
+
+    DIVERGENCE FROM THE PLAN'S OWN WORDING, verified rather than assumed:
+    the plan's §C(i) text says "cap arms for the owner bag" -- on this
+    fixture's actual assembled yardage (292y) the OWNER bag's driver (300y)
+    reaches the green outright (shot_kind=approach, "go for it" is the
+    correct call for a legitimately drivable short par 4), so the bend-cap
+    machinery -- which only lives in the non-reachable/positioning branch
+    -- never runs for that bag on THIS hole. The mechanism is proven here
+    against the SHORT_HITTER bag (driver 210, definitely not reachable)
+    instead, which is exactly what the bench's own bag rotation (owner/
+    short_hitter/bomber x every TEE slot) already exercises end to end.
+    This is a real fact about the real geometry, not a fixture bug -- see
+    the cycle-4 commit-3 message for the full accounting."""
+    fx = geo.load_hole_fixture(HOLES_DIR / "bethpage_red_h6.json")
+    intel = geo.hole_intel_from_fixture(fx)
+    assert intel.bend is not None and not intel.bend.straight
+    assert intel.bend.deviation_yards >= 0.30 * intel.bend.distance_yards, "sanity: this must be a genuinely sharp corner"
+    corner_trees = [h for h in intel.hazards if h.type == "trees" and h.lateral_yards is not None]
+    assert corner_trees, "sanity: real tree hazards must carry a real measured lateral_yards"
+
+    from app.caddie.aim_point import generate_recommendation
+    from tests.eval.caddie_bench.schema import BagId, load_bags
+
+    bags = load_bags(BAGS_PATH)
+    short_hitter = bags[BagId.SHORT_HITTER]
+    rec = generate_recommendation(intel, fx.yards, short_hitter.clubs, handicap=short_hitter.handicap)
+    assert rec.shot_kind == "positioning"
+    assert rec.club != "driver"
+    assert any("runs through the corner" in line for line in rec.reasoning), (
+        f"the corner note must be nameable in the reasoning -- got {rec.reasoning}"
+    )
 
 
 # ── 3. Position containment for EVERY pilot case (re-verified here) ────────
@@ -235,9 +462,11 @@ async def test_harness_end_to_end_offline_produces_a_sample_report(tmp_path):
     meta = report.RunMeta(run_id="offline-smoke", synth_model="canned", judge_model="canned", case_count=len(results), total_cost_usd=0.0, wall_time_s=0.1)
     md = report.write_report(results, meta, tmp_path / "report.md")
     text = md.read_text()
-    assert "Weighted correctness score" in text
+    # cycle-4 (§D): headline wording changed to name the dual basis explicitly.
+    assert "Weighted correctness (11-dim, NEW basis" in text
+    assert "Old-basis weighted correctness (10-dim" in text
     assert "Canary outcome" in text
-    # All 4 canaries scored all_fail here (2 sampled) -> canary gate PASS.
+    # All 5 canaries scored all_fail here (2 sampled) -> canary gate PASS.
     headline = report.compute_headline(results)
     assert headline.canary_all_pass is False
 
@@ -355,6 +584,165 @@ def test_pricing_table_refuses_unknown_model():
         run_caddie_bench._cost_usd("not-a-real-model", 100, 10)
 
 
+# ── cycle-3 commit 3: judge_noise.py gate-refusal + filename-glob pin ──────
+
+
+def test_judge_noise_filename_does_not_match_pytest_test_glob():
+    filename = pathlib.Path(judge_noise.__file__).name
+    assert not filename.startswith("test_"), "judge_noise.py must never match pytest's test_*.py collection glob"
+
+
+def test_judge_noise_refuses_without_env(monkeypatch):
+    monkeypatch.delenv("CADDIE_EVAL_LIVE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert judge_noise.main(["--run-id", "whatever"]) == judge_noise._EXIT_GATE_REFUSAL
+
+
+def test_judge_noise_refuses_with_only_one_of_two_gates(monkeypatch):
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert judge_noise.main(["--run-id", "whatever"]) == judge_noise._EXIT_GATE_REFUSAL
+
+
+def test_judge_noise_requires_run_id_argument():
+    with pytest.raises(SystemExit):
+        judge_noise.main([])
+
+
+# ── cycle-3 commit 3: compute_noise_stats (pure, offline) ──────────────────
+
+
+def test_compute_noise_stats_respects_shot_reachability_na_and_computes_expected_arithmetic():
+    """Hand-computed double-pass sample: one positioning case (its
+    shot_reachability pair disagrees: first=2, second=0) and one approach
+    case (its OWN shot_reachability pair, first=0/second=1, must be
+    EXCLUDED entirely per Commit 1's N/A rule -- if it leaked in, it would
+    corrupt every downstream number). Every other dimension agrees cleanly
+    (2, 2) on both cases/both passes."""
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+
+    a_first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    a_second_scores = dict(all_two)
+    a_second_scores["shot_reachability"] = 0
+    a_second = JudgeScores(scores=a_second_scores, confidence=dict(all_conf), failure_class="good")
+
+    b_first_scores = dict(all_two)
+    b_first_scores["shot_reachability"] = 0  # must be EXCLUDED (case B is non-positioning)
+    b_first = JudgeScores(scores=b_first_scores, confidence=dict(all_conf), failure_class="good")
+    b_second_scores = dict(all_two)
+    b_second_scores["shot_reachability"] = 1  # must be EXCLUDED too
+    b_second = JudgeScores(scores=b_second_scores, confidence=dict(all_conf), failure_class="good")
+
+    pairs = [("caseA", a_first, a_second), ("caseB", b_first, b_second)]
+    engine_refs = {"caseA": {"shot_kind": "positioning"}, "caseB": {"shot_kind": "approach"}}
+
+    stats = judge_noise.compute_noise_stats(pairs, engine_refs)
+
+    sr = stats["per_dimension"]["shot_reachability"]
+    assert sr["n_applicable"] == 1, "only the positioning case's shot_reachability pair counts"
+    assert sr["exact_agreement_rate"] == pytest.approx(0.0)
+    assert sr["pass_flip_rate"] == pytest.approx(1.0)
+    assert sr["mean_abs_delta"] == pytest.approx(2.0)
+    assert sr["q_pass_repeat"] == pytest.approx(0.0)
+
+    nc = stats["per_dimension"]["numbers_coherence"]
+    assert nc["n_applicable"] == 2
+    assert nc["exact_agreement_rate"] == pytest.approx(1.0)
+    assert nc["pass_flip_rate"] == pytest.approx(0.0)
+    assert nc["mean_abs_delta"] == pytest.approx(0.0)
+    assert nc["q_pass_repeat"] == pytest.approx(1.0)
+
+    # Hand-computed (see docstring in judge_noise.compute_noise_stats for the
+    # formulas). cycle-4 (specs/caddie-bench-cycle4-plan.md §F): recomputed
+    # for the 11-dim rubric (aggression_realism added -> 7 correctness dims
+    # weighted 2, 4 crux dims weighted 1 unchanged by complement) — the
+    # per-case full-applicability denominator is now 2*2*2 + 4*1*2 = 36 (was
+    # 32). shot_reachability contributes num=2*1.0=2.0/den=2*2=4 (its one
+    # true-pass case-dim scores [2, 0], mean 1.0); the other 6 correctness
+    # dims (weight 2, both case-dims true-pass at 2.0 mean) contribute
+    # 6*(2*2.0)/6*(2*2)=24.0/24; the 4 crux dims (weight 1) contribute
+    # 4*(1*2.0)/4*(1*2)=8.0/8. Total (2.0+24.0+8.0)/(4+24+8) = 34.0/36 =
+    # 94.4...%. Verified by executing compute_noise_stats directly against
+    # this exact fixture, not hand arithmetic alone.
+    assert stats["ceiling_expected"] == pytest.approx(34 / 36)
+    # band_optimistic: every case-dim's max(a,b) -> shot_reachability's only
+    # pair maxes to 2 (perfect), everything else already 2 -> unaffected by
+    # the new dimension (a 12th all-2 case-dim pair scales num and den
+    # identically) -> stays 1.0 (100%).
+    assert stats["band_optimistic"] == pytest.approx(1.0)
+    # band_pessimistic: shot_reachability's only pair mins to 0 (num
+    # contribution drops from 4 to 0); the new denominator (see ceiling
+    # comment above) is 4(SR) + 6*8(other correctness) + 4*4(crux) = 68 ->
+    # (68-4)/68 = 64/68. NOTE: this diverges from a naive "same delta as the
+    # 10-dim case" guess (which would suggest 68/72) — 64/68 is the actual
+    # value the code produces (verified directly against compute_noise_stats,
+    # not derived by analogy).
+    assert stats["band_pessimistic"] == pytest.approx(64 / 68)
+
+
+def test_compute_noise_stats_dimension_with_zero_applicable_pairs_reports_none_not_zero():
+    """An all-approach sample has zero applicable shot_reachability
+    case-dims — every per-dimension metric must be None (never a misleading
+    0.0/1.0), and the dimension must be excluded from ceiling/band, not
+    silently zeroed (a perfect all-2s sample still yields 100% everywhere)."""
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats([("caseA", first, second)], {"caseA": {"shot_kind": "approach"}})
+
+    sr = stats["per_dimension"]["shot_reachability"]
+    assert sr == {
+        "n_applicable": 0, "exact_agreement_rate": None, "pass_flip_rate": None,
+        "mean_abs_delta": None, "q_pass_repeat": None,
+    }
+    assert stats["ceiling_expected"] == pytest.approx(1.0)
+    assert stats["band_optimistic"] == pytest.approx(1.0)
+    assert stats["band_pessimistic"] == pytest.approx(1.0)
+
+
+def test_compute_noise_stats_stored_first_pass_agreement_bonus():
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    pairs = [("caseA", first, second), ("caseB", first, second)]
+    engine_refs = {"caseA": {"shot_kind": "positioning"}, "caseB": {"shot_kind": "approach"}}
+
+    stored_a = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    b_stored_scores = dict(all_two)
+    b_stored_scores["numbers_coherence"] = 0  # deliberate mismatch on case B only
+    stored_b = JudgeScores(scores=b_stored_scores, confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats(
+        pairs, engine_refs, stored_first={"caseA": stored_a, "caseB": stored_b},
+    )
+    agreement = stats["stored_first_pass_agreement"]
+    assert agreement["shot_reachability"] == pytest.approx(1.0), "only caseA counted -- SR is N/A on caseB"
+    assert agreement["numbers_coherence"] == pytest.approx(0.5), "caseA matches, caseB's stored verdict mismatches"
+    assert agreement["hazard_awareness"] == pytest.approx(1.0), "untouched dimension, both cases match"
+
+
+def test_compute_noise_stats_omits_stored_first_pass_agreement_key_when_not_given():
+    from tests.eval.caddie_bench.schema import JudgeDimension
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+    first = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+    second = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    stats = judge_noise.compute_noise_stats([("caseA", first, second)], {"caseA": {"shot_kind": "positioning"}})
+    assert "stored_first_pass_agreement" not in stats
+
+
 # ── 6. build_cases sanity (case-count math §2) ──────────────────────────
 
 
@@ -363,10 +751,58 @@ def test_build_cases_produces_the_planned_case_count():
     bank = load_question_bank(QUESTIONS_V1_PATH)
     cases = q.build_cases(fixtures, bank)
     canaries = [c for c in cases if c.canary]
-    assert len(canaries) == 4
+    # cycle-4 (specs/caddie-bench-cycle4-plan.md §B4): 4 -> 5, the new timid
+    # canary (the bench was structurally blind to the owner's actual
+    # complaint until aggression_realism + this canary existed).
+    assert len(canaries) == 5
     ids = [c.id for c in cases]
     assert len(ids) == len(set(ids)), "case ids must be unique"
     assert len(cases) >= 100
+
+
+def test_build_cases_exact_count_and_lie_mix_cycle4():
+    """cycle-4 (specs/caddie-bench-cycle4-plan.md §C(ii)) — pins the exact
+    case count and per-lie mix so the rebalance can't silently regress.
+
+    10 fixtures after §C(i) (9 par-4/5, 1 par-3), 3 bags: advice cases =
+    9*6*3 + 1*4*3 = 174; + 10 FACT (1/hole) + 5 canaries = 189 total. Both
+    match the plan's own projection exactly.
+
+    Per-lie mix on the 174 advice cases (measured here, not assumed):
+    tee 60, fairway 54, rough 27, bunker 27, greenside 6. tee+fairway =
+    114/174 = 65.5% (~66%, matches the plan). trouble (rough+bunker) =
+    54/174 = 31.0% -- DIVERGES from the plan's naive projection of 33%
+    (57/174): bethpage_red_h1 has no mapped bunker polygon in the merged
+    fixture, so its BUNKER slot substitutes to GREENSIDE (the existing
+    _LIE_FALLBACK), moving 3 cases from bunker to greenside that a uniform
+    "9 holes x 1 bunker slot" hand-count doesn't account for. Verified by
+    executing build_cases directly, not by trusting the plan's arithmetic."""
+    fixtures = _all_hole_fixtures()
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    cases = q.build_cases(fixtures, bank)
+    assert len(cases) == 189
+
+    canaries = [c for c in cases if c.canary]
+    fact = [c for c in cases if "__fact__" in c.id]
+    advice = [c for c in cases if c not in canaries and c not in fact]
+    assert len(canaries) == 5
+    assert len(fact) == 10
+    assert len(advice) == 174
+
+    from collections import Counter
+    lie_counts = Counter(c.position.lie.value for c in advice)
+    assert lie_counts["tee"] == 60
+    assert lie_counts["fairway"] == 54
+    assert lie_counts["rough"] == 27
+    assert lie_counts["bunker"] == 27
+    assert lie_counts["greenside"] == 6
+    assert "recovery_trees" not in lie_counts, "the RECOVERY_TREES slot was removed in cycle-4 §C(ii)"
+
+    tee_fairway_pct = (lie_counts["tee"] + lie_counts["fairway"]) / len(advice)
+    trouble_pct = (lie_counts["rough"] + lie_counts["bunker"]) / len(advice)
+    assert tee_fairway_pct == pytest.approx(0.6551724137931034)
+    assert trouble_pct == pytest.approx(0.3103448275862069)
+    assert tee_fairway_pct > 0.6, "the rebalance must clear a clean majority of ordinary golf"
 
 
 def test_bags_json_matches_owner_bag_from_corner_tree_forward_bound_test():
@@ -499,6 +935,395 @@ def test_report_excludes_fact_class_from_correctness_headline_and_reports_routin
     assert headline.fact_routing_accuracy == pytest.approx(0.5)  # 1 of 2 FACT cases actually routed to "fact"
 
 
+# ── cycle-3 commit 1: shot_reachability is N/A off a positioning shot ──────
+
+
+def test_compute_headline_excludes_shot_reachability_off_positioning_shots():
+    """Cycle-3 commit 1 contract: shot_reachability is N/A on a
+    non-positioning (approach) shot — `report.compute_headline` must exclude
+    it from BOTH the per-dimension pass rate AND the weighted
+    numerator/denominator when `engine_ref['shot_kind'] != 'positioning'`.
+    Fixture: one positioning case (shot_reachability=2, everything else 2)
+    plus one approach case (shot_reachability=0 — a spurious judge zero —
+    everything else 2).
+
+    Hand-computed BEFORE this fix (both cases' shot_reachability counted in
+    the weighted score). cycle-4 (specs/caddie-bench-cycle4-plan.md §F):
+    recomputed for the 11-dim rubric (aggression_realism added -> 7
+    correctness dims weighted 2, 4 crux dims unchanged by complement) — the
+    6 OTHER correctness dims (weight 2, both cases pass) contribute
+    num=8/den=8 each = 48/48; shot_reachability (weight 2, values [2, 0])
+    contributes num=4/den=8; the 4 crux dims (weight 1, both cases pass)
+    contribute num=4/den=4 each = 16/16. Total: (48+4+16)/(48+8+16) =
+    68/72 = 94.4...% (verified: matches a direct weighted-sum computation
+    over JudgeDimension/CORRECTNESS_DIMENSIONS for this exact fixture).
+
+    AFTER this fix (the approach case's shot_reachability dropped from BOTH
+    numerator and denominator, per the plan's contract): shot_reachability
+    now only counts the positioning case's value=2, contributing num=4/den=4.
+    Total: 68/68 = 100% (was 60/60 pre-cycle-4, at 10 dims).
+    """
+    from tests.eval.caddie_bench.schema import CaseResult, JudgeDimension, ResolvedPosition
+
+    all_two = {d.value: 2 for d in JudgeDimension}
+    all_conf = {d.value: 0.9 for d in JudgeDimension}
+
+    positioning_scores = JudgeScores(scores=dict(all_two), confidence=dict(all_conf), failure_class="good")
+
+    approach_raw_scores = dict(all_two)
+    approach_raw_scores["shot_reachability"] = 0
+    approach_scores = JudgeScores(scores=approach_raw_scores, confidence=dict(all_conf), failure_class="good")
+
+    positioning_case = CaseResult(
+        case_id="holeA__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+        intent="advice", answer="positioning answer", degraded=False,
+        engine_ref={"club": "driver", "shot_kind": "positioning"}, det_checks=[], judge=positioning_scores,
+    )
+    approach_case = CaseResult(
+        case_id="holeB__slot0__owner__x",
+        resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0),
+        intent="advice", answer="approach answer", degraded=False,
+        engine_ref={"club": "7iron", "shot_kind": "approach"}, det_checks=[], judge=approach_scores,
+    )
+
+    headline = report.compute_headline([positioning_case, approach_case])
+
+    assert headline.dimension_pass_rate["shot_reachability"] == pytest.approx(1.0), (
+        "the approach case's spurious 0 must never enter the positioning-only pass rate"
+    )
+    assert headline.dimension_n["shot_reachability"] == 1, "only the positioning case is applicable"
+    assert headline.weighted_correctness_score == pytest.approx(1.0)
+
+    # The before-fix number, proving this is a real fix and not a no-op.
+    # cycle-4 (§F): recomputed for the 11-dim rubric — 68/72, see docstring.
+    before_fix_weighted = 68 / 72
+    assert before_fix_weighted == pytest.approx(0.9444444444444444)
+    assert headline.weighted_correctness_score > before_fix_weighted
+
+
+def test_judge_prompt_shot_kind_gloss_is_conditional_on_positioning():
+    """Commit 1: the ENGINE REFERENCE gloss must never attach the
+    'out of reach' positioning language to a non-positioning (approach)
+    shot, and vice versa — the previous SHARED gloss misled the judge into
+    flagging reachable approaches as if the flag weren't the target (the
+    68/84 spurious-zero bug this commit fixes)."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="gloss-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.FAIRWAY, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0)
+
+    positioning_ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 260, "target_yards": 260}
+    approach_ref = {"club": "7iron", "shot_kind": "approach", "raw_yards": 150, "target_yards": 150}
+
+    positioning_text, _ = judge_mod.judge_prompt(case, resolved, positioning_ref, "answer text", "det summary")
+    approach_text, _ = judge_mod.judge_prompt(case, resolved, approach_ref, "answer text", "det summary")
+
+    assert "out of reach for THIS swing" in positioning_text
+    assert "NOT the aim target" in positioning_text
+
+    assert "positioning = out of reach" not in approach_text
+    assert "out of reach" not in approach_text
+    assert "NOT the aim target" not in approach_text
+    assert "the green IS reachable" in approach_text
+    assert "aiming at or relative to the flag is CORRECT" in approach_text
+
+    # Rubric scope language: "shot_kind=positioning" scope, and the trigger
+    # clause's own line must not contain a bare "approach" keyword.
+    assert "shot_kind=positioning" in positioning_text
+    sr_line = next(line for line in positioning_text.split("\n") if line.startswith("- shot_reachability:"))
+    assert "approach" not in sr_line.lower()
+
+
+def test_judge_prompt_omits_evidence_lines_when_not_given():
+    """cycle-4 (§B3): every kwarg (bag_clubs/bag_handicap/hazards_payload/
+    corridor_summary) defaults None — an old caller (or any offline test)
+    that doesn't pass them gets the pre-cycle-4 label-only bag line and no
+    hazards/corridor evidence lines at all (never a fabricated 'unmapped'
+    placeholder the caller never asked for)."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="evidence-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400}
+
+    text, _ = judge_mod.judge_prompt(case, resolved, ref, "answer text", "det summary")
+    assert "Player bag: owner" in text
+    assert "MAPPED HAZARDS" not in text
+    # The club_corridor RUBRIC dimension always mentions "corridor" (unrelated
+    # to this kwarg) -- only the EVIDENCE line (corridor_summary, opt-in) is
+    # under test here.
+    assert "corridor at recommended club's landing" not in text
+    assert "corridor width at landing zone: unmapped" not in text
+
+
+def test_judge_prompt_renders_bag_hazards_and_corridor_evidence_when_given():
+    """cycle-4 (§B3): with real evidence supplied, the judge sees actual
+    stored club yardages + handicap (not just a bag label), a compact
+    hazard summary, and the corridor evidence line verbatim — the "one
+    sentence of punitive evidence" aggression_realism needs to grade risk
+    posture, not vibes off the picture alone."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="evidence-test-2", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400}
+
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary",
+        bag_clubs={"driver": 300, "7iron": 180}, bag_handicap=3.0,
+        hazards_payload=[{"type": "trees", "side": "right", "carry_yards": 195, "penalty_severity": "moderate"}],
+        corridor_summary="corridor width at landing zone: unmapped — no danger-edge evidence (do not invent one)",
+    )
+    assert "driver 300" in text and "7iron 180" in text and "handicap 3.0" in text
+    assert "Player bag: owner" not in text, "the real bag must REPLACE the label-only line, not just append"
+    assert "MAPPED HAZARDS" in text and "trees R 195y moderate" in text
+    assert "corridor width at landing zone: unmapped — no danger-edge evidence (do not invent one)" in text
+
+
+# ── cycle-4 commit 6, reviewer BLOCKING B1 — hazard evidence must select   ──
+#    by RELEVANCE TO THE SHOT, not proximity to the tee, and must DISCLOSE  ──
+#    truncation rather than presenting a partial list as complete.         ──
+
+
+def test_hazards_payload_pebble3_landing_zone_survives_the_cap():
+    """The exact repro from the reviewer's finding: pebble_beach_h3 (381y,
+    one of this cycle's two headline fixtures) has n=20 real hazards; the
+    owner bag's driver lands ~277-299y. BEFORE this fix, `[:12]` on the
+    carry-ascending list kept only carries <= 215 and silently dropped
+    [225,230,265,275,300,350,390,405] -- the ENTIRE landing zone, on the
+    fixture this cycle's fix is supposed to be judged against. AFTER: with
+    `reference_yards` set to a drive_total in that landing zone, the
+    landing-zone carries (265/275/300) MUST be present, and the header
+    MUST disclose the truncation instead of implying completeness."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.geometry import hole_intel_from_fixture, load_hole_fixture
+
+    fx = load_hole_fixture(HOLES_DIR / "pebble_beach_h3.json")
+    intel = hole_intel_from_fixture(fx)
+    hazards_payload = [h.model_dump() for h in intel.hazards]
+    assert len(hazards_payload) == 20, "sanity: this test means nothing if the fixture's hazard count drifts"
+
+    # BEFORE-fix repro: the old unconditional `[:12]` on carry-ascending
+    # order never sees the landing zone at all -- proves this is a REAL
+    # fix, not a no-op, by reproducing the bug's own output directly.
+    before_fix_carries = [h["carry_yards"] for h in sorted(hazards_payload, key=lambda h: h["carry_yards"])[:12]]
+    assert 265 not in before_fix_carries and 275 not in before_fix_carries and 300 not in before_fix_carries, (
+        "sanity: the pre-fix carry-ascending truncation must NOT see the landing zone"
+    )
+
+    drive_total = 288.0  # inside the owner bag's real 277-299y landing range on this hole
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=drive_total)
+    assert line is not None
+    assert "showing 12 of 20" in line, "truncation must be disclosed, never presented as a complete list"
+    for landing_zone_carry in (265, 275, 300):
+        assert f"{landing_zone_carry}y" in line, (
+            f"landing-zone carry {landing_zone_carry}y must survive the cap — got: {line!r}"
+        )
+    # And it must carry the lateral offset per entry (closes N1 — the judge
+    # needs it to discount a hazard the player's shot can't plausibly reach).
+    assert "lat=" in line
+
+
+def test_hazards_payload_sorts_by_relevance_not_tee_proximity():
+    """Direct unit proof of the sort itself: three hazards at carries far
+    from, near, and far from the reference point — only the NEAR one must
+    survive a cap of 1, regardless of its tee-proximity rank (it is the
+    LAST one by carry-ascending order, which is exactly the failure mode
+    the fix closes)."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 100, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},  # nearest 288
+    ]
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=288.0, cap=1)
+    assert line is not None
+    assert "290y" in line
+    assert "50y" not in line and "100y" not in line
+
+
+def test_hazards_payload_carry_none_sorts_last_never_crashes():
+    """Defensive per the reviewer's ask: a hazard with `carry_yards=None`
+    (never produced by the real `Hazard` model — it defaults to 0 — but
+    handled anyway) must sort LAST, never crash and never silently win the
+    cap over a real, relevant distance."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": None, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},
+    ]
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=288.0, cap=1)
+    assert line is not None
+    assert "290y" in line
+
+
+def test_hazards_payload_falls_back_to_original_order_without_a_reference():
+    """`reference_yards=None` (no relevance signal available) must fall
+    back to the ORIGINAL order — never crash, never fabricate a relevance
+    ranking it doesn't have grounds for."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+    ]
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=None, cap=1)
+    assert line is not None
+    assert "290y" in line and "50y" not in line, "original order preserved -- the first entry wins the cap"
+
+
+def test_judge_prompt_uses_drive_total_as_reference_on_a_positioning_turn():
+    """End-to-end through `judge_prompt`: on a positioning turn, the
+    reference point must be the drive's own landing distance
+    (`tee_shot_numbers.drive_total_yards`) — derived from `engine_ref` the
+    function already has, never a new kwarg."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="reference-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {
+        "club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400,
+        "tee_shot_numbers": {"drive_total_yards": 288},
+    }
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 290, "penalty_severity": "moderate"},
+    ]
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary", hazards_payload=hazards_payload,
+    )
+    # width-1 cap isn't in play here (only 2 hazards, under the default cap of
+    # 12) -- what's under test is ORDER: the near-to-drive_total one (290)
+    # must be listed before the far one (50), proving the sort actually ran.
+    assert text.index("290y") < text.index("50y")
+
+
+def test_judge_prompt_uses_hole_yards_as_reference_on_a_non_positioning_turn():
+    """End-to-end: on an approach/reachable turn (shot_kind != positioning),
+    the reference point must be `hole_yards` — the green IS what this shot
+    is aimed at."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="reference-test-2", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.FAIRWAY, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=150, shot_bearing_deg=0)
+    ref = {"club": "7iron", "shot_kind": "approach", "raw_yards": 150, "target_yards": 150}
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 50, "penalty_severity": "moderate"},
+        {"type": "bunker", "side": "left", "carry_yards": 400, "penalty_severity": "moderate"},  # near the green
+    ]
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary", hazards_payload=hazards_payload, hole_yards=410,
+    )
+    # "50y" alone would false-match the "150y to the green" facts line above
+    # the hazards line -- assert on the actual rendered hazard entries.
+    assert text.index("bunker L 400y") < text.index("bunker L 50y")
+
+
+def test_judge_prompt_reference_yards_on_a_mid_hole_positioning_turn_stays_tee_anchored():
+    """cycle-4 commit 7 (reviewer finding F1): on a MID-HOLE positioning
+    turn (the player has already covered ground from the tee and is
+    hitting a SECOND positioning/layup shot), `tee_shot_numbers.
+    drive_total_yards` is PLAYER-anchored (this shot's own carry from
+    wherever the player stands), while `hazards_payload`'s `carry_yards` is
+    TEE-anchored -- using `drive_total_yards` alone would put the reference
+    point BEHIND the player. Player is 200y down a 550y hole (350y left to
+    the green) hitting a shot with its own 100y carry -- the correct
+    tee-anchored reference is 200 + 100 = 300y. If the bug were present
+    (reference == drive_total_yards == 100), the near-the-tee 30y hazard
+    would falsely outrank the real landing-zone hazard at 300y."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import ResolvedPosition
+
+    case = BenchCase(
+        id="reference-test-midhole", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.FAIRWAY, seed=1), question_type=QuestionType.CLUB_SELECTION,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.FAIRWAY, distance_to_green_yards=350, shot_bearing_deg=0)
+    ref = {
+        "club": "7iron", "shot_kind": "positioning", "raw_yards": 100, "target_yards": 100,
+        "tee_shot_numbers": {"drive_total_yards": 100},
+    }
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 30, "penalty_severity": "moderate"},   # near the TEE -- a decoy
+        {"type": "bunker", "side": "left", "carry_yards": 300, "penalty_severity": "moderate"},  # the real landing zone
+    ]
+    text, _ = judge_mod.judge_prompt(
+        case, resolved, ref, "answer text", "det summary", hazards_payload=hazards_payload, hole_yards=550,
+    )
+    assert text.index("bunker L 300y") < text.index("bunker L 30y"), (
+        "the tee-anchored landing-zone hazard (300y) must outrank the near-tee decoy (30y) -- "
+        "a bare drive_total_yards=100 reference would get this backwards"
+    )
+
+
+def test_format_hazards_payload_never_drops_a_death_or_severe_hazard_under_the_cap():
+    """Reviewer §3 hardening: the relevance cap was severity-blind -- a
+    `death`/`severe` hazard sitting far from the reference point could be
+    dropped entirely on a >12-hazard hole even though it's exactly the
+    evidence the judge most needs. 13 `moderate` hazards clustered AT the
+    reference plus 1 `death` hazard far away, cap=12: the death hazard must
+    survive; one of the moderate ones (farthest from the reference among
+    its own tier) must be the one truncated instead."""
+    from tests.eval.caddie_bench import judge as judge_mod
+
+    hazards_payload = [
+        {"type": "bunker", "side": "left", "carry_yards": 200 + i, "penalty_severity": "moderate"} for i in range(13)
+    ]
+    hazards_payload.append({"type": "water", "side": "left", "carry_yards": 20, "penalty_severity": "death"})
+    line = judge_mod._format_hazards_payload(hazards_payload, reference_yards=200.0, cap=12)
+    assert line is not None
+    assert "showing 12 of 14" in line
+    assert "water L 20y death" in line, "the death hazard must never be dropped by the cap regardless of distance"
+
+
+def test_rubric_instructions_header_names_the_real_dimension_count():
+    """cycle-4 (§B3): the hardcoded 'fixed 10-dimension rubric' string must
+    track len(JudgeDimension) so it never silently drifts stale again after
+    aggression_realism (or any future dimension) is added."""
+    from tests.eval.caddie_bench import judge as judge_mod
+    from tests.eval.caddie_bench.schema import JudgeDimension, ResolvedPosition
+
+    case = BenchCase(
+        id="dim-count-test", hole_fixture="whatever", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    resolved = ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0)
+    ref = {"club": "driver", "shot_kind": "positioning", "raw_yards": 400, "target_yards": 400}
+    text, _ = judge_mod.judge_prompt(case, resolved, ref, "answer text", "det summary")
+    assert f"a fixed {len(JudgeDimension)}-dimension rubric" in text
+    assert len(JudgeDimension) == 11
+
+
 def test_det_check_pass_rate_overall_aggregates_across_every_check():
     """#11: an overall det-check pass rate must be computed and surfaced in
     the headline (DET_CHECK_WEIGHT was an unused, misleading constant —
@@ -525,6 +1350,54 @@ def test_det_check_weight_constant_was_removed():
     from tests.eval.caddie_bench import schema as schema_mod
 
     assert not hasattr(schema_mod, "DET_CHECK_WEIGHT")
+
+
+# ── cycle-3 commit 2: degrade_reason_counts headline ────────────────────────
+
+
+def test_compute_headline_degrade_reason_counts_categorizes_and_buckets_unknown():
+    """Two instrumented degrades (one validator, one exception), one
+    pre-instrumentation degrade (degraded=True, degrade_reason=None -- must
+    bucket under "unknown(pre-instrumentation)", never be silently dropped),
+    and one non-degraded case (must not appear at all)."""
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    def _r(case_id, degraded, degrade_reason):
+        return CaseResult(
+            case_id=case_id,
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="x", degraded=degraded, engine_ref={"club": "driver"},
+            degrade_reason=degrade_reason,
+        )
+
+    results = [
+        _r("holeA__slot0__owner__x", True, "validator:side-flip"),
+        _r("holeB__slot0__owner__x", True, "exception:RuntimeError"),
+        _r("holeC__slot0__owner__x", True, None),  # pre-instrumentation
+        _r("holeD__slot0__owner__x", False, None),  # not degraded at all
+    ]
+    headline = report.compute_headline(results)
+    assert headline.degrade_reason_counts == {
+        "validator:side-flip": 1, "exception:RuntimeError": 1, "unknown(pre-instrumentation)": 1,
+    }
+    assert sum(headline.degrade_reason_counts.values()) == sum(1 for r in results if r.degraded)
+
+
+def test_generate_report_includes_a_degrade_reasons_section():
+    from tests.eval.caddie_bench.schema import CaseResult, ResolvedPosition
+
+    results = [
+        CaseResult(
+            case_id="holeA__slot0__owner__x",
+            resolved=ResolvedPosition(lat=1, lng=2, lie=LieCategory.TEE, distance_to_green_yards=400, shot_bearing_deg=0),
+            intent="advice", answer="x", degraded=True, engine_ref={"club": "driver"},
+            degrade_reason="validator:hazard-type",
+        ),
+    ]
+    meta = report.RunMeta(run_id="degrade-reasons-test", case_count=len(results))
+    text = report.generate_report(results, meta)
+    assert "## Degrade reasons" in text
+    assert "validator:hazard-type" in text
 
 
 # ── 8. LIVE-synth recursion fix + real-call canary + --render-mode ─────────
@@ -593,12 +1466,64 @@ async def test_live_synth_wrapper_delegates_to_the_saved_original_exactly_once_n
     assert synth.last_cost_usd > 0.0
 
 
+async def test_run_reconstruction_propagates_degrade_reason_and_raw_synth_text(monkeypatch, tmp_path):
+    """Teeth pin (cycle-3 commit 2): the explicit `CaseResult(...)`
+    reconstruction inside `run()` is the silent-drop trap — if a future edit
+    forgets to copy `degrade_reason`/`raw_synth_text` from `harness.run_case`'s
+    result onto `final`, this test goes RED (the JSONL line loses both
+    fields on a real degrade). End-to-end through the real `run()`, with the
+    synth + judge seams stubbed so it stays fully offline."""
+    import argparse
+
+    from app.caddie import strategy as strategy_mod
+
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.setattr(run_caddie_bench, "RUNS_DIR", tmp_path)
+
+    # A rejectable narrative: pebble_beach_h3 has no mapped water (sanity
+    # pinned by test_hazard_only_from_input_goes_red_on_ungrounded_hazard in
+    # test_bench_teeth.py), so naming "water" trips the hazard-type check
+    # deterministically -> degraded=True, degrade_reason="validator:hazard-type".
+    reject_text = "Driver off the tee, watch the water down the left, commit to the shot."
+
+    async def _stub_synth(ground_truth: str, *, model: str):
+        return reject_text, {"input_tokens": 10, "output_tokens": 10}
+
+    monkeypatch.setattr(strategy_mod, "synthesize_strategy", _stub_synth)
+
+    async def _stub_judge_case(*args, **kwargs):
+        return _canned_judge_scores("all_pass"), {"input_tokens": 5, "output_tokens": 5}
+
+    monkeypatch.setattr(run_caddie_bench.judge_mod, "judge_case", _stub_judge_case)
+
+    args = argparse.Namespace(
+        budget_usd=10.0, max_cases=1, only_failures=None, holes=["pebble_beach_h3"],
+        resume=None, min_weighted_correctness=0.0, report_out=None, render_mode="vector",
+    )
+    exit_code = await run_caddie_bench.run(args)
+    # This 1-case synthetic run is deliberately 100% degraded (that's the
+    # scenario under test) -- it correctly trips the UNRELATED real-call
+    # canary (report.py's own guard against a 100%-degraded run masquerading
+    # as real), which is irrelevant to what this test proves. Results are
+    # already written to disk by the time that check runs (see run()).
+    assert exit_code == run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID
+
+    results_path = next(tmp_path.glob("*/results.jsonl"))
+    loaded = report.load_results(results_path)
+    assert len(loaded) == 1
+    assert loaded[0].degraded is True
+    assert loaded[0].degrade_reason == "validator:hazard-type"
+    assert loaded[0].raw_synth_text == reject_text
+
+
 def test_check_real_call_canary_flags_a_synthetic_100pct_degraded_98ms_run_invalid():
     """Feeds the run-level checker exactly the observed failure signature
     (degraded_rate=1.0, synth latency p50=98ms) and asserts it flags the run
     INVALID — the assertion the bug silently skipped."""
     headline = report.HeadlineStats(
         case_count=10, dimension_pass_rate={}, weighted_correctness_score=0.0,
+        weighted_correctness_score_legacy10=0.0,
         correctness_dims_pass_rate=0.0, crux_dims_pass_rate=0.0, degraded_rate=1.0,
         contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
         det_check_pass_rate_overall=1.0, fact_routing_accuracy=None, fact_case_count=0,
@@ -612,6 +1537,7 @@ def test_check_real_call_canary_flags_a_synthetic_100pct_degraded_98ms_run_inval
 def test_check_real_call_canary_passes_a_healthy_run():
     headline = report.HeadlineStats(
         case_count=10, dimension_pass_rate={}, weighted_correctness_score=0.9,
+        weighted_correctness_score_legacy10=0.9,
         correctness_dims_pass_rate=0.9, crux_dims_pass_rate=0.9, degraded_rate=0.1,
         contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
         det_check_pass_rate_overall=1.0, fact_routing_accuracy=None, fact_case_count=0,
@@ -625,6 +1551,7 @@ def test_check_real_call_canary_passes_a_healthy_run():
 def test_check_real_call_canary_never_flags_an_empty_run():
     headline = report.HeadlineStats(
         case_count=0, dimension_pass_rate={}, weighted_correctness_score=0.0,
+        weighted_correctness_score_legacy10=0.0,
         correctness_dims_pass_rate=0.0, crux_dims_pass_rate=0.0, degraded_rate=0.0,
         contested_rate=0.0, canary_all_pass=False, canary_count=0, det_check_pass_rate={},
         det_check_pass_rate_overall=0.0, fact_routing_accuracy=None, fact_case_count=0,
@@ -721,6 +1648,197 @@ def test_exit_code_constants_are_distinct_and_documented():
     codes = {
         run_caddie_bench._EXIT_PASS, run_caddie_bench._EXIT_MISSED_BAR,
         run_caddie_bench._EXIT_GATE_REFUSAL, run_caddie_bench._EXIT_BUDGET_ABORT,
-        run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID,
+        run_caddie_bench._EXIT_REAL_CALL_CANARY_INVALID, run_caddie_bench._EXIT_RENDER_FAILURE,
     }
-    assert codes == {0, 1, 2, 3, 4}, "exit codes must stay distinct — a collision would hide which failure mode fired"
+    assert codes == {0, 1, 2, 3, 4, 5}, "exit codes must stay distinct — a collision would hide which failure mode fired"
+
+
+# ── cycle-4 §E2/§E3 (specs/caddie-bench-cycle4-plan.md) — satellite render ──
+#    hardening: fail loudly per-case, never fall back to vector; the one-   ──
+#    time --render-only fidelity check.                                    ──
+
+
+def test_fetch_base_tile_raises_on_a_non_image_200_body(tmp_path, monkeypatch):
+    """§E2: a Static Maps 200 with a non-image body (e.g. quota/billing
+    HTML) must raise loudly rather than being cached/used as a tile —
+    `raise_for_status()` alone only catches non-2xx, never a 200 that isn't
+    actually an image."""
+    import httpx as httpx_mod
+
+    monkeypatch.setenv("GOOGLE_MAPS_KEY", "fake-key-for-test")
+
+    class _FakeResp:
+        status_code = 200
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html>You have exceeded your daily request quota.</html>"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _fake_get(url, params=None, timeout=None):
+        return _FakeResp()
+
+    monkeypatch.setattr(httpx_mod, "get", _fake_get)
+
+    fx = geo.load_hole_fixture(sorted(HOLES_DIR.glob("*.json"))[0])
+    with pytest.raises(RuntimeError, match="non-image body"):
+        render.fetch_base_tile(fx, mode="satellite", cache_dir=tmp_path)
+
+
+def test_fetch_base_tile_never_leaks_the_key_in_the_content_type_error(tmp_path, monkeypatch):
+    """Same guard as #8's original key-redaction contract (the HTTPError
+    path above): the raised message must never contain the fake key
+    string, even on this NEW content-type-guard error path."""
+    import httpx as httpx_mod
+
+    monkeypatch.setenv("GOOGLE_MAPS_KEY", "SECRET-KEY-MUST-NEVER-LEAK")
+
+    class _FakeResp:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+        content = b'{"error": "quota exceeded"}'
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr(httpx_mod, "get", lambda *a, **k: _FakeResp())
+
+    fx = geo.load_hole_fixture(sorted(HOLES_DIR.glob("*.json"))[0])
+    with pytest.raises(RuntimeError) as excinfo:
+        render.fetch_base_tile(fx, mode="satellite", cache_dir=tmp_path)
+    assert "SECRET-KEY-MUST-NEVER-LEAK" not in str(excinfo.value)
+    assert "<redacted>" in str(excinfo.value)
+
+
+async def test_run_render_failure_writes_jsonl_and_returns_exit_5(monkeypatch, tmp_path):
+    """§E2, the runner's except-path: a render failure on ANY case aborts
+    the WHOLE run (never falls back to vector for the rest), records
+    `render_failures.jsonl`, and returns exit code 5 — canned-synth
+    harness, `render.render_case` monkeypatched to raise directly (the
+    content-type/network specifics are `fetch_base_tile`'s own concern,
+    already pinned above; this proves the RUNNER's reaction to any
+    RuntimeError from render_case)."""
+    import argparse
+
+    from app.caddie import strategy as strategy_mod
+
+    monkeypatch.setenv("CADDIE_EVAL_LIVE", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test-key-not-real")
+    monkeypatch.setattr(run_caddie_bench, "RUNS_DIR", tmp_path)
+
+    async def _stub_synth(ground_truth: str, *, model: str):
+        return "Driver off the tee, straightforward hole.", {"input_tokens": 10, "output_tokens": 10}
+
+    monkeypatch.setattr(strategy_mod, "synthesize_strategy", _stub_synth)
+
+    def _raising_render_case(*args, **kwargs):
+        raise RuntimeError("Static Maps tile fetch failed (hole='x', status=429, key=<redacted>)")
+
+    monkeypatch.setattr(run_caddie_bench.render, "render_case", _raising_render_case)
+
+    args = argparse.Namespace(
+        budget_usd=10.0, max_cases=1, only_failures=None, holes=["pebble_beach_h3"],
+        resume=None, min_weighted_correctness=0.0, report_out=None, render_mode="vector",
+    )
+    exit_code = await run_caddie_bench.run(args)
+    assert exit_code == run_caddie_bench._EXIT_RENDER_FAILURE
+
+    failures_path = next(tmp_path.glob("*/render_failures.jsonl"))
+    lines = [json.loads(line) for line in failures_path.read_text().splitlines() if line.strip()]
+    assert len(lines) == 1
+    assert lines[0]["render_mode"] == "vector"
+    assert "429" in lines[0]["error"]
+
+    # results.jsonl must NOT contain a judged entry for the failed case —
+    # the abort happens BEFORE the judge is ever called.
+    results_path = tmp_path.glob("*/results.jsonl")
+    assert not list(results_path), "no case should have reached results.jsonl before the render aborted the run"
+
+
+def test_render_only_gated_on_maps_key_not_live_eval_env(monkeypatch):
+    """§E3: --render-only is gated ONLY on GOOGLE_MAPS_KEY (satellite mode)
+    — it must refuse without a maps key even when CADDIE_EVAL_LIVE/
+    OPENAI_API_KEY are completely UNSET (the opposite of every other gate
+    in this module), proving it never touches that gate at all."""
+    monkeypatch.delenv("CADDIE_EVAL_LIVE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.delenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", raising=False)
+
+    assert run_caddie_bench.main(["--render-only"]) == run_caddie_bench._EXIT_GATE_REFUSAL
+
+
+def test_render_only_vector_mode_runs_fully_offline(monkeypatch, tmp_path):
+    """§E3: `--render-only --render-mode vector` needs neither the maps key
+    nor CADDIE_EVAL_LIVE/OPENAI_API_KEY — proves the whole render-only path
+    (case build, position resolution, composite write) runs end to end
+    fully offline."""
+    monkeypatch.delenv("CADDIE_EVAL_LIVE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.delenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", raising=False)
+    monkeypatch.setattr(run_caddie_bench, "RUNS_DIR", tmp_path)
+
+    exit_code = run_caddie_bench.main([
+        "--render-only", "--render-mode", "vector",
+        "--holes", "pebble_beach_h3", "--max-cases", "2",
+    ])
+    assert exit_code == run_caddie_bench._EXIT_PASS
+    composites = list(tmp_path.glob("*/composites/*.png"))
+    assert len(composites) == 2
+
+
+# ── cycle-4 review finding (eng-lead, not in the original plan) — the       ──
+#    "--render-only needs only the maps key" documentation was FALSE: this  ──
+#    module's own import chain requires DATABASE_URL to already be set     ──
+#    (a pure import-time side effect, backlogged as caddie-bench-lazy-db-   ──
+#    import rather than fixed this cycle). Subprocess-based: every other    ──
+#    test in this file has DATABASE_URL pre-set at module import (line 19  ──
+#    above), which structurally CANNOT exercise the real, broken contract. ──
+
+
+def test_render_only_packaged_command_actually_works_as_documented():
+    """Proves the EXACT packaged command in README.md (placeholder
+    DATABASE_URL + no maps key) reaches --render-only's OWN gate-refusal
+    message — not an import-time crash — and that DROPPING the placeholder
+    reproduces the crash this test exists to document. A real subprocess
+    (not monkeypatch) is required: every other test in this module already
+    has DATABASE_URL set at import time (see the top of this file), which
+    would silently hide the exact defect under test."""
+    import subprocess
+    import sys
+
+    backend_dir = pathlib.Path(__file__).parent.parent.parent.parent
+    env_without_db = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    for key in ("GOOGLE_MAPS_KEY", "NEXT_PUBLIC_GOOGLE_MAPS_KEY"):
+        env_without_db.pop(key, None)
+    env_without_db["PYTHONPATH"] = str(backend_dir)
+
+    # (a) No DATABASE_URL at all -> import-time RuntimeError, NOT the
+    # --render-only gate-refusal message. This is the documented defect,
+    # reproduced here so a future fix (backlog: caddie-bench-lazy-db-import)
+    # has a RED test to turn GREEN.
+    result_no_db = subprocess.run(
+        [sys.executable, "-m", "tests.eval.caddie_bench.run_caddie_bench", "--render-only", "--max-cases", "1"],
+        cwd=backend_dir, env=env_without_db,
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "DATABASE_URL is not set" in result_no_db.stderr, (
+        f"expected the known import-time crash; got stderr={result_no_db.stderr!r}"
+    )
+
+    # (b) The EXACT placeholder from README.md -> reaches --render-only's
+    # OWN maps-key gate-refusal message (never a DB error) -- proves the
+    # packaged command in README.md is actually runnable as written.
+    env_with_placeholder = dict(env_without_db)
+    env_with_placeholder["DATABASE_URL"] = "postgresql+asyncpg://unused:unused@localhost:5432/unused"
+    result_with_placeholder = subprocess.run(
+        [sys.executable, "-m", "tests.eval.caddie_bench.run_caddie_bench", "--render-only", "--max-cases", "1"],
+        cwd=backend_dir, env=env_with_placeholder,
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "DATABASE_URL is not set" not in result_with_placeholder.stderr
+    assert "requires GOOGLE_MAPS_KEY" in result_with_placeholder.stderr, (
+        f"expected the render-only maps-key gate message; got stderr={result_with_placeholder.stderr!r}"
+    )
+    assert result_with_placeholder.returncode == run_caddie_bench._EXIT_GATE_REFUSAL

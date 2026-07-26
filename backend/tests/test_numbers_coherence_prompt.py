@@ -19,9 +19,11 @@ from app.caddie.types import (  # noqa: E402
     MissSide,
     TeeShotNumbers,
 )
+from app.caddie import voice_prompts as voice_prompts_mod  # noqa: E402
 from app.caddie.voice_prompts import (  # noqa: E402
     MISS_SIDE_GROUNDING_RULE,
     NUMBERS_COHERENCE_RULE,
+    TOOL_USE_RULE,
     build_realtime_instructions,
     format_tee_numbers_line,
     _situation_block,
@@ -42,7 +44,7 @@ def _fixture_numbers(**overrides) -> TeeShotNumbers:
         hole_number=1, to_green_yards=466, yardage_basis="tee-card",
         plays_like_yards=466, club="driver", club_stored_yards=300,
         drive_carry_yards=266, drive_total_yards=276,
-        leave_exact_yards=190, leave_yards=190, leave_plays_like_yards=190,
+        leave_exact_yards=190, leave_yards=190,
     )
     base.update(overrides)
     return TeeShotNumbers(**base)
@@ -69,6 +71,34 @@ def test_miss_side_grounding_rule_nonempty_and_on_topic():
     assert MISS_SIDE_GROUNDING_RULE.strip() != ""
     assert "miss side" in MISS_SIDE_GROUNDING_RULE.lower()
     assert "both sides" in MISS_SIDE_GROUNDING_RULE.lower()
+
+
+# ── cycle-5 RC-2 (specs/caddie-bench-cycle5-plan.md §2.1(b)(c)): the two
+# voice_prompts mouths stop narrating absent data unprompted, mirroring the
+# strategy-brain fix, but scoped to the asked case (these mouths DO see the
+# player's question) ─────────────────────────────────────────────────────
+
+
+def test_base_behavior_no_bare_say_so_plainly():
+    assert "say so plainly" not in voice_prompts_mod._BASE_BEHAVIOR
+    assert "never announce missing data" in voice_prompts_mod._BASE_BEHAVIOR
+    assert "unprompted" in voice_prompts_mod._BASE_BEHAVIOR
+    assert "say plainly you don't have it" in voice_prompts_mod._BASE_BEHAVIOR
+    # Never-invent core survives verbatim.
+    assert (
+        "Never state a yardage, club distance, or carry you did not get from a\ntool."
+    ) in voice_prompts_mod._BASE_BEHAVIOR
+
+
+def test_tool_use_rule_no_bare_say_so_plainly():
+    assert "say so plainly" not in TOOL_USE_RULE
+    assert "never announce missing data unprompted" in TOOL_USE_RULE
+    assert "say plainly you don't have it" in TOOL_USE_RULE
+    # Never-invent core survives verbatim.
+    assert (
+        "never state a yardage or carry that "
+        "came from neither a tool nor the CURRENT SITUATION."
+    ) in TOOL_USE_RULE
 
 
 # ── Gate (2): both rules present in the realtime prompt ────────────────────

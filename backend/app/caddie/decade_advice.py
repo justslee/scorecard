@@ -446,18 +446,34 @@ def drive_zone_hazards(
     excluded, not guessed at.
 
     `max_reach_yds` (Finding C fix, specs/caddie-hazard-side-reach-plan.md
-    §4): when provided, caps the long window edge at
-    `min(expected_advance_yds, max_reach_yds) + DRIVE_ZONE_LONG_YDS` — a
-    hazard the player physically cannot reach on this swing (e.g. a
-    374y-carry greenside bunker against a 285y total) is excluded from the
-    tee-shot window even if it happens to sit within the raw
-    `expected_advance_yds`-relative range. `None` (default) preserves
-    today's behavior — back-compat for direct callers/tests that don't pass
-    a reach ceiling.
+    §4): when provided, caps the long window edge — see cycle-3 commit 2b
+    (caddie-bench-cycle3-plan.md) below for the exact anchor.
+
+    cycle-3 commit 2b (Target 2b — roll segment): the window's long edge now
+    reaches the drive TOTAL, not just the expected advance ("carry"). At the
+    one production call site (`generate_recommendation`'s positioning zone,
+    `aim_point.py`), `expected_advance_yds` is the player's STORED
+    (neutral-conditions) club yardage and `max_reach_yds` is that same
+    club's PHYSICS-adjusted total for today's weather — in typical/calm-ish
+    conditions `max_reach_yds >= expected_advance_yds` (total includes roll
+    past the average carry), so the window is `[expected_advance_yds - 50,
+    max_reach_yds + 30]`: the roll segment `(expected_advance_yds + 30,
+    max_reach_yds]` is now visible, where before it was structurally
+    excluded by the old `min()` anchor (a hazard sitting in the actual
+    landing zone's roll-out, e.g. a bunker at the far end of the drive,
+    could never enter the window). Finding-C's protection is UNCHANGED: a
+    hazard beyond physical reach (e.g. a 374y-carry greenside bunker against
+    a 285y total) still can never enter, because the anchor never exceeds
+    `max_reach_yds`. In the (rarer) case a strong headwind physics-reduces
+    `max_reach_yds` BELOW `expected_advance_yds`, the anchor falls back to
+    the pre-existing `min()` behavior — byte-identical there, never widening
+    past the smaller of the two. `max_reach_yds=None` (every non-Finding-C
+    caller) is untouched.
     """
     long_edge = expected_advance_yds + DRIVE_ZONE_LONG_YDS
     if max_reach_yds is not None:
-        long_edge = min(expected_advance_yds, max_reach_yds) + DRIVE_ZONE_LONG_YDS
+        anchor = max_reach_yds if max_reach_yds >= expected_advance_yds else min(expected_advance_yds, max_reach_yds)
+        long_edge = anchor + DRIVE_ZONE_LONG_YDS
     return [
         h for h in hazards
         if h.carry_yards > 0

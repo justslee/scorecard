@@ -58,7 +58,6 @@ export interface CaddieRecommendation {
     drive_total_yards: number;
     leave_exact_yards: number;
     leave_yards: number;
-    leave_plays_like_yards?: number | null;
     /** Corridor-width club selection (specs/corridor-width-club-selection-
      *  plan.md §5) — additive, populated ONLY on profile-present turns where
      *  the width rule fired or grounded the chosen club. */

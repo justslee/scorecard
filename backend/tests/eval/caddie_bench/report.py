@@ -27,6 +27,15 @@ from tests.eval.caddie_bench.schema import (
 # headline line, never folded into the correctness number.
 CRUX_DIMENSIONS: frozenset[JudgeDimension] = frozenset(JudgeDimension) - CORRECTNESS_DIMENSIONS
 
+# cycle-4 (specs/caddie-bench-cycle4-plan.md §D): adding aggression_realism
+# as a 2x-weighted dimension changes the headline denominator (per fully-
+# applicable case: 6*2*2+4*1*2=32 -> 7*2*2+4*1*2=36). Both bases are
+# reported; the 11-dim number is the honest basis going forward. Old-run
+# JSONL (no "aggression_realism" key in `scores`) aggregates identically on
+# both bases by construction — the loop below iterates `r.judge.scores.
+# items()`, so a missing key simply contributes nothing to either sum.
+LEGACY_BASIS_EXCLUDED_DIMENSIONS: frozenset[JudgeDimension] = frozenset({JudgeDimension.AGGRESSION_REALISM})
+
 # ── Real-call canary (self-detecting "the synth call never left the process")
 #
 # A `run_caddie_bench.py` wiring bug can make the LIVE synth seam silently
@@ -50,14 +59,25 @@ class RunMeta:
     total_cost_usd: float = 0.0
     wall_time_s: float = 0.0
     case_count: int = 0
+    # cycle-4 §D/§E — which composite renderer backend this run judged
+    # against ("satellite" = the owner's fidelity flow; "vector" = offline/
+    # CI substrate, never a judged basis) and how many cases aborted the run
+    # via a render failure (§E2, populated from runs/<id>/render_failures
+    # .jsonl when present — 0 on every run before that file exists).
+    render_mode: str = ""
+    render_failure_count: int = 0
 
 
 @dataclass
 class HeadlineStats:
     case_count: int
     dimension_pass_rate: dict[str, float]
-    weighted_correctness_score: float  # 0..1, correctness dims weighted 2x (§5b) — ADVICE cases only (#6)
-    correctness_dims_pass_rate: float  # 0..1, unweighted avg of the 6 correctness dims (reviewer meta-note)
+    weighted_correctness_score: float  # 0..1, correctness dims weighted 2x (§5b) — ADVICE cases only (#6); 11-dim, NEW basis (cycle-4)
+    # cycle-4 §D — same weighted accumulation, excluding LEGACY_BASIS_
+    # EXCLUDED_DIMENSIONS (aggression_realism), so a run can still be
+    # compared like-for-like against every run <= cycle 3 (10-dim basis).
+    weighted_correctness_score_legacy10: float
+    correctness_dims_pass_rate: float  # 0..1, unweighted avg of the 7 correctness dims (reviewer meta-note)
     crux_dims_pass_rate: float  # 0..1, unweighted avg of the 4 owner-crux dims (reviewer meta-note)
     degraded_rate: float
     contested_rate: float
@@ -70,6 +90,18 @@ class HeadlineStats:
     latency_p50_ms: Optional[float]
     latency_p95_ms: Optional[float]
     failure_class_counts: dict[str, int] = field(default_factory=dict)
+    # cycle-3 commit 1: per-dimension APPLICABLE count -- shot_reachability is
+    # only applicable/aggregated on positioning-shot cases (see the `continue`
+    # in the dim_scores loop below), so its own `n` can be far smaller than
+    # `case_count`; without this a small positioning sample could masquerade
+    # as a full-population rate in the report table.
+    dimension_n: dict[str, int] = field(default_factory=dict)
+    # cycle-3 commit 2 — histogram of `CaseResult.degrade_reason` over every
+    # degraded result. Old (pre-instrumentation) results have `degraded=True`
+    # but `degrade_reason=None`, bucketed under "unknown(pre-instrumentation)"
+    # rather than silently dropped, so the count always reconciles with
+    # `degraded_rate`.
+    degrade_reason_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -129,22 +161,39 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
     dim_scores: dict[JudgeDimension, list[int]] = defaultdict(list)
     for r in judged:
         for dim, v in r.judge.scores.items():
+            # Commit 1: shot_reachability is N/A off a positioning shot (the
+            # rubric/judge only meaningfully scores it when the ENGINE
+            # REFERENCE says shot_kind=positioning — an out-of-reach shot).
+            # `engine_ref` is a plain dict on every CaseResult, so this reads
+            # the deterministic oracle rather than trusting the judge to
+            # self-declare applicability; old runs re-aggregate correctly
+            # too, with zero re-spend.
+            if dim == JudgeDimension.SHOT_REACHABILITY and (r.engine_ref or {}).get("shot_kind") != "positioning":
+                continue
             dim_scores[dim].append(v)
 
     dim_pass_rate: dict[str, float] = {}
+    dim_n: dict[str, int] = {}
     for dim in JudgeDimension:
         vals = dim_scores.get(dim, [])
         dim_pass_rate[dim.value] = (sum(1 for v in vals if v == 2) / len(vals)) if vals else 0.0
+        dim_n[dim.value] = len(vals)
 
     weighted_num = 0.0
     weighted_den = 0.0
+    legacy_num = 0.0
+    legacy_den = 0.0
     for dim, vals in dim_scores.items():
         weight = 2 if dim in CORRECTNESS_DIMENSIONS else 1
         weighted_num += sum(vals) * weight
         weighted_den += len(vals) * 2 * weight  # max score per item is 2
+        if dim not in LEGACY_BASIS_EXCLUDED_DIMENSIONS:
+            legacy_num += sum(vals) * weight
+            legacy_den += len(vals) * 2 * weight
     weighted_correctness = (weighted_num / weighted_den) if weighted_den else 0.0
+    weighted_correctness_legacy10 = (legacy_num / legacy_den) if legacy_den else 0.0
 
-    # Reviewer meta-note: report the 6 correctness dims AND the 4 owner-crux
+    # Reviewer meta-note: report the 7 correctness dims AND the 4 owner-crux
     # dims as SEPARATE headline numbers (unweighted avg pass rate each) —
     # never let a rosy weighted-correctness hide weak crux scores.
     correctness_rates = [dim_pass_rate[d.value] for d in CORRECTNESS_DIMENSIONS if dim_scores.get(d)]
@@ -154,6 +203,15 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
 
     degraded_rate = (sum(1 for r in results if r.degraded) / len(results)) if results else 0.0
     contested_rate = (sum(1 for r in judged if r.contested) / len(judged)) if judged else 0.0
+
+    # cycle-3 commit 2 — categorize every degraded case by its recorded
+    # `degrade_reason`; pre-instrumentation results (degraded=True,
+    # degrade_reason=None) bucket under "unknown(pre-instrumentation)" so the
+    # sum of this dict always equals the number of degraded results.
+    degrade_reason_counts: Counter = Counter(
+        r.degrade_reason if r.degrade_reason is not None else "unknown(pre-instrumentation)"
+        for r in results if r.degraded
+    )
 
     canary_results = [r for r in results if r.case_id.startswith("canary__")]
     canary_all_pass = any(
@@ -199,6 +257,7 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
         case_count=len(results),
         dimension_pass_rate=dim_pass_rate,
         weighted_correctness_score=weighted_correctness,
+        weighted_correctness_score_legacy10=weighted_correctness_legacy10,
         correctness_dims_pass_rate=correctness_dims_pass_rate,
         crux_dims_pass_rate=crux_dims_pass_rate,
         degraded_rate=degraded_rate,
@@ -212,6 +271,8 @@ def compute_headline(results: list[CaseResult]) -> HeadlineStats:
         latency_p50_ms=p50,
         latency_p95_ms=p95,
         failure_class_counts=dict(failure_counts),
+        dimension_n=dim_n,
+        degrade_reason_counts=dict(degrade_reason_counts),
     )
 
 
@@ -274,14 +335,28 @@ def generate_report(
     lines.append(f"- Synth model: `{meta.synth_model}` (effort `{meta.synth_effort}`)")
     lines.append(f"- Judge model: `{meta.judge_model}`")
     lines.append(f"- Cases: {meta.case_count}  ·  Total cost: ${meta.total_cost_usd:.4f}  ·  Wall time: {meta.wall_time_s:.0f}s")
+    if meta.render_mode == "satellite":
+        lines.append("- Render mode: `satellite` — judged against real imagery (owner directive 2026-07-25)")
+    elif meta.render_mode == "vector":
+        lines.append("- Render mode: `vector` — offline/CI substrate, NOT the owner's fidelity flow; do not compare against satellite-based runs")
+    if meta.render_failure_count > 0:
+        lines.append(
+            f"- 🚨 **{meta.render_failure_count} case(s) aborted the run on a render failure** "
+            "— see `render_failures.jsonl` in this run's directory"
+        )
+    lines.append(
+        "- Satellite rendering + the 11-dimension rubric (aggression_realism added, cycle-4) together "
+        "constitute the new trajectory basis going forward."
+    )
     lines.append("")
 
     lines.append("## Headline")
-    lines.append(f"- **Weighted correctness score: {headline.weighted_correctness_score:.1%}**"
+    lines.append(f"- **Weighted correctness (11-dim, NEW basis — the honest number going forward): {headline.weighted_correctness_score:.1%}**"
                  " (correctness dimensions weighted 2x — ADVICE cases only, FACT excluded, #6)")
+    lines.append(f"- Old-basis weighted correctness (10-dim, comparable with runs <= cycle 3): {headline.weighted_correctness_score_legacy10:.1%}")
     # Reviewer meta-note: correctness AND owner-crux reported as SEPARATE
     # lines — never let a rosy weighted-correctness hide weak crux scores.
-    lines.append(f"- Correctness dims pass rate (unweighted avg of the 6): {headline.correctness_dims_pass_rate:.1%}")
+    lines.append(f"- Correctness dims pass rate (unweighted avg of the 7): {headline.correctness_dims_pass_rate:.1%}")
     lines.append(f"- **Owner-crux dims pass rate (unweighted avg of the 4 — the felt experience): {headline.crux_dims_pass_rate:.1%}**")
     lines.append(f"- Deterministic pre-check pass rate (overall, all checks): {headline.det_check_pass_rate_overall:.1%}")
     if headline.fact_routing_accuracy is not None:
@@ -301,6 +376,8 @@ def generate_report(
     lines.append("|---|---|")
     for dim in JudgeDimension:
         marker = " (2x weighted)" if dim in CORRECTNESS_DIMENSIONS else ""
+        if dim == JudgeDimension.SHOT_REACHABILITY:
+            marker += f", positioning shots only, n={headline.dimension_n.get(dim.value, 0)}"
         lines.append(f"| {dim.value}{marker} | {headline.dimension_pass_rate.get(dim.value, 0.0):.1%} |")
     lines.append("")
 
@@ -309,6 +386,16 @@ def generate_report(
     lines.append("|---|---|")
     for check, rate in sorted(headline.det_check_pass_rate.items()):
         lines.append(f"| {check} | {rate:.1%} |")
+    lines.append("")
+
+    lines.append("## Degrade reasons")
+    lines.append("| Reason | Count |")
+    lines.append("|---|---|")
+    if headline.degrade_reason_counts:
+        for reason, n in sorted(headline.degrade_reason_counts.items(), key=lambda kv: -kv[1]):
+            lines.append(f"| {reason} | {n} |")
+    else:
+        lines.append("_No degraded cases._")
     lines.append("")
 
     lines.append("## Failure-class Pareto (count x lie x hole)")
@@ -340,13 +427,23 @@ def generate_report(
         lines.append(f"- `{r.case_id}` ({fc}){img_note}: {r.answer[:160]!r}")
     lines.append("")
 
+    lines.append("## Delta vs prior run")
     if delta_against is not None:
-        lines.append("## Delta vs prior run")
+        # cycle-4 §D: the prior run predates aggression_realism, so a
+        # like-for-like comparison must use THIS run's 10-dim (legacy) basis
+        # against the prior run's (already 10-dim) weighted_correctness_score
+        # — never compare the prior's 10-dim number against this run's
+        # 11-dim number, which would misattribute the new dimension's own
+        # pass rate to a "delta".
         prior = delta_against.weighted_correctness_score
-        cur = headline.weighted_correctness_score
-        lines.append(f"- Weighted correctness: {prior:.1%} -> {cur:.1%} ({(cur - prior) * 100:+.1f}pp)")
+        cur_legacy = headline.weighted_correctness_score_legacy10
+        lines.append(f"- Weighted correctness (old basis): {prior:.1%} -> {cur_legacy:.1%} ({(cur_legacy - prior) * 100:+.1f}pp)")
+        lines.append(f"- Weighted correctness (new 11-dim basis, no prior-run analog): {headline.weighted_correctness_score:.1%}")
         lines.append(f"- Degraded rate: {delta_against.degraded_rate:.1%} -> {headline.degraded_rate:.1%}")
-        lines.append("")
+    else:
+        lines.append(f"- Weighted correctness (new 11-dim basis — no prior — new basis starts this run): {headline.weighted_correctness_score:.1%}")
+        lines.append(f"- Weighted correctness (old 10-dim basis, this run only, no prior to diff against): {headline.weighted_correctness_score_legacy10:.1%}")
+    lines.append("")
 
     lines.append("## Cost log summary")
     lines.append(f"- Total: ${sum(r.cost_usd for r in results):.4f} over {len(results)} cases")

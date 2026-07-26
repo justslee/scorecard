@@ -2,7 +2,7 @@
 pytest module (filename doesn't match `test_*.py` — pinned by
 `test_bench_teeth.py`); refuses to run without `CADDIE_BENCH_EXTRACT=1`.
 
-Two modes:
+Three modes:
   --from-overpass (default, ZERO network): parses the already-committed
     `tests/fixtures/bethpage_overpass.json` via the production
     `_parse_course_geometry_response` + `assemble_osm_course` pipeline
@@ -15,6 +15,18 @@ Two modes:
     `test_tee_club_expected_strokes.py::_linestring_yards` uses), labeled in
     `_provenance` as derived, not measured.
 
+  --merge-red-trees (ZERO network, cycle-4 specs/caddie-bench-cycle4-plan.md
+    §C(i)): assembles Bethpage Red holes 1/5/6 from the SAME committed
+    Overpass fixture exactly as --from-overpass, then APPENDS the tree/
+    woods features from the committed `tests/fixtures/bethpage_red_trees
+    .json` (real OSM data, captured read-only — holes "1"/"5"/"6", 27/9/1
+    features respectively) before writing. Makes the tee-club expected-
+    strokes machinery (extract_corridor_profile) finally execute in the
+    bench: today the Overpass fixture alone predates tree/woods fetching,
+    so it is `None` on every real bend-capping fixture. No synthetic
+    geometry enters the judged set ([[no-fake-data-fallbacks]]) — both
+    source fixtures are real, committed, read-only-captured OSM data.
+
   --from-prod (READ-ONLY): one `SELECT ... ST_AsGeoJSON(geom) FROM
     public.hole_features WHERE hole_id = ...` against prod RDS, run on-box
     with `DATABASE_URL` in-process only. Used once for Muirfield Village 14
@@ -23,6 +35,8 @@ Two modes:
 Invocation (never in CI):
     cd backend && CADDIE_BENCH_EXTRACT=1 uv run python -m \\
         tests.eval.caddie_bench.extract_fixtures --from-overpass
+    cd backend && CADDIE_BENCH_EXTRACT=1 uv run python -m \\
+        tests.eval.caddie_bench.extract_fixtures --merge-red-trees
 """
 
 from __future__ import annotations
@@ -40,7 +54,13 @@ _M_PER_YARD = 0.9144
 
 _OVERPASS_FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "bethpage_overpass.json"
 _PEBBLE_SOURCE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "pebble_beach_hole3_geometry.json"
+_RED_TREES_SOURCE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "bethpage_red_trees.json"
 _HOLES_OUT_DIR = Path(__file__).parent / "fixtures" / "holes"
+
+# cycle-4 §C(i): the Red holes that get real tree/woods evidence merged in —
+# 1 and 5 are NEW fixtures (clear-driver holes with tree color); 6 is
+# UPGRADED in place (the genuinely-tight case, real corner trees).
+_RED_TREE_MERGE_HOLES = (1, 5, 6)
 
 # Published Bethpage Black scorecard (Black tees) — same source as
 # test_bethpage_validation.py::CARD (bluegolf.ijgt.com, verified 2026-06-29).
@@ -131,6 +151,80 @@ def extract_from_overpass(out_dir: Path = _HOLES_OUT_DIR) -> list[Path]:
     return written
 
 
+def _tree_feature_dicts(tree_features: list[dict]) -> list[dict]:
+    """Converts `bethpage_red_trees.json`'s compact `{"ft": ..., "geom": ...}`
+    entries into full GeoJSON Feature dicts — the exact shape
+    `test_tee_club_expected_strokes.py::_build_fc` already builds from this
+    same committed fixture, reused here rather than re-invented."""
+    return [
+        {"type": "Feature", "properties": {"featureType": tf["ft"]}, "geometry": tf["geom"]}
+        for tf in tree_features
+    ]
+
+
+def extract_red_with_merged_trees(out_dir: Path = _HOLES_OUT_DIR) -> list[Path]:
+    """cycle-4 §C(i): assembles Bethpage Red holes 1/5/6 from the committed
+    Overpass fixture EXACTLY as `extract_from_overpass` does (same geometry,
+    same tee/green/hazard extraction), then merges in the real tree/woods
+    features from the committed `tests/fixtures/bethpage_red_trees.json`
+    before writing. Geometry provenance and tree provenance are both real,
+    committed, read-only-captured OSM data — no synthetic hole enters the
+    judged set ([[no-fake-data-fallbacks]])."""
+    from app.services.osm import _parse_course_geometry_response
+    from app.services.osm_ingest import _deterministic_uuid, assemble_osm_course
+
+    if not _OVERPASS_FIXTURE_PATH.exists():
+        raise FileNotFoundError(f"missing committed fixture: {_OVERPASS_FIXTURE_PATH}")
+    if not _RED_TREES_SOURCE_PATH.exists():
+        raise FileNotFoundError(f"missing committed fixture: {_RED_TREES_SOURCE_PATH}")
+
+    raw = json.loads(_OVERPASS_FIXTURE_PATH.read_text())
+    geometry = _parse_course_geometry_response(raw, course_name_filter=None)
+    red_trees = json.loads(_RED_TREES_SOURCE_PATH.read_text())
+
+    course_id = _deterministic_uuid("osm-bethpage_red")
+    assembled = assemble_osm_course(
+        geometry=geometry, course_id=course_id, course_name="Bethpage Red",
+        target_course_name="Red", address="99 Quaker Meeting House Rd, Farmingdale, NY 11735",
+        location={"lat": 40.7445, "lng": -73.4609},
+    )
+    by_number = {h["number"]: h for h in assembled["holes"]}
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for n in _RED_TREE_MERGE_HOLES:
+        if n not in by_number:
+            raise ValueError(f"Bethpage Red: hole {n} not assembled from the Overpass fixture")
+        key = str(n)
+        if key not in red_trees:
+            raise ValueError(f"{_RED_TREES_SOURCE_PATH}: no tree data for hole {key!r}")
+        h = by_number[n]
+        tree_features = _tree_feature_dicts(red_trees[key]["tree_features"])
+        merged_fc = {
+            "type": "FeatureCollection",
+            "features": [*h["features"]["features"], *tree_features],
+        }
+        coords = _hole_linestring_coords(merged_fc)
+        yards = round(_linestring_yards(coords)) if coords else None
+        provenance = (
+            f"OSM geometry assembled from committed tests/fixtures/bethpage_overpass.json "
+            f"(Bethpage Red, hole {n}) via app.services.osm_ingest.assemble_osm_course; tree/woods "
+            f"features ({len(tree_features)}) merged verbatim from committed "
+            "tests/fixtures/bethpage_red_trees.json (real OSM data, captured read-only). "
+            f"Yardage {yards} DERIVED (straight-line tee->green) — labeled, not measured."
+        )
+        out_path = out_dir / f"bethpage_red_h{n}.json"
+        out_path.write_text(json.dumps({
+            "_provenance": provenance,
+            "par": h["par"],
+            "yards": yards,
+            "features": merged_fc,
+        }, indent=2))
+        written.append(out_path)
+
+    return written
+
+
 def copy_pebble_fixture(out_dir: Path = _HOLES_OUT_DIR) -> Path:
     """Re-point the existing committed Pebble Beach hole-3 geometry fixture
     into the bench's own fixtures/holes/ directory, in the bench's
@@ -211,6 +305,10 @@ def extract_from_prod(hole_id: str, out_path: Path) -> Path:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--from-overpass", action="store_true", default=True)
+    parser.add_argument(
+        "--merge-red-trees", action="store_true",
+        help="cycle-4 §C(i): (re)write Bethpage Red holes 1/5/6 with real tree/woods evidence merged in",
+    )
     parser.add_argument("--from-prod", metavar="HOLE_ID", default=None)
     parser.add_argument("--pebble", action="store_true", help="also (re)write the Pebble Beach hole-3 fixture")
     args = parser.parse_args(argv)
@@ -228,6 +326,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         out_path = _HOLES_OUT_DIR / "muirfield_village_h14.json"
         written = extract_from_prod(args.from_prod, out_path)
         print(f"wrote {written}")
+        return 0
+
+    if args.merge_red_trees:
+        written = extract_red_with_merged_trees()
+        for p in written:
+            print(f"wrote {p}")
         return 0
 
     written = extract_from_overpass()

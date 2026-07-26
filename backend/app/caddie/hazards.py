@@ -98,11 +98,14 @@ derivation.
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Optional
 
 from app.caddie.types import CorridorSample, Hazard, HoleBend
 from app.services.course_spatial import _ring_centroid
+
+logger = logging.getLogger("looper.hazards")
 
 # Metres per degree of latitude (WGS-84 mean) — mirrors the equirectangular
 # idiom used throughout course_spatial.py (_deg_to_m et al).
@@ -116,6 +119,29 @@ _DEFAULT_CAP: int = 5
 # the 10y hazard lateral deadband, comfortably below any bend a caddie would
 # actually name.
 _BEND_MIN_DEVIATION_YARDS: float = 15.0
+# A candidate bend vertex this close to the GREEN end of the path describes
+# the green surround / final approach curl, not a dogleg the tee shot faces
+# — a DELIBERATE GLOBAL correction (specs/caddie-bench-cycle4-plan.md §A4),
+# not just a club-selection fix: `HoleBend.straight` also drives the spoken
+# hole-shape line (format_bend_line below, tools.py's get_bend) and the P2
+# "corner is your landing zone" color line (aim_point.py) — a phantom bend
+# near the green is wrong everywhere those consumers speak it, not only in
+# club selection. 40y ~ green-complex scale; Black 18's phantom "bend" sits
+# 16y short of the green and is the convicting case (spoken "doglegs left at
+# ~395" on a hole the owner calls dead straight, 411y, plays dead straight).
+_BEND_NEAR_GREEN_EXCLUDE_YDS: float = 40.0
+
+# Green-anchor selection (caddie-green-anchor-nearest-centerline-end-plan §D4):
+# key-free WARNING when the SELECTED green still sits this far from the hole
+# polyline's own last vertex. Derivation: real committed greens (Bethpage,
+# all 5 courses) measure 0.6-3.3y from the path end; the bug this selection
+# fixes (a neighbouring hole's green picked by file order) measures 84-133y
+# off. 30y sits ~6x the worst real case (so a huge double green or a
+# multi-polygon green whose centroid drifts 15-25y off the end never spams)
+# and ~2.8x under the smallest observed bug magnitude (so a real mis-anchor
+# still warns). Selection always proceeds — this only logs, never rejects
+# (D4: never mute hazards/bend/green numbers for the whole hole).
+_GREEN_ANCHOR_WARN_YARDS: float = 30.0
 
 _HAZARD_FEATURE_TYPES: frozenset[str] = frozenset({"bunker", "water"})
 _SEVERITY_BY_TYPE: dict[str, str] = {"water": "death", "bunker": "moderate", "trees": "moderate"}
@@ -310,29 +336,84 @@ def _point_dist_sq_m(base_lat: float, a: tuple[float, float], b: tuple[float, fl
     return x * x + y * y
 
 
+def _select_green_nearest_path_end(
+    candidates: list[tuple[float, float]],
+    path: Optional[list[tuple[float, float]]],
+) -> Optional[tuple[float, float]]:
+    """Pick the ``green`` candidate whose ``_feature_point`` is nearest the
+    hole PATH's own last vertex — never the first one found by file order.
+
+    Mirrors the caddie-bench's validated
+    ``tests.eval.caddie_bench.geometry._select_green_nearest_polyline_end``
+    (commit 59baa50), reusing ``_point_dist_sq_m`` (the same distance idiom
+    tee selection uses) instead of a new one.
+
+    Single candidate or no path → ``candidates[0]`` — structural
+    byte-identity with the old "first found" behavior when there's nothing
+    to choose between (plan §5)."""
+    if not candidates:
+        return None
+    if len(candidates) == 1 or not path:
+        return candidates[0]
+    anchor = path[-1]
+    anchor_lat = anchor[1]
+    return min(candidates, key=lambda pt: _point_dist_sq_m(anchor_lat, anchor, pt))
+
+
 def _derive_tee_green(
     features: list[dict],
     tee: Optional[dict],
     green: Optional[dict],
+    *,
+    path: Optional[list[tuple[float, float]]] = None,
 ) -> tuple[Optional[tuple[float, float]], Optional[tuple[float, float]]]:
     """Derive (tee_lonlat, green_lonlat) for the hole.
 
-    Green priority (unchanged):
-    1. A ``"green"`` Polygon centroid in the FeatureCollection (first one
-       found).
-    2. Fallback: a ``"hole"`` LineString's last vertex.
+    Green priority (caddie-green-anchor-nearest-centerline-end-plan, D1 —
+    fixes a multi-green hole silently picking a NEIGHBOURING hole's green by
+    file order, e.g. Bethpage Black 18 reading "508y to green" on a 411y
+    hole. Same bug class and same shape as the tee-side "Finding A" fix
+    below):
+    1. The effective played line's last vertex — ``path=`` when the caller
+       supplies it (see the ``path`` kwarg), else the stored
+       ``_hole_polyline(features)``. Among all stored ``"green"`` candidates,
+       select the one NEAREST that last vertex
+       (``_select_green_nearest_path_end`` — a ``min()`` over every
+       candidate, not a two-way comparison; Bethpage Green 18 carries THREE
+       green polygons). The ``golf=hole`` way is attached to the hole BY
+       REF — it cannot be a neighbour's way, unlike the spatially-joined
+       green polygons — and its length is validated against the card at
+       ingest (test_bethpage_validation).
+    2. No usable path → a VALID ``green=`` arg AS A SELECTOR into curated
+       geometry: pick the stored green whose ``_feature_point`` is nearest
+       the arg. Exact mirror of the tee-arg rule below. "Valid" mirrors the
+       tee-arg rule: ``lat``/``lng`` both present, non-None, not the
+       ``(0, 0)`` sentinel.
+    3. No path, no valid arg, multiple stored greens → first stored green
+       (today's pre-fix behavior, unchanged) — no signal left to rank on;
+       the only remaining order-dependent branch, deliberately.
+    4. Fallback: the played path's own last vertex (no stored green feature
+       at all).
        NOTE (tee-ordering dependency): this assumes the ``golf=hole`` way is
        digitized tee→green, which is the OSM convention. A way drawn
        green→tee would swap the derived endpoints AND reverse the polyline's
        travel direction (mirroring every side) — there is no independent
        signal here to detect that; the ingest-time yardage validation
        (test_bethpage_validation "GROSS REVERSED" check) is the guard.
-    3. Last resort: the ``green=`` arg ({"lat", "lng"} dict).
+    5. Last resort: the ``green=`` arg ({"lat", "lng"} dict), raw.
+
+    Selection never rejects — with ≥1 candidate and an anchor, the nearest
+    is always chosen (a ranking, not a validation; D4). When the SELECTED
+    green still sits > ``_GREEN_ANCHOR_WARN_YARDS`` from the path end, a
+    key-free WARNING is logged (offset yards + candidate count only) and the
+    nearest pick is still returned — never mute the hole's numbers.
 
     Tee priority (Finding A fix, 2026-07-16 — a multi-tee hole was picking
     the FIRST stored tee feature by file order, which silently anchored
     every carry/bend/corridor number to the wrong box the player was
-    actually standing on):
+    actually standing on). Reads the now-FINAL ``green_pt`` from the green
+    selection above — green resolves BEFORE tee so the no-arg multi-tee
+    "back tee" pick is always measured against the correct green (D3):
     1. A VALID ``tee=`` arg — ``{"lat", "lng"}`` both present, non-None, and
        not the sloppy-default sentinel ``(0, 0)``:
        - Stored ``featureType == "tee"`` features exist: select the stored
@@ -349,12 +430,12 @@ def _derive_tee_green(
        Deterministic, replaces file-order "first" with the card convention
        and the frontend's own tie rule ("never hand the golfer a
        shorter-than-actual number"). Requires the green to already be known
-       — the loop above collects tee/green together before this selection
-       runs. No stored green yet at this point (only the linestring/arg
-       fallbacks could supply one) → honest fallback to the first stored tee
-       (order-independent tie; no way to define "back" without a green).
+       — the green selection above runs before this. No stored green yet at
+       this point (only the path/arg fallbacks could supply one) → honest
+       fallback to the first stored tee (order-independent tie; no way to
+       define "back" without a green).
     3. No arg, a single stored tee feature: that tee (unchanged).
-    4. Hole-LineString fallback: unchanged (first vertex).
+    4. Hole-path fallback: unchanged (first vertex).
     5. Last resort: the ``tee=`` arg's raw fields, even if incomplete/zeroed
        (mirrors the pre-fix "if tee_pt is None and tee" catch-all — only
        reachable when nothing above resolved a tee).
@@ -363,7 +444,7 @@ def _derive_tee_green(
     which returns `[]` rather than fabricate a travel direction.
     """
     tee_feature_points: list[tuple[float, float]] = []
-    green_pt: Optional[tuple[float, float]] = None
+    green_candidate_points: list[tuple[float, float]] = []
 
     for f in features:
         props = f.get("properties") or {}
@@ -372,8 +453,49 @@ def _derive_tee_green(
             pt = _feature_point(f)
             if pt is not None:
                 tee_feature_points.append(pt)
-        elif ftype == "green" and green_pt is None:
-            green_pt = _feature_point(f)
+        elif ftype == "green":
+            pt = _feature_point(f)
+            if pt is not None:
+                green_candidate_points.append(pt)
+
+    resolved_path = path if path is not None else _hole_polyline(features)
+
+    green_arg_pt: Optional[tuple[float, float]] = None
+    if green is not None:
+        arg_lat = green.get("lat")
+        arg_lng = green.get("lng")
+        if (
+            arg_lat is not None
+            and arg_lng is not None
+            and not (float(arg_lat) == 0.0 and float(arg_lng) == 0.0)
+        ):
+            green_arg_pt = (float(arg_lng), float(arg_lat))
+
+    green_pt: Optional[tuple[float, float]] = None
+    if green_candidate_points:
+        if resolved_path:
+            green_pt = _select_green_nearest_path_end(green_candidate_points, resolved_path)
+        elif green_arg_pt is not None:
+            base_lat = green_arg_pt[1]
+            green_pt = min(
+                green_candidate_points,
+                key=lambda pt: _point_dist_sq_m(base_lat, green_arg_pt, pt),
+            )
+        else:
+            green_pt = green_candidate_points[0]
+
+        if resolved_path and green_pt is not None:
+            anchor = resolved_path[-1]
+            offset_yards = math.sqrt(
+                _point_dist_sq_m(anchor[1], anchor, green_pt)
+            ) * _YARDS_PER_METER
+            if offset_yards > _GREEN_ANCHOR_WARN_YARDS:
+                logger.warning(
+                    "green anchor %.1fy off the hole path's last vertex "
+                    "(%d stored green candidates) — selected nearest anyway",
+                    offset_yards,
+                    len(green_candidate_points),
+                )
 
     tee_arg_pt: Optional[tuple[float, float]] = None
     if tee is not None:
@@ -409,22 +531,11 @@ def _derive_tee_green(
             tee_pt = tee_feature_points[0]
 
     if tee_pt is None or green_pt is None:
-        for f in features:
-            props = f.get("properties") or {}
-            if props.get("featureType") != "hole":
-                continue
-            geom = f.get("geometry") or {}
-            if geom.get("type") != "LineString":
-                continue
-            coords = geom.get("coordinates") or []
-            if len(coords) < 2:
-                continue
+        if resolved_path and len(resolved_path) >= 2:
             if tee_pt is None:
-                tee_pt = (float(coords[0][0]), float(coords[0][1]))
+                tee_pt = resolved_path[0]
             if green_pt is None:
-                last = coords[-1]
-                green_pt = (float(last[0]), float(last[1]))
-            break
+                green_pt = resolved_path[-1]
 
     if tee_pt is None and tee:
         tee_pt = (tee.get("lng", 0.0), tee.get("lat", 0.0))
@@ -539,7 +650,16 @@ def extract_hole_bend(
     """
     feature_list: list[dict] = (features or {}).get("features") or []
 
-    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green)
+    # Resolved BEFORE _derive_tee_green so the green anchor and this bend's
+    # own path agree on the exact same line (D2) — explicit arg wins, else
+    # the stored hole LineString.
+    path = None
+    if polyline and len(polyline) >= 2:
+        path = [(float(c[0]), float(c[1])) for c in polyline]
+    if path is None:
+        path = _hole_polyline(feature_list)
+
+    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green, path=path)
     if tee_pt is None or green_pt is None:
         return None
 
@@ -552,11 +672,6 @@ def extract_hole_bend(
         return None
     ux, uy = gx / length_m, gy / length_m
 
-    path = None
-    if polyline and len(polyline) >= 2:
-        path = [(float(c[0]), float(c[1])) for c in polyline]
-    if path is None:
-        path = _hole_polyline(feature_list)
     if path is None:
         # No interior vertices to define a bend — honest unknown, never a
         # fabricated "straight" (the chord fallback intentionally has no
@@ -583,8 +698,11 @@ def extract_hole_bend(
 
     # Candidate interior vertices: real forward progress past the tee's own
     # projection (a kink behind the tee is back-tee routing jitter, not a
-    # bend the player faces) and not coincident with the green (no outgoing
-    # leg to define a turn from there).
+    # bend the player faces), not coincident with the green (no outgoing leg
+    # to define a turn from there), and not within _BEND_NEAR_GREEN_EXCLUDE_
+    # YDS of the path's own green end (a vertex that close describes the
+    # green surround / final approach curl, not a dogleg the tee shot
+    # faces — Black 18's phantom "bend" sits 16y short of the green).
     candidates: list[tuple[int, float, float]] = []  # (index, dev_m, along_m)
     for i in range(1, len(path_xy) - 1):
         vx, vy = path_xy[i]
@@ -592,6 +710,9 @@ def extract_hole_bend(
         if along_m <= 0:
             continue
         if math.hypot(gx - vx, gy - vy) <= 1.0:
+            continue
+        remaining_yds = (cum_m[-1] - cum_m[i]) * _YARDS_PER_METER
+        if remaining_yds < _BEND_NEAR_GREEN_EXCLUDE_YDS:
             continue
         dev_m = ux * vy - uy * vx  # positive = LEFT of the chord
         candidates.append((i, dev_m, along_m))
@@ -704,7 +825,21 @@ def extract_hole_hazards(
     """
     feature_list: list[dict] = (features or {}).get("features") or []
 
-    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green)
+    # Played line: explicit arg wins, else the stored hole LineString —
+    # resolved BEFORE _derive_tee_green so the green anchor and the carry/
+    # side classification frame agree on the exact same path (D2). All
+    # points share the tee-based local east/north frame (_xy_m) so the
+    # projection math and the chord fallback are in the same coordinates.
+    # Carry is measured relative to the TEE's own projection onto the path
+    # (not the way's first vertex) so polyline and chord carries agree — the
+    # golf=hole way often starts at the back tee, behind the derived tee.
+    path = None
+    if polyline and len(polyline) >= 2:
+        path = [(float(c[0]), float(c[1])) for c in polyline]
+    if path is None:
+        path = _hole_polyline(feature_list)
+
+    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green, path=path)
     if tee_pt is None or green_pt is None:
         return []
 
@@ -717,17 +852,6 @@ def extract_hole_hazards(
         return []
     ux, uy = gx / length_m, gy / length_m
 
-    # Played line: explicit arg wins, else the stored hole LineString. All
-    # points share the tee-based local east/north frame (_xy_m) so the
-    # projection math and the chord fallback are in the same coordinates.
-    # Carry is measured relative to the TEE's own projection onto the path
-    # (not the way's first vertex) so polyline and chord carries agree — the
-    # golf=hole way often starts at the back tee, behind the derived tee.
-    path = None
-    if polyline and len(polyline) >= 2:
-        path = [(float(c[0]), float(c[1])) for c in polyline]
-    if path is None:
-        path = _hole_polyline(feature_list)
     path_xy: Optional[list[tuple[float, float]]] = None
     tee_along_m = 0.0
     if path is not None:
@@ -784,6 +908,7 @@ def extract_hole_hazards(
                 lng=h_lon,
                 carry_yards=carry_yards,
                 line_side=line_side,
+                lateral_yards=round(abs(lateral_yards), 1),
             )
         )
 
@@ -848,6 +973,7 @@ def _tree_hazard(
         lng=lon,
         carry_yards=carry_yards,
         line_side=side,
+        lateral_yards=round(abs(_lateral_yards), 1),
     )
 
 
@@ -1339,17 +1465,20 @@ def extract_corridor_profile(
     """
     feature_list: list[dict] = (features or {}).get("features") or []
 
-    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green)
-    if tee_pt is None or green_pt is None:
-        return None
-
-    tee_lon, tee_lat = tee_pt
-
+    # Resolved BEFORE _derive_tee_green so the green anchor and this
+    # corridor's own path agree on the exact same line (D2).
     path = None
     if polyline and len(polyline) >= 2:
         path = [(float(c[0]), float(c[1])) for c in polyline]
     if path is None:
         path = _hole_polyline(feature_list)
+
+    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green, path=path)
+    if tee_pt is None or green_pt is None:
+        return None
+
+    tee_lon, tee_lat = tee_pt
+
     if path is None:
         # No mapped centerline -> no bends, no local headings -> never a
         # fabricated chord-frame corridor (unlike extract_hole_hazards).

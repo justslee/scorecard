@@ -3,6 +3,455 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE (2026-07-25) — bend-cap-corner-sharpness: re-pin h18 to the corrected (straight) reality + dedicated synthetic A4 coverage (builder, lane worktree-agent-a39d54b0135bdf23e)
+
+Resolved the FLAG below, per eng-lead's ruling (verified independently, see commit
+`7d7a798`): `test_bend_cap_corner_sharpness.py`'s h18 test was red because its pinned
+numbers were computed against a chord aimed at a NEIGHBOURING hole's green (calling
+`extract_hole_bend(fc)` with no `green=` arg routed it through the pre-910b790 buggy
+first-by-file-order `_derive_tee_green` path). Test-only round; `hazards.py` untouched.
+
+1. Renamed/rewrote `test_h18_near_green_vertex_excluded_demotes_to_the_real_minor_wobble`
+   → `test_h18_plays_straight_after_the_green_anchor_fix`: re-pinned to the measured
+   post-fix reality (`straight=True`, `deviation_yards=7`,
+   `"Hole 18 shape: plays straight — no significant bend"`), docstring rewritten to
+   explain WHY the numbers changed (wrong chord → corrected chord → the hole now agrees
+   with the owner's own "plays dead straight" description, already quoted in the module
+   docstring). Removed the pre-fix `monkeypatch.setattr(hazards, "_BEND_NEAR_GREEN_EXCLUDE_
+   YDS", 0.0)` repro half — with the corrected green, h18 measures `straight=True,
+   deviation 7` identically whether the exclusion window is 40y or 0y, so that block no
+   longer reproduced anything; kept honest by removing rather than leaving a dead
+   monkeypatch block whose assertions no longer tested the mechanism they claimed to.
+2. Added `test_near_green_vertex_masks_a_farther_real_bend_synthetic`: a new synthetic
+   two-vertex hole fixture (extends the file's existing `_hole_way_with_vertex` pattern to
+   two interior vertices) that reproduces the exact argmax-masking shape A4 exists to
+   close, independent of any real course's green anchoring — with
+   `_BEND_NEAR_GREEN_EXCLUDE_YDS` at its real 40.0, the near-green candidate (dev 35y, 45y
+   from green) is excluded and the farther real corner (dev 20y, 250y out) wins the
+   argmax (`straight=False, distance=250, deviation=20`); monkeypatched to 0.0, the
+   near-green candidate's larger deviation wins outright, producing the phantom near-green
+   bend (`straight=False, distance=395, deviation=35`) — both legs against the SAME
+   fixture, isolating A4 as the one variable. The file's pre-existing
+   `test_near_green_exclusion_boundary_synthetic` (boundary-distance coverage, unrelated to
+   this round, left untouched) stays as complementary coverage.
+3. A4's real-data vehicle (Black 18) is gone — tracked, not hidden: A4
+   (`_BEND_NEAR_GREEN_EXCLUDE_YDS`) is now covered ONLY synthetically (the two tests
+   above). Whether A4 is still load-bearing on any correctly-anchored real course is an
+   open question for a future cycle (flagged, not resolved, by the eng-lead's ruling
+   commit) — not addressed this round.
+
+**Gates:** `ruff check .` clean. Full offline `pytest`: **3361 passed / 154 skipped / 0
+failed** (up from 3359 passed/1 failed baseline: the h18 fix converts 1 failed→passed, +1
+net new test in this file). No local Postgres; DB-backed integration tests skip locally,
+run in CI.
+
+Files: `backend/tests/test_bend_cap_corner_sharpness.py` only. No production files touched
+(`backend/app/caddie/hazards.py` untouched this round, per instruction). Silent
+(test-only — no user-visible change).
+
+## DONE (2026-07-25) — caddie-green-anchor-nearest-centerline-end: prod green mis-anchor fix (builder, lane worktree-agent-a39d54b0135bdf23e)
+
+Implemented `specs/caddie-green-anchor-nearest-centerline-end-plan.md` exactly:
+`hazards.py::_derive_tee_green` no longer picks the FIRST `featureType ==
+"green"` feature by file order — it now selects the candidate NEAREST the
+hole path's own last vertex (`_select_green_nearest_path_end`, mirroring the
+already-validated bench fix, `_point_dist_sq_m` reused, `min()` over ALL
+candidates). `path=` threaded keyword-only into `_derive_tee_green` (D2);
+hoisted above all 3 internal call sites (`extract_hole_bend`,
+`extract_hole_hazards`, `extract_corridor_profile`) so the green anchor and
+the carry/bend/corridor frame always agree on the same line. Green resolves
+BEFORE tee selection (D3) so the no-arg back-tee pick reads the corrected
+green. Key-free WARNING (`logging.getLogger("looper.hazards")`, new) when
+the selected green still sits >30y off the path end; selection never
+rejects (D4).
+
+**Before/after (measured via the real ingestion path over the committed
+`bethpage_overpass.json`, all 5 Bethpage courses, 90 holes):**
+
+| course | hole | greens | old→end | new→end | old tee→green | new tee→green | Δy |
+|---|---|---|---|---|---|---|---|
+| Black | 9 | 2 | 2.9y | 2.9y | 430.3y | 430.3y | 0.0 (unchanged, byte-identical) |
+| Black | 18 | 2 | 105.4y | 3.3y | 508.3y | 412.6y | **-95.7y** (card 411) |
+| Blue | 14 | 2 | 108.4y | 0.6y | 392.4y | 367.9y | **-24.5y** |
+| Green | 18 | **3** | 84.1y | 1.3y | 347.2y | 385.1y | **+37.9y** |
+| Yellow | 9 | 2 | 133.2y | 1.3y | 432.7y | 346.5y | **-86.2y** |
+| Red | — | 0 | — | — | — | — | clean (0/18) |
+
+Checked in as `specs/caddie-green-anchor-audit.md` (via new
+`backend/scripts/audit_green_selector.py --fixture`, the offline mode; the
+`--course-id` prod-DB mode is implemented but NOT run — prod access is
+gated this session per the plan's §3.1 GATE note).
+
+New `backend/tests/test_green_anchor_selection.py` (21 tests, all pass): the
+real Black 18 defect + before-repro pin, Black 9 (correct-by-luck, pinned
+geometrically not by file order), the Green 18 THREE-green case (proves
+`min()` over all candidates, not a two-way comparison), synthetic D1/D3
+boundary units (adversarial/reversed file order, arg-as-selector,
+order-dependent-fallback-unchanged, the D3 tee/green ordering coupling,
+single-green byte-identity), and the honest-failure + key-free-warning
+caplog cases.
+
+**Gates:** `ruff check .` clean. Full offline `pytest`: baseline (4ac6bbb)
+3339 passed/154 skipped/0 failed → **3359 passed / 154 skipped / 1 failed**
+(3339 + 21 new − 1, see flag below). No local Postgres; DB-backed
+integration tests skip locally, run in CI.
+
+**FLAG for eng-lead — one pre-existing test now fails, NOT edited (hard
+rule):** `tests/test_bend_cap_corner_sharpness.py::
+test_h18_near_green_vertex_excluded_demotes_to_the_real_minor_wobble` (from
+a DIFFERENT, earlier plan, `specs/caddie-bench-cycle4-plan.md §A`) calls
+`extract_hole_bend(fc)` with no tee/green args on the SAME 2-green Black 18
+fixture — before this fix, that call silently used hazards.py's OWN
+(buggy) first-by-file-order green pick (the 105.4y-off one), so the test's
+pinned numbers (a "275y, dev 24y, real minor wobble" plus a "395y phantom
+artifact") were themselves computed against the mis-anchored green. Post-fix,
+`extract_hole_bend` now uses the corrected green and Black 18 resolves to
+`straight=True, deviation_yards=7` — i.e. it now reports "plays straight,"
+which matches the owner's own documented ground truth quoted verbatim in
+hazards.py's module docstring: "Black 18... plays dead straight" (411y).
+This is very likely a CORRECT, desirable side effect of the root-cause fix
+(the old test encoded behavior computed under the exact bug being fixed
+here) — but it is outside this plan's stated scope (`hazards.py` +new tests
++new audit script only), so per the hard "never edit tests to make them
+pass" rule I have NOT touched it. Recommend a fast follow-up to update that
+test's assertions to the new (straight) numbers, or retire the stale
+"real minor wobble" framing — eng-lead's call, not mine to make unilaterally.
+
+Files: `backend/app/caddie/hazards.py`, `backend/tests/
+test_green_anchor_selection.py` (new), `backend/scripts/
+audit_green_selector.py` (new), `specs/caddie-green-anchor-audit.md` (new).
+No frontend files touched. Silent (backend-only geometry correctness fix —
+not directly visible on TestFlight, but corrects spoken caddie numbers on
+Black 18/9, and would correct Blue 14 / Green 18 / Yellow 9 if those
+courses are among the 12 prod-mapped courses — TBD, prod audit pending).
+
+## DONE (2026-07-25) — CADDIE BENCH CYCLE 4 commit 7: h18 green mis-anchor fix + geometry precondition + F1/severity-cap judge hardening (builder, lane worktree-agent-a36e12e4dc633a855)
+
+Implemented the diagnosed h18 fix (commit `3d935f9` diagnosis) as commit 7 on
+`caddie-bench-c4` == `integration/next`.
+
+**1. Green selection fix** (`tests/eval/caddie_bench/geometry.py::_tee_green_lonlat`):
+`bethpage_black_h18`'s FeatureCollection carries 2 `green` polygons (its own, 3.3y from the
+hole polyline's last vertex, + a neighbouring hole's, 105.4y away) — "first found" silently
+picked the wrong one, producing "411y hole, 508y to green". New `_select_green_nearest_
+polyline_end` picks the green nearest the polyline's own last vertex — same bug CLASS as
+`app.caddie.hazards._derive_tee_green`'s tee-side "Finding A fix, 2026-07-16" (referenced in
+the new code comment). BEFORE/AFTER (measured by stashing the fix and re-running): h18
+508.5y -> 412.7y (matches the 411y card); all other 9 fixtures BYTE-IDENTICAL before vs. after
+(black_h4 509.1, black_h5 478.0, black_h7 478.6, black_h8 208.8, red_h1 464.7, red_h16 500.2,
+red_h5 467.3, red_h6 292.9, pebble_h3 381.5 — every value unchanged by the fix).
+
+**2. `validate_tee_green_geometry` precondition** (new, runs inside `load_hole_fixture` —
+earliest point a bad fixture could reach a paid run): (a) selected green must be within 15y
+of the polyline's own last vertex (real greens measure 0.2-5.1y; the bug was 105.4y — wide
+gap, 15y sits 3x the worst real case and well under 1/7 the bug); (b) `tee->green geodesic <=
+card_yards + 10y` — the ONLY geometrically-impossible direction (a straight line can never
+exceed the path along it); deliberately NO lower bound, since a real dogleg
+(`bethpage_black_h7`: card 553, geodesic 478.6, -74.4y) is normal and a symmetric band would
+false-fail it. New tests: all 10 committed fixtures proven clean, a synthetic mis-anchored
+green rejected, a synthetic dogleg (chord meaningfully shorter than card) accepted.
+
+**3. Backlog item `caddie-green-anchor-nearest-centerline-end`** (p1, high risk, own review
+cycle) — NOT fixed in this bench cycle (bench-instrument scope only, must not touch
+`app/caddie/hazards.py`). Upgraded mid-cycle per eng-lead's own reproduction: ran the real
+prod ingestion path (`osm_ingest.assemble_osm_course` -> `hazards._derive_tee_green`) over all
+18 Bethpage Black holes — 2/18 (holes 9 + 18) carry >1 green; hole 18 is DEMONSTRATED wrong in
+prod (508y vs correct ~430... concretely 102y off), hole 9 only escapes by luck of file order.
+Bethpage Red is clean (0/18). Item captures the reproduction, the prod file:line, the tee-side
+precedent, and the fix (nearest-centerline-end selection, mirroring this commit's own bench
+fix).
+
+**4. `judge.py` fixes (folded in per cycle-4 re-review, verdict SHIP):**
+- Reviewer nit: renamed `test_timid_canary_binding_survives_an_alphabetically_earlier_
+  fixture_added` -> `test_timid_canary_binding_is_independent_of_input_list_order` (the body
+  proves input-order independence via list reversal, not resilience to a genuinely new
+  fixture; docstring corrected to match).
+- Reviewer finding F1 (latent): `judge_prompt`'s `reference_yards` was player-anchored
+  (`tee_shot_numbers.drive_total_yards`) on a positioning turn, while `hazards_payload`'s
+  `carry_yards` is tee-anchored — wrong frame on a MID-HOLE positioning turn (harmless today:
+  the only >12-hazard hole, `pebble_beach_h3`, never produces one). Fixed:
+  `reference = (hole_yards - resolved.distance_to_green_yards) + drive_total_yards` — reduces
+  to `drive_total_yards` unchanged on a TEE turn (no existing pin moves) since no pinned test
+  combines TEE + positioning + a passed `hole_yards`. New pinned mid-hole test proves the fix
+  (decoy 30y hazard vs. real 300y landing-zone hazard).
+- Reviewer §3 hardening: `_format_hazards_payload`'s cap was severity-blind — a `death`/
+  `severe` hazard far from the reference could be dropped. Sort key now `(severity not in
+  (death, severe), distance)` — death/severe entries never truncated regardless of distance.
+  New test: 13 moderate + 1 far-away death hazard, cap=12 — the death hazard survives.
+
+Gates: `ruff check .` clean. Full offline suite **3339 passed, 154 skipped, 0 failed**
+(baseline 3333 + 6 new tests, exact arithmetic match, confirming zero regressions elsewhere).
+Bench dir (`tests/eval/caddie_bench/`) **118 passed** (baseline 112 + 6, also exact). Zero
+`app/` production files touched (`git diff --stat` — only `tests/eval/caddie_bench/{geometry,
+judge,test_bench_offline,test_bench_teeth}.py` + `backlog.json`), so the historical
+"must-not-regress (9-file set)" figure is unaffected by construction; re-ran the known
+geometry/hazard regression files as an additional explicit check (aim_point, bend_cap_corner_
+sharpness, corner_tree_forward_bound, corridor_bend_cap/profile/width_selection, hazards,
+tee_club_expected_strokes/tree_severity_calibration) — all green, 0 failed. Could not
+reconstruct the exact literal "317" grouping from progress.md's own history (the label was
+used loosely across cycles, e.g. "402"/"408"/"412"/"417" then split into "bench"+"must-not-
+regress" only from commit 6 on) — flagging this ambiguity rather than asserting a match I
+couldn't verify.
+
+## DONE (2026-07-25) — CADDIE BENCH CYCLE 4: bend-cap arms on evidence + aggression_realism + real fixtures + satellite hardening (builder, lane worktree-agent-a36e12e4dc633a855)
+
+Implemented `specs/caddie-bench-cycle4-plan.md` (approved fable plan) as 5 commits on
+`caddie-bench-c4`, each pushed to `integration/next` and independently verified by eng-lead
+in a separate worktree between commits. Owner incident: "the caddie still recommends a 4
+iron on a clear driver hole... ensure our test dataset is measuring on actual golfing
+tendencies and not be too conservative."
+
+**Commit 1** `40d144f` — engine fix. `CORNER_MIN_DEVIATION_FRACTION=0.30` (aim_point.py): the
+bend-cap only arms when a corner's chord deviation is >=30% of its own tee-anchored distance
+— separates the owner's false positives (dev/dist 0.10-0.19, real fixtures bethpage_black_h4/
+pebble_beach_h3) from every pinned genuine corner (0.39-0.52). `Hazard.lateral_yards`
+(types.py, additive) + `CORNER_TREE_MAX_LATERAL_YDS=45` (aim_point.py): corner-guarding tree
+evidence only counts within 45y of the line — defense-in-depth for REAL mapped data (inert on
+every hand-built test hazard, since `lateral_yards` is None there). `_BEND_NEAR_GREEN_EXCLUDE_
+YDS=40` (hazards.py::extract_hole_bend): a candidate bend vertex within 40y of the green is
+the green surround, not a dogleg — a DELIBERATE GLOBAL fix (not cap-local), since `HoleBend.
+straight` also drives the spoken hole-shape line and the P2 "corner is your landing zone"
+color line. New `test_bend_cap_corner_sharpness.py` (9 tests) is the headline proof: on the
+REAL committed fixtures (Black 4 + Pebble 3) with owner bag + one injected corner tree, the
+engine goes 4-iron -> driver, reproduced RED via `monkeypatch(CORNER_MIN_DEVIATION_FRACTION,
+0)`. Backlogged loudly (not silently fixed): `caddie-shot-origin-offset-for-bend-and-corridor`
+(root cause #5, tee-anchored geometry reused mid-hole with no shot-origin offset).
+MEASURED FINDING vs. the plan's own prediction: post-A4-fix, Black 18 does NOT become fully
+straight — a real second candidate vertex (24y dev at 275y, a genuine mapped wobble) gets
+promoted once the near-green artifact is excluded, so the P2 color line still fires for a
+typical 280-300y-driver bag (now citing ~275y, not the phantom ~395y). Does not affect the
+club-cap fix at all (0.087 fraction is far below the 0.30 arming threshold either way) —
+flagged in the test docstring and commit message rather than forced/hidden.
+Gates: ruff clean; must-not-regress set 402 passed; full offline suite 3306 passed (baseline
+3297), 154 skipped, 0 failed.
+
+**Commit 2** `36482c2` — bench: 11th judged dimension `aggression_realism` (schema.py,
+CORRECTNESS_DIMENSIONS 6->7), rubric text landed verbatim from the plan (FAILs both timid AND
+reckless tails; "score the club, never the tone"). `judge_prompt`/`judge_case`/
+`second_pass_if_needed` gain `bag_clubs`/`bag_handicap`/`hazards_payload`/`corridor_summary`
+kwargs (all defaulted None) — `run_caddie_bench.py::run()` now feeds the judge real stored
+club yardages + handicap, a compact mapped-hazard summary, and honest corridor evidence
+("unmapped — no danger-edge evidence" when absent, never invented). 5th canary (questions.py)
+— a self-contradicting TIMID answer the judge must score bad, closing the blind spot the
+owner's exact complaint lived in (a timid answer PASSED the pre-cycle-4 rubric outright).
+Dual-basis reporting (report.py): `weighted_correctness_score` (11-dim, new) +
+`weighted_correctness_score_legacy10` (10-dim, comparable with runs <= cycle 3);
+`delta_against` now compares like-for-like (prior 10-dim vs. this run's legacy10).
+Recomputed hand-computed test arithmetic from the documented formulas (never hand-waved) —
+caught TWO of the plan's own compressed arithmetic hints diverging from what the code
+actually produces (verified by executing `compute_noise_stats` directly): the headline test's
+68/72 literal matched the plan; the noise-stats `band_pessimistic` is **64/68**, not the
+plan's stated 68/72 — pinned with the real, code-verified number and the divergence stated in
+the test docstring.
+Gates: ruff clean; bench + must-not-regress 408 passed; full suite 3312 passed, 0 failed.
+
+**Commit 3** `089bfd8` — bench fixtures: `extract_fixtures.py --merge-red-trees` (gated,
+zero network) assembles Bethpage Red holes 1/5/6 from the committed Overpass fixture, then
+merges real tree/woods features from the committed `bethpage_red_trees.json` (27/9/1
+features, real OSM, captured read-only — no synthetic geometry enters the judged set).
+`bethpage_red_h1.json` (NEW): real tree lines -> `extract_corridor_profile` finally returns a
+live 31-sample profile (every OTHER real bend-capping fixture in the bench has None here).
+`bethpage_red_h5.json` (NEW): the owner's exact scenario — trees present, bend 0.217 (below
+the 0.30 arming fraction) -> DRIVER, never capped. `bethpage_red_h6.json` (UPGRADED in
+place): real 0.43 corner, real guarding trees -> the cap arms end-to-end with real
+`Hazard.lateral_yards`, not a hand-built None. DIVERGENCE FROM THE PLAN, verified: the plan
+says "cap arms for the owner bag" on red_h6, but on this fixture's real 292y yardage the
+OWNER bag's 300y driver reaches the green outright (shot_kind=approach — a legitimately
+drivable short par 4); the bend-cap only lives in the non-reachable/positioning branch, so it
+never runs for that bag on this hole. Proven instead against SHORT_HITTER (driver 210, not
+reachable) — the bench's own bag rotation already exercises the mechanism end to end. New
+backlog item `caddie-reachable-branch-blind-to-corner-danger` names this real, separate gap
+(the reachable branch has zero corner/bend reasoning at all).
+Slot rebalance (questions.py, C(ii)): `_PAR45_SLOTS` gains a 2nd TEE slot (CHALLENGE_WHY, the
+aggression surface) and drops RECOVERY_TREES (substituted to ROUGH on 6/7 holes anyway —
+hidden rough inflation; `QuestionType.RECOVERY` stays in the bank; new backlog item
+`caddie-bench-recovery-scenario-suite` for a future dedicated suite). `_PAR3_SLOTS` gains a
+2nd TEE slot (WIND_ADJUST). Measured (10 fixtures, 9 par-4/5 + 1 par-3, 3 bags): 189 total
+cases (174 advice + 10 FACT + 5 canaries) — MATCHES the plan's projection exactly. Per-lie mix
+on 174 advice cases: tee 60, fairway 54, rough 27, bunker 27, greenside 6 — tee+fairway 65.5%
+(~66%, matches plan), trouble (rough+bunker) 31.0% — diverges from the plan's naive 33%
+projection (bethpage_red_h1 has no mapped bunker, so its BUNKER slot substitutes to GREENSIDE
+via the existing fallback, a fixture-availability nuance the plan's uniform hand-count didn't
+account for). Both numbers verified by executing `build_cases` directly.
+Gates: ruff clean; bench + must-not-regress 412 passed; full suite 3316 passed, 0 failed.
+
+**Commit 4** `363708e` — bench render: satellite hardening (§E2) — `render.py::
+fetch_base_tile` now verifies the response content-type actually starts with `image/` (a
+Static Maps 200 with quota/billing HTML would otherwise be silently cached as a "tile");
+`run_caddie_bench.py::run()` wraps `render.render_case` in try/except RuntimeError — on
+failure, writes `runs/<id>/render_failures.jsonl`, prints a loud banner, and ABORTS with new
+exit code 5 (never falls back to vector — a mixed-basis run would corrupt the satellite-vs-
+vector comparison the owner's directive exists to produce; `results.jsonl` stays append-
+resumable, so aborting is cheap). New `--render-only` flag (§E3): renders composites for
+selected cases and exits, gated ONLY on `GOOGLE_MAPS_KEY` (never CADDIE_EVAL_LIVE/
+OPENAI_API_KEY, since it never calls synth/judge) — the one-time georegistration fidelity
+check for the owner's box, packaged command in README.md, run BEFORE any full satellite run
+(georegistration has never run against real tiles at scale before this cycle). README.md
+numbers/commands updated throughout (10 holes, 11-dim rubric, 189 cases, 5 canaries,
+--merge-red-trees, --render-only, the satellite default + exit-5 contract).
+Gates: ruff clean; bench + must-not-regress 417 passed; full suite 3321 passed, 0 failed.
+
+**Commit 5** (this entry) — records + one fix-in-place from eng-lead's commit-4 review:
+`--render-only`'s "gated ONLY on the maps key" contract was actually FALSE — importing
+`run_caddie_bench.py` at all (even `--render-only`, even `--help`) transitively imports
+`app.db.engine`, which raises at IMPORT TIME without `DATABASE_URL` set, a pure import-chain
+side effect (never an actual query). Fixed the DOCUMENTATION (module docstring, `render_only`
+docstring, `--render-only` argparse help, README.md's 3 packaged commands all now carry the
+placeholder `DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused`, stated
+as never-connected-to) rather than the import chain itself (touches `app.caddie.session`/
+`voice_prompts`/`guide_writer`/`strategy`, several production modules — too invasive for a
+bench-only plan). New pinning test `test_render_only_packaged_command_actually_works_as_
+documented` (subprocess-based — every other test in the file pre-sets `DATABASE_URL` at
+import time, which structurally hides this exact defect) proves both the crash without the
+placeholder AND that the corrected packaged command reaches --render-only's own gate message.
+New backlog item `caddie-bench-lazy-db-import` names the preferred (lazy-import) fix for a
+future cycle. Also corrected the plan file's §A1 rationale (one sentence noting A1's cap-local
+reasoning does NOT apply to A4, which is a deliberate global fix — per eng-lead's mid-run
+clarification); 2 more new backlog items (`caddie-bench-recovery-scenario-suite`,
+`caddie-reachable-branch-blind-to-corner-danger`) alongside the one already added in commit 1
+(`caddie-shot-origin-offset-for-bend-and-corridor`); this progress entry.
+Gates (commit 5, DB-import-chain fix + docs only): ruff clean; bench 101 passed (was 100).
+
+**Key-gated execution (owner's box, NOT run by the builder per the plan's contract):**
+`--render-only` fidelity check on 3 cases, then the full satellite run + old/new-basis
+side-by-side report — both require `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`, present only on the
+owner-authorized runner box, never the dev box.
+
+Frontend: verified `frontend/src/lib/types.ts` does NOT mirror `Hazard` (grep: zero matches)
+— no frontend gate needed for the additive `lateral_yards` field. (A DIFFERENT file,
+`frontend/src/lib/caddie/types.ts`, does have a separate, already-stale `Hazard` interface
+missing `carry_yards`/`line_side` too — pre-existing drift predating this plan, out of scope,
+not touched.)
+
+Every commit independently verified in a separate detached worktree by eng-lead between
+pushes (see `verify:` commits interleaved on `integration/next`) — no contradictions found;
+one number (bench-3's trouble%) computed on a different denominator (54/189=28.6% vs. this
+session's 54/174=31.0%, advice-only, matching the plan's own convention) — both are correct
+readings of the same underlying counts, just different denominators.
+
+## IN-PROGRESS (2026-07-24) — CADDIE BENCH CYCLE 3 (eng-lead lane, worktree agent-a451657e208406d24)
+Base `origin/integration/next` @ `0fd7c5b` (post-ship v1.1.21, bench floor 77.0). Landing new bundle
+work on `integration/next`; do NOT ship/ping. Full-150 run under diagnosis: on the box at
+`/tmp/benchwt_1784730879/backend/tests/eval/caddie_bench/runs/20260723-214457/` (read-only via SSM;
+instance i-0826ae70df62d9fe8, doc AWS-RunShellScript, helper scratchpad/ssm.sh).
+
+### DIAGNOSIS (quantified from results.jsonl, 142 judged advice cases)
+1. **shot_reachability 44.4% — CONFIRMED judge-clarity bug, NOT an engine gap.** Split by
+   engine_ref.shot_kind: positioning n=58 → 82.8% pass (dim works where it applies); approach n=84 →
+   17.9% pass (judge zeroes 68/84 reachable approaches). Root cause: `judge.py` `_format_engine_ref`
+   renders `shot_kind: approach (positioning = out of reach; the flag is NOT the aim target)` — the
+   parenthetical GLOSS misleads the judge into thinking the flag isn't the target even on reachable
+   approaches; and the SHOT_REACHABILITY rubric says "out-of-reach tee/**approach** shot" (word
+   "approach" wrongly pulls approach cases in). Judge then hallucinates engine_looks_wrong="reference
+   declares positioning" on 28/84 approach cases where shot_kind is literally "approach". FIX
+   (correctness, plan §5): shot_reachability is N/A on shot_kind!=positioning — exclude from report.py
+   dim aggregation + weighted score, AND fix prompt/rubric/gloss so judge isn't misled (also cuts
+   contested-rate + false engine_looks_wrong + judge cost). PROJECTED: weighted_correctness 77.0% →
+   81.7% (+4.7pts), zero caddie-behavior change (computed offline over the run). Real (a) engine gaps
+   are the small residual: 10/58 positioning imperfect, 6 engine_looks_wrong — minor, low-yield.
+2. **miss_side_evidence 51.4% (27×score0, 42×score1) — payload gap dominant.** Per-side evidence
+   enrichment (`aim_point.compute_miss_side`, cycle-1 DEFECT-2) only fires on the LEFT/RIGHT axis; when
+   the miss axis is front/back ("short/long") and mapped hazards are only left/right, it falls back to
+   evidence-free "Miss short — safe side, easy recovery" — unsupported, and on some holes (h18) the map
+   shows trouble short so the claim is WRONG. Plus a positioning payload bug: h18 slot0 favors right
+   while a bunker sits right at 215 inside the 229 landing window (compute_positioning_miss_side keys on
+   line_side only, not whether the hazard is in the preferred side's actual landing window).
+3. **Degrades 16.7% (25/150) → tanks natural_speech (degraded 32% vs non-degraded 63.2% pass).**
+   `degraded` = production `run_strategy_turn` validator REJECTED synth narrative → mechanical
+   `compose_degraded_line` fallback. Bench stores NO reject reason (all 25 reason=None) — plan must
+   INSTRUMENT bench to persist the validator reject class (verdict-pin vs aim_point suppression
+   divergence vs two-frame leak) so degrades auto-categorize. Suspects = reviewer cycle-3 nits
+   (aim_point rounded-vs-raw suppression divergence).
+4. **natural_speech 57.7%** — downstream of degrades; verify improves after degrade cut before any
+   prompt touch.
+5. **JUDGE NOISE contested 40.1%** — re-judge ~30-case double-pass on-box (~$1.5) → per-dim variance →
+   implied score CEILING (frames owner's 100% goal; never tune judge toward agreement).
+
+### Fable plan DONE → saved to `specs/caddie-bench-cycle3-plan.md` (committed). 5-commit sequence:
+(1) shot_reachability N/A off positioning [report.py aggregation + judge.py prompt/rubric/gloss +
+should_second_pass guard] — the +4.7pt centerpiece, zero behavior change; (2) degrade-reason
+instrumentation [strategy.py validate_with_reason + strategy_turn.py degrade_reason key OFF the wire
++ schema.py/harness.py/run_caddie_bench.py CaseResult fields + report.py degrade section]; (3)
+judge_noise.py double-pass measurement tool; (4) compute_miss_side honest front/back (gated on
+approach_framed+both-open, byte-identity elsewhere); (5) drive_zone_hazards roll-segment window fix
+(decade_advice.py:458) — rides ONLY if the 138-case engine_ref diff audit is clean, else defers.
+Root cause for #5 traced by Fable: `long_edge = min(carry, total)+30` structurally excludes the
+roll segment (carry+30, total], hiding a bunker-at-215 inside a 229 landing zone.
+
+### Builder DONE — all 5 commits landed on integration/next: d880a13 (c1 shot_reachability N/A),
+94e9403 (c2 degrade instrumentation), 46b0486 (c3 judge_noise tool), 344a5e9 (c4 miss_side honest
+front/back), 0b9a5cb (c5 drive_zone roll-segment — RODE after a clean 138-case audit: only 2/138
+diffs, both h18/short_hitter miss_side-only). Head @ deecefd. Builder gate evidence all green
+(offline bench 81 passed, tests/eval 322, named engine suites green). Builder FLAGGED a
+plan-accuracy discrepancy on c5: the plan's h18/bunker-215 headline example was actually a
+SHORT-edge exclusion unrelated to c5's LONG-edge fix, and "carry ≤ total always" fails under
+headwind — builder says fix is still sound (fallback byte-identical there) but this is a reviewer
+scrutiny item: did c5 advance Target 2b or fix a real-but-different thing?
+
+### CYCLE 3 COMPLETE (2026-07-24) — reviewer SHIP + qa GATES GREEN. All 5 commits green + clean on
+integration/next @deecefd; bundle PR **#155** opened (integration/next→main, NOTICEABLE). backlog
+caddie-bench-eval-framework updated with the CYCLE-3 resolution note (JSON re-validated). NOT
+shipped/pinged per directive.
+- reviewer (opus, Fable-grade): SHIP. Independently reproduced the c5 138-case audit (only 2/138 diffs,
+  both h18/short_hitter miss_side-only, more honest); confirmed c1 excludes both num AND den +
+  canary-safe + the should_second_pass skip is string-coupled to "not a positioning shot" and pinned;
+  c2 degrade decision byte-identical + degrade_reason off-wire + no stale-text leak; c4 byte-identical
+  off approach-frame. Two style nits only (redundant anchor ternary at decade_advice.py:474; a c5
+  commit-message accuracy note re aim_point moving on flipped cases via the center-coherence guard) —
+  non-gating, left as-is.
+- qa (sonnet): GATES GREEN. ruff clean; offline bench gate 81 passed (0 deselects/skips); whole eval
+  suite 322; the 9 named engine/validator suites 478; no new skips/deselects.
+
+### COORDINATOR HANDOFF — run these on the EC2 box (i-0826ae70df62d9fe8) to confirm the numbers before
+any ship (packaged in specs/caddie-bench-cycle3-plan.md "Packaged commands" section, verbatim):
+  (a) FREE report-regen of run 20260723-214457 under the c1 aggregation → proves weighted 77.0->81.7
+      on real data ($0).
+  (b) full-150 re-run (~$7, budget cap 12) → new headline + the Degrade-reasons section (c2) +
+      positioning-only shot_reachability (c1).
+  (c) judge_noise double-pass on the NEW run (~$1.5, seed 3, 30 cases) → per-dim variance + implied
+      ceiling for the owner's 100% goal. Run AFTER (b); measure on the post-c1 prompt (contested-rate
+      should have dropped — the pre-fix 40.1% was inflated by the reachability confusion).
+The bench needs OPENAI_API_KEY + GOOGLE_MAPS_KEY in backend/.env on the box (per the epic's unblock
+note). Owner ping only after (b) confirms the gain — the +4.7 is a projection until the re-run.
+
+### DEFERRED to a future cycle (not this pass): degrade-cause fixes (gated on the c2 reason histogram
+from the re-run — the reviewer-flagged suspects are aim_point rounded-vs-raw suppression divergence +
+residual two-frame leak); natural_speech prompt work (verify it rises with the degrade cut first);
+c5's separate SHORT-edge h18 bug the plan's worked example actually described (out of scope for the
+long-edge fix that shipped).
+
+## DONE (2026-07-24) — CADDIE BENCH CYCLE 3, all 5 commits landed on integration/next (builder,
+worktree agent-af9a7d851938e4ced). Head now `0b9a5cb`. All silent (no user-visible/TestFlight change
+— eval-tooling + engine-internal correctness fixes only).
+1. `d880a13` — shot_reachability N/A off positioning (judge.py gloss/rubric/second-pass guard +
+   report.py dim exclusion + `dimension_n`). Before/after reasoning packaged for the coordinator's
+   real-data reagg command (77.0%→81.7% projected); not re-run here (run JSONL lives on the box only).
+2. `94e9403` — degrade-reason instrumentation (strategy.py `validate_strategy_text_with_reason` +
+   strategy_turn.py threading + schema/harness/run_caddie_bench additive fields + report degrade
+   section). Decision-parity proven (5 run_strategy_turn pins + wrapper byte-parity + reason-vocab
+   matrix); `degrade_reason` deliberately kept off the `reason` wire key (code comment at the exact
+   line).
+3. `46b0486` — `judge_noise.py` new gated module (double-pass `compute_noise_stats` + gate-refusal);
+   pure function unit-tested only, never run live per the plan (coordinator's job).
+4. `344a5e9` — `compute_miss_side` honest front/back on approach both-open (gated on
+   `approach_framed`, byte-identical elsewhere; 6 new pins in test_approach_frame.py).
+5. `0b9a5cb` — `drive_zone_hazards` long edge reaches drive TOTAL not carry — **rode** (138-case
+   engine_ref diff audit clean: exactly 2/138 cases differ, both bethpage_black_h18/short_hitter, both
+   `miss_side` only, both degrade to a more-honest center/no-good-miss verdict). **Plan-accuracy note
+   for the reviewer:** the plan's own h18/owner/bunker-215 worked example turned out on reproduction to
+   be a SHORT-edge exclusion (unrelated pre-existing mechanism), not this commit's long-edge/roll-
+   segment fix, and the plan's "stored carry ≤ physics total always" claim doesn't hold under strong
+   headwind (verified) — the fix's fallback branch keeps that case byte-identical rather than
+   misbehaving; the roll-segment mechanism itself is real and is what the audit's 2 diffed cases hit.
+Gates (repeated per commit, final state): `ruff check .` clean; `test_bench_offline.py` +
+`test_bench_teeth.py` 81 passed; full `tests/eval` 322 passed; named engine suite (miss_side_grounding
++ aim_point + positioning_shot + approach_frame + decade_advice + tee_shot_numbers + red1_acceptance +
+tree_hazards + lore_acceptance_pinehurst) 404 passed, 1 pre-existing skip (live ANTHROPIC_API_KEY).
+Zero new deselects/skips; zero existing test assertions edited anywhere in the cycle.
+NEXT: reviewer (adversarial, esp. commit 5's audit + commit 1's before/after case evidence) + qa, then
+package the 3 coordinator commands (report-regen on the real run JSONL, full-150 re-run, judge-noise)
+for the box.
+
 ## DONE (2026-07-23) — caddie approach-solve B1 fix + nits (builder, lane worktree-agent-a332d46ac24fb510d)
 Fixed the ONE BLOCKING fable-review finding + nits, commit `a8633f3` on top of `c96e529`.
 B1: `check_numbers_close` (harness.py) only learned from-you carry numbers when
@@ -2150,3 +2599,1162 @@ warnings from the broken helper are also gone). `ruff check .` clean repo-wide.
 Committed directly to `integration/next` (silent rider, no rebase needed — head was already
 `3097c9f`, same as when dispatched). Landed: see `git log -1` on `integration/next` for the commit hash;
 noted on PR #154. Never touched main; no force-push.
+
+## SHIPPED — bundle #154 -> main, v1.1.21 build 202607232201 (2026-07-23) (release-manager)
+Owner approval in-session, verbatim: "Ship it" — given for the bundle at `3097c9f`. Backend gate then
+failed on the pre-existing green_slope flake (deterministic, twice); fixed at the root as a test-only
+rider (`4f16980`, see entry above). Pinned head confirmed unmoved at `4f16980` throughout gate polling
+(Frontend/Backend/E2E-advisory all SUCCESS).
+Sequence run inline/foreground, no backgrounding:
+1. Gates SUCCESS on `4f16980` (verified via `gh pr checks 154 --json`, structured, not scraped).
+2. VERSION bumped 1.1.20 -> 1.1.21 (`7a50218`), pushed, gates SUCCESS again on the bump head.
+3. `gh pr merge 154 --merge` -> merge commit `d97be85c9fbd583f89adef41b24c50bec6830518`. Post-merge
+   `CI` + `Deploy backend (SSM)` workflows on `main` both SUCCESS.
+4. Key-free confirms via SSM Run-Command on the EC2 box (no secrets in output): `/health` = `{"status":
+   "ok"}`; deployed `git rev-parse HEAD` on box == `d97be85...` (matches merge SHA); `relative_wind`
+   present in deployed `backend/app/caddie/physics.py` (the live bearing-bug fix is the ship's
+   headline — confirmed live); `alembic current` = `018_hole_pins_per_user (head)`, unchanged;
+   `APP_ACCESS_MODE=open` in `.env` — multi-user stays live, untouched; `VOICE_BOOKING_ENABLED` unset
+   in `.env` (defaults false) — outbound caller confirmed inert.
+5. `bash ops/ios/ship.sh` run in the foreground from synced `main` @ `d97be85`. Build succeeded,
+   archived, distribution-signed, uploaded: "Uploaded v1.1.21 (build 202607232201) to TestFlight".
+   Polled the App Store Connect API directly (JWT-signed with the ASC key, key-free stdout) until the
+   build indexed and processed: `processingState` went not-yet-indexed -> `VALID` in ~4 polls
+   (~80s). v1.1.21 sorts above every prior TestFlight entry (last was 1.1.20) — no burial risk.
+6. `integration/next` recut off the merge SHA via a clean fast-forward push (no force; `main` is a
+   strict descendant of the old `integration/next` tip through the merge commit) — a cycle-3 bench
+   lane is in flight and will rebase onto this after.
+7. Records: `backlog.json` — `caddie-approach-shot-engine` status `done-on-bundle` -> `done` with a
+   SHIPPED note (SHA, TestFlight build, bench 53.4->77.0); top-level `note` field prepended with the
+   bundle #154 ship ledger entry (JSON-validated after edit, targeted string edits only, never
+   json.load/dump). `caddie-bench-eval-framework` left `in-progress` (epic continues: full-1000 run +
+   cycle-3 iteration not yet done) — no other backlog items qualified for a terminal mark this cycle.
+   Notion board card #154 + PushNotification to the owner handled separately per the release-manager
+   protocol (Notion MCP / push tool, not git).
+Verified, not asserted: every gate state read from `gh ... --json` structured fields; every prod fact
+read key-free off the box via SSM; TestFlight state read from the ASC REST API with a JWT this session
+minted itself. Nothing scraped from human-readable CLI text.
+
+## AWAITING — caddie-bench cycle 4 (under-clubbing + rubric blindness) — 2026-07-25
+Base: `origin/integration/next` @ f44aaf8 (cycle-3 landed, bundle PR #155). Lane branch
+`caddie-bench-c4` in worktree `.claude/worktrees/agent-a36e12e4dc633a855`.
+
+### DIAGNOSIS COMPLETE (payload evidence, not theory) — two defects
+**A. The bend-cap is the under-clubber, and it preempts the (sane) expected-strokes model.**
+Reproduced on the REAL committed hole fixtures with the owner bag (hcp 3, driver 300): adding ONE
+moderate-severity mapped tree at the DETECTED corner flips the pick off driver —
+  bethpage_black_h4  par5 517y  bend@265 dev51  driver -> **4iron** (232y total, leave 285 vs 218)
+  pebble_beach_h3    par4 381y  bend@265 dev48  driver -> **4iron** (232y total, leave 150 vs 82)
+  bethpage_black_h7  par5 553y  bend@210 dev110 driver -> **6iron** (197y total, leave 355 vs 254)
+  bethpage_red_h16   par5 500y  bend@270 dev121 driver -> 3wood
+That is exactly the owner's "4 iron on a clear driver hole".
+Mechanism (aim_point.py:1292-1330, the corridor-v1 bend-cap):
+ 1. `_BEND_MIN_DEVIATION_YARDS = 15.0` (hazards.py:118) — 15y of chord deviation on a 400-500y
+    hand-drawn centerline is mapping noise, not a dogleg. bethpage_black_h18 (a straight hole)
+    reports straight=False, dev=41.
+ 2. The gate is evidence-free about WIDTH: it needs only ONE moderate tree with carry_yards in
+    [corner-20, corner+40]. Every tree-lined parkland hole satisfies that. It never asks whether the
+    corner is blind, whether the trees are on the inside of the bend, or whether the corridor at the
+    driver's landing zone is actually narrow.
+ 3. It is a hard structural override that runs BEFORE the expected-strokes model and then becomes
+    that model's `ceiling_total_yards` — so a spurious cap is UNRECOVERABLE. Sweep proof that the
+    E-model is not the problem: at uniform corridor widths 10y..160y, for both the owner (hcp 3) and
+    the short hitter (hcp 20), `_select_club_expected_strokes` returns driver at EVERY width.
+    The E-model would have said driver; the bend-cap silently preempts it.
+ 4. It caps to `bend.distance_yards - 5` with no relation to the bag — a corner at 210y hands a 300y
+    driver a 6-iron and a 355y leave on a par 5.
+ 5. (Latent, adjacent) `HoleBend.distance_yards` / `CorridorSample.distance_yards` are TEE-ANCHORED
+    but the code path is deliberately shared with later strokes, with no shot-origin offset.
+
+**B. The bench is structurally blind to (A) — this is why it said 77%.**
+ - 7 of 8 hole fixtures yield `hole.corridor = None` (a corridor needs tree/woods/water danger
+   evidence on BOTH sides), so corridor Stages B/C never execute in the bench at all.
+ - No fixture has a moderate-severity tree hazard near a corner, so the bend-cap never fires either.
+ - Net: across the whole 150-case bench the tee-club machinery is INERT — the engine returns driver
+   on every hole for the owner bag. The bench cannot observe the defect the owner is reporting.
+ - Rubric: `CLUB_CORRIDOR` is judged purely off the rendered map IMAGE; the judge prompt carries NO
+   corridor width, NO hazard list, NO bag, NO handicap (only the label "owner"). It is asymmetric by
+   construction — it penalizes "a reflexive driver call" only, never timidity. A 4-iron on a clear
+   hole scores 2/2.
+ - Scenario mix today (measured, 150 cases): fairway 50, rough 42, tee 28, bunker 24, greenside 3,
+   recovery_trees 3 -> 46% trouble lies vs 52% ordinary tee-and-fairway.
+
+### NEXT / IF THIS LANE DIES
+Fable plan -> builder -> adversarial reviewer (BOTH tails) -> qa. Do NOT re-run the diagnosis; it is
+recorded above. Prior bench run `20260724-055332` retry loop is DEAD (no process on the box) — no
+collision risk. Never touch main; never force-push. Land on `integration/next` / PR #155 as NOTICEABLE.
+
+### BLOCKED (needs owner authorization) — satellite render fidelity check, cycle 4
+Owner directive folded in: bench runs must use `--render-mode satellite` (real Google imagery), not the
+vector composite, and a one-time overlay-fidelity check must run against real tiles before the full run.
+Status: **cannot execute from this lane.**
+ - No `GOOGLE_MAPS_KEY` / `OPENAI_API_KEY` locally (checked key-free: both unset in env, no `backend/.env`).
+ - The only host holding them is the EC2 **production** app box (`i-0826ae70df62d9fe8`); it does have the
+   repo, `uv`, a venv with PIL+httpx, and both keys (verified key-free via SSM).
+ - Executing the render there was DENIED by the permission classifier — the authorization arrived via a
+   coordinator message, not from the owner directly. Not worked around, by design.
+Unblock options for the owner to choose: (a) authorize bench execution on the app box, or (b) provision
+`GOOGLE_MAPS_KEY` + `OPENAI_API_KEY` locally, or (c) run the packaged commands himself.
+Note the box is at 88% disk (~836MB free) — a 150-case satellite run writes ~150 composites; check
+headroom first. Engine + rubric + scenario work proceeds regardless; the packaged commands specify
+satellite per the directive.
+
+### Cycle-4 evidence addendum — the bench is provably blind (verified, all 3 bags)
+Ran `generate_recommendation` over all 8 committed hole fixtures x all 3 bench bags (owner hcp3
+driver300, short_hitter hcp20 driver210, bomber hcp8 driver320): **20 of 21 tee solves return
+driver**. The single exception (bomber on `bethpage_red_h6`, a 292y par 4 a 320y driver overflies)
+is the reachable-branch logic, not the corridor machinery. Neither the bend-cap nor the
+expected-strokes corridor model fires ANYWHERE on the bench, for any player.
+Case set verified independently: 150 cases + 4 canaries. Lie mix — fairway 50, rough 42, tee 28,
+bunker 24, greenside 3, recovery_trees 3 => trouble 69/150 = **46.0%**, ordinary (tee+fairway)
+78/150 = **52.0%**. Hole par mix is only 4x par-4 / 3x par-5 / 1x par-3.
+Also: `_SEVERITY_BY_TYPE` (hazards.py:121) hardcodes EVERY tree to "moderate", and `_tree_hazard`
+(hazards.py:846) computes the observation's lateral offset then DISCARDS it — `Hazard` carries no
+lateral field. So the bend-cap's severity filter discriminates nothing, and the cap cannot know
+whether the "corner trees" sit 5y or 60y off the line. Its arming condition carries zero
+information about danger.
+Deviation-as-a-FRACTION-of-corner-distance separates the cases cleanly: the pinned real dogleg is
+88/226 = 39%; the genuine dogleg fixtures 43-52%; the false positives that produce the 4-iron
+10-19%. A fixed yardage threshold (today's `_BEND_MIN_DEVIATION_YARDS = 15.0`) cannot separate them
+because the corner distances are all similar while the deviations differ 3x — it is the wrong SHAPE
+of criterion, not just the wrong number.
+
+### HOUSEKEEPING — stray commit in the PRIMARY checkout (harmless, needs a one-line cleanup)
+I mistakenly appended this addendum in the primary checkout `/Users/justinlee/projects/scorecard`
+(which sits on a STALE local `integration/next` @0fd7c5b, an ancestor of origin) and committed it
+there as `69bb095`. That commit is NOT pushed and its content is now on origin via this worktree
+instead. Cleaning it up requires a history-discarding reset, which the permission system correctly
+refused unattended. **Next person in that checkout: drop `69bb095` (e.g. `git reset --hard
+origin/integration/next`) before pulling** — otherwise progress.md will conflict on the next pull.
+Nothing was pushed from there; origin is clean and correct.
+
+## AWAITING (cycle 4, live) — fable Plan agent on specs/caddie-bench-cycle4-plan.md
+Baselines captured BEFORE any change (all green, on `caddie-bench-c4` == origin/integration/next):
+  ruff check .                                  -> All checks passed
+  pytest tests/eval/caddie_bench/               -> 68 passed
+  the 7 must-not-regress tee/corridor suites    -> 221 passed
+  full backend offline suite                    -> 3256 passed, 154 skipped (DB), 0 failed
+On plan landing: dispatch `builder` to implement `specs/caddie-bench-cycle4-plan.md` on this branch
+(commit + push each step to `integration/next`), then a FRESH adversarial `reviewer` (must falsify
+BOTH tails of the new `aggression_realism` dimension, prove no rubric gaming, and prove the engine
+fix does not regress the proven lay-up/dogleg/hcp-30 cases on their merits), then `qa` (full gates).
+If the plan agent is dead/stuck: the diagnosis above is complete and sufficient to brief a builder
+directly — do NOT re-run the diagnosis.
+
+Satellite render directive — findings that constrain the plan (verified by reading the code, no keys
+needed): `render.fetch_base_tile` (render.py:168-215) already raises `RuntimeError` on a missing key
+and on any `httpx.HTTPError`, with the API key redacted from the message; there is NO silent vector
+fallback anywhere (vector requires explicitly passing `mode="vector"`). `run_caddie_bench.py:215`
+calls `render_case` with no try/except, so a tile failure aborts the run (recoverable via
+`--resume`), and `run_caddie_bench.py:140` pre-flight-checks the key and exits 2 before spending.
+Tiles are cached forever per hole, so a 150-case run over 8 holes makes only 8 tile fetches — quota
+is a non-issue. Net: the "fail loudly, never mixed-basis" requirement is already met; the only open
+design choice is abort-whole-run vs record-per-case-and-continue.
+`Hazard` lives only in `backend/app/caddie/types.py` (NOT in frontend types.ts or models.py), so a
+lateral-offset field on it is backend-internal — no shared-types sync, no frontend gate.
+
+## AWAITING — builder on specs/caddie-bench-cycle4-plan.md (landed @378bd54)
+The fable plan is written and pushed. It CORRECTED two of my working hypotheses with fresh
+measurement, which is exactly why it was worth running:
+ - Red 6's legit corner trees sit on the OUTSIDE of the bend (line_side right on a LEFT dogleg,
+   29y/35y lateral) — so an "inside-of-bend trees only" filter would have broken the pinned legit
+   cap on its merits. REJECTED. The honest signal is lateral proximity to the played line.
+ - Demoting the bend-cap to an E-model candidate is equivalent to DELETING it (E has no
+   through-the-corner cost model, and corridor is None at every real corner, so there is no honest
+   data to build one). REJECTED — the cap stays hard; the fix goes in the ARMING layer.
+ - New find: `bethpage_black_h18`'s "dogleg at 395" vertex is the green surround, 16y short of the
+   green -> `_BEND_NEAR_GREEN_EXCLUDE_YDS = 40.0`.
+ - New find: `tests/fixtures/bethpage_red_trees.json` already holds REAL OSM tree data for Red 1/5/6,
+   so the bench can be made to see the defect with real geometry — no synthetic holes in the judged
+   set (which also matters under the satellite directive: a fake hole has no real imagery).
+Chosen design: `CORNER_MIN_DEVIATION_FRACTION = 0.30` in the cap gate only (not `extract_hole_bend`,
+whose `straight` is consumed by tools.py:786 + aim_point.py:1524); `Hazard.lateral_yards` (additive,
+already computed-and-discarded) + `CORNER_TREE_MAX_LATERAL_YDS = 45.0`, unknown never disqualifies;
+`aggression_realism` as an 11th dim in the 2x class with a both-tails rubric + anti-hedging clause +
+`too_timid` failure class + a 5th timid canary; judge gets bag distances, handicap, hazard list and
+corridor width at the landing zone; mix 46% trouble -> 33%; dual-basis (11-dim / 10-dim legacy)
+reporting + render mode stamped in the report; satellite content-type guard + exit code 5.
+Five commits, sequenced in the plan's §G. On builder completion: FRESH adversarial reviewer (must
+falsify BOTH tails of the new dimension, prove no rubric gaming, prove the engine fix keeps the
+proven lay-up/dogleg/hcp-30 cases green ON THEIR MERITS), then qa (full gates).
+
+### Cycle-4 AUDIT — near-green bend exclusion + 0.30 fraction threshold, on 26 REAL holes
+Ran before/after over every locally-available real hole: the 8 committed bench fixtures + all 18
+Bethpage Red holes assembled from the committed Overpass fixture (`_parse_course_geometry_response`
+-> `assemble_osm_course`, the same path `test_14` uses). No DB needed.
+
+**(1) Near-green vertex exclusion (`_BEND_NEAR_GREEN_EXCLUDE_YDS = 40`) — SAFE, verified.**
+Exactly ONE hole of 26 flips to straight: `bethpage_black_h18`, whose "bend" vertex is **17y from the
+green** — precisely the defect the rule targets (it makes the caddie say "doglegs left at ~395" about
+a 411y hole that plays dead straight). Every other bend vertex sits **134-346y** from the green:
+Red 6 150y, Red 11 140y, Red 8 136y, pebble_h3 134y, Black 4 252y, Red 16 285y, Black 7 346y.
+Margin is enormous; no genuine dogleg is anywhere near the boundary. The coordinator's feared case
+(a short sharp par-4 dogleg with its true vertex inside 40y of the green) does NOT occur in any real
+hole available locally. Still add the boundary pin test — the audit shows the rule is safe, not that
+the case is impossible.
+
+**(2) The 0.30 fraction threshold is NOT in a clean gap on the larger sample — reviewer must weigh.**
+The plan's calibration table (8 holes) showed a clean void: false positives 0.10-0.19, genuine
+corners 0.39-0.52. Across all 18 Red holes the deviation fractions form a CONTINUUM straddling 0.30:
+  0.07 (h18) 0.08 (h8) 0.18 (h15) 0.22 (h5) 0.22 (h11) 0.26 (h10) 0.27 (h2) 0.29 (h14)
+  | 0.30 threshold |
+  0.33 (h3) 0.35 (h9) 0.43 (h6) 0.45 (h16)
+So h14 (0.29) and h3 (0.33) get OPPOSITE treatment despite being near-identical geometry — the
+threshold is a knife edge through a populated region, not a cut through a void.
+Practical impact TODAY is nil: the Overpass fixture carries no tree features, so none of these holes
+arms the cap at all (`test_14` pins all 14 par-4/5s -> driver). The risk is latent and lands when
+trees are ingested for these courses. This does NOT invalidate 0.30 (it still cleanly separates every
+hole we have EVIDENCE about), but the reviewer must decide whether a knife-edge scalar is acceptable
+or whether the pre-named `turn_angle_deg` fallback (measured gap: sweeps 20-32deg, corners 51-62deg)
+is the better-conditioned criterion. Flagging, not deciding.
+
+**(3) Attribution correction (per coordinator).** Because "unknown lateral never disqualifies",
+`Hazard.lateral_yards` is None on all cached pre-field JSONB and on every hand-built test hazard —
+so the lateral gate is INERT there. The reported false positives (19% / 18% / 10%) are closed by the
+**0.30 fraction gate ALONE**. The lateral bound is defense-in-depth for real mapped data only, and
+must get its own coverage (measured-lateral 44y-caps / 46y-doesn't / None-caps) or it ships
+unexercised. Do not credit it for closing the owner's incident.
+
+### CORRECTION — my earlier "baselines" were measured in the WRONG tree (my error, now fixed)
+The baselines I recorded above (3256 passed / 221 / 68) were run with an absolute path into the
+PRIMARY checkout `/Users/justinlee/projects/scorecard/backend`, which sits on a STALE
+`integration/next` (@0fd7c5b, pre-cycle-3), NOT in this lane's worktree. Same root cause as the
+stray-commit housekeeping note above: absolute paths pointing at the primary checkout instead of the
+worktree. **Do not trust the 3256 figure.**
+TRUE baseline, measured in a clean detached worktree at af468a0 (the real pre-fix base):
+  **3297 passed, 154 skipped, 0 failed.**  The builder's own reported baseline (3297) was CORRECT;
+mine was wrong, and I had passed the wrong number to the builder in its brief. No harm done — the
+builder measured its own.
+LESSON (worth carrying): in a worktree lane, never hardcode `/Users/justinlee/projects/scorecard/...`
+— always operate on the lane's own worktree path, or use relative paths from the tool's cwd.
+
+### Cycle-4 commit 1/5 VERIFIED INDEPENDENTLY (not merely reported) — `40d144f`
+Clean detached-worktree verification at 40d144f (the lane worktree itself was dirty with the
+builder's in-flight commit-2 edits, so a run there would have been meaningless — 4 transient WIP
+failures in `test_bench_offline.py` canary tests were exactly that, not regressions):
+  full offline suite  **3306 passed, 154 skipped, 0 failed** (= baseline 3297 +9 new tests, zero
+                      regressions — matches the builder's report exactly)
+  ruff check .        All checks passed
+  must-not-regress    **221 passed** (bend-cap, corner-tree-forward-bound, tee-club expected
+                      strokes, corridor width/profile, tree-severity calibration, tee-shot numbers)
+**The owner's incident is fixed — confirmed with MY OWN repro harness, not the builder's test:**
+  bethpage_black_h4  (dev/dist 0.19)  4iron -> **driver**
+  pebble_beach_h3    (dev/dist 0.18)  4iron -> **driver**
+  bethpage_black_h18 (now bend@275 dev24, frac 0.087)      driver
+**And the genuine corners still cap, on their merits:**
+  bethpage_black_h7  (0.52) -> 6iron (unchanged)
+  bethpage_red_h16   (0.45) -> 3wood (unchanged)
+  bethpage_red_h6    (0.43) -> driver via the reachable branch (unchanged)
+Builder honesty note worth recording: it reported that the PLAN's own prediction was WRONG — post-fix
+Black 18 does NOT become `straight`; the near-green exclusion promotes a different vertex (275y, frac
+0.087), so the spoken line improves from a phantom "~395" to "~275" rather than disappearing. It
+flagged this in the commit message and the test instead of forcing the plan's predicted assertion.
+That is the behavior we want.
+
+### Cycle-4 commit 2/5 VERIFIED INDEPENDENTLY — `36482c2` (aggression_realism + evidence + dual basis)
+Clean detached-worktree verify at 36482c2: **3312 passed, 154 skipped, 0 failed**; ruff clean; bench
+suite **91 passed** (from 68 at base). The 4 canary failures I saw earlier in the shared lane
+worktree were the builder's mid-edit WIP, as suspected — resolved and green in the committed state.
+Checked against the rubric-gaming risk, item by item:
+ - `AGGRESSION_REALISM` is in `CORRECTNESS_DIMENSIONS` (6 -> 7, weight 2); `CRUX_DIMENSIONS` is
+   derived by complement so it correctly stays the same 4. Denominator independently recomputed by
+   me: 7x2x2 + 4x1x2 = **36** new basis vs 6x2x2 + 4x1x2 = **32** old. Correct.
+ - Rubric text is VERBATIM from the plan — both FAIL tails present, plus the anti-hedging sentence
+   ("Score the CLUB ACTUALLY RECOMMENDED, never the tone"), and a pinned offline test asserts the
+   string still contains both tails + the anti-hedging clause so a later edit cannot quietly soften
+   it. `CLUB_CORRIDOR` text untouched; the geometric-vs-risk division of labor is documented.
+ - New `TOO_TIMID` failure class names the owner's exact complaint in the Pareto.
+ - Evidence threading is real: the actual bag (club yardages + numeric handicap) REPLACES the
+   label-only line (a test asserts replacement, not mere appending); mapped hazards; and the corridor
+   sample at the recommended club's landing. Unmapped corridor renders the honest string
+   "unmapped — no danger-edge evidence (do not invent one)" — no fabricated width.
+   Evidence is recomputed in the runner rather than threaded through `CaseResult`, so results.jsonl
+   does not bloat with judge-only data. All new kwargs are defaulted, so callers that omit them stay
+   byte-identical (pinned by its own test).
+ - The hardcoded "10-dimension" prompt string is now derived from `len(JudgeDimension)`, pinned.
+ - 5th timid canary added (a self-contradicting lay-up that admits "nothing really out there").
+**Builder corrected the plan a SECOND time, honestly:** the plan predicted `band_pessimistic` would
+become 68/72; the builder recomputed it as **64/68** and wrote the divergence into the comment
+("diverges from a naive 'same delta as the 10-dim case' guess"). Every changed literal carries its
+derivation. No assertion was deleted or weakened.
+
+### Cycle-4 commit 3/5 VERIFIED INDEPENDENTLY — `089bfd8` (real tree fixtures + mix rebalance)
+Clean verify at 089bfd8: **3316 passed, 154 skipped, 0 failed**; ruff clean.
+**Fixture honesty: PASS.** All 10 hole fixtures are REAL data — 9 assembled from the committed OSM
+Overpass fixture with tree/woods features merged verbatim from the committed real OSM tree capture,
+1 (pebble_beach_h3) a prod stored-course FeatureCollection. **No synthetic hole entered the judged
+set.** Provenance strings name the assembly path, the merge source, and explicitly label derived
+yardages as DERIVED, not measured (e.g. red_h1: "Yardage 465 DERIVED (straight-line tee->green) —
+labeled, not measured"). This is exactly the [[no-fake-data-fallbacks]] discipline.
+**Scenario mix — MEASURED BY ME (not the plan's projection):**
+  fixtures 8 -> **10** (par mix 5x par-4, 4x par-5, 1x par-3)
+  advice+fact cases 150 -> **189**; canaries 4 -> 5; TOTAL 154 -> **194**
+  lie mix: tee 65, fairway 64, rough 27, bunker 27, greenside 6
+  TROUBLE  69/150 = 46.0%  ->  54/189 = **28.6%**   (plan projected 33% — actual is better)
+  ORDINARY 78/150 = 52.0%  -> 129/189 = **68.3%**   (plan projected 66%)
+The plan's projected counts (174 advice / 189 total) were off; the real figures are 189 advice+fact /
+194 total. Recording the measured numbers, not the projection.
+**Is the machinery actually live now? PARTIALLY — worth the reviewer's attention.**
+  corridor profile present: `bethpage_red_h1` (31 samples) and `bethpage_black_h8` (16, a par 3 where
+    it is structurally unused). So the E-model corridor path now executes on a real par-4 — it never
+    did before.
+  measured tree laterals now present on 4 fixtures: red_h1 (18), pebble_h3 (15), red_h6 (6), red_h5 (3)
+    — so `CORNER_TREE_MAX_LATERAL_YDS` is no longer inert on the bench.
+  **bend-cap arms end-to-end in exactly ONE of 27 hole x bag tee configurations:** `bethpage_red_h6`
+    x `short_hitter` -> 6iron with the "runs through the corner" note. Before cycle 4 it armed in
+    ZERO of 21. Real improvement, but thin: a regression that broke the cap entirely would be caught
+    by only that single bench config (the unit suites cover it far better).
+  The clear-hole side is well covered: red_h1 (straight, live corridor, 18 measured tree laterals),
+    red_h5 (0.22), pebble_h3 (0.18), black_h4 (0.19) all correctly say DRIVER with real tree evidence
+    present — these are precisely the owner's complaint shape.
+  black_h7 (0.52) and red_h16 (0.45) stay driver because those fixtures carry no tree evidence —
+    correct honest behavior (no evidence -> no cap), not a regression.
+FLAG FOR REVIEWER: cap-side bench coverage is one configuration. Consider whether that is sufficient
+or whether a second genuinely-tight hole should be ingested before the bench is trusted to detect a
+cap regression.
+
+### Cycle-4 commit 4/5 VERIFIED INDEPENDENTLY — `363708e` (satellite render hardening)
+Clean verify at 363708e: **3321 passed, 154 skipped, 0 failed**; ruff clean.
+ - Content-type guard added: a Static Maps **200 with a non-image body** (quota/billing HTML) now
+   raises instead of being cached as a "tile" — `raise_for_status()` only caught non-2xx, so this
+   was a genuine silent-corruption hole. Message is key-redacted.
+ - Per-case loud failure: `render_failures.jsonl` + new `_EXIT_RENDER_FAILURE = 5`, run aborts
+   (results.jsonl is append-resumable, so aborting is cheap and a mixed-basis run is impossible).
+ - `--render-only` fidelity mode added, not requiring an OpenAI key.
+ - **Key hygiene: PASS.** Swept the whole diff — no key material anywhere; README examples use `...`
+   placeholders. The builder added a NEGATIVE SECURITY TEST that plants a fake key
+   (`SECRET-KEY-MUST-NEVER-LEAK`) in the env and asserts it never appears in the raised exception.
+   That is the right instinct given this project's prior secret-echo incident.
+
+**DEFECT I FOUND (reported to builder for commit 5): `--render-only` is not actually maps-key-only.**
+It is documented and code-commented as "Gated ONLY on the maps key (never CADDIE_EVAL_LIVE/
+OPENAI_API_KEY)", but it dies BEFORE its key check with an unrelated import-time error:
+  `RuntimeError: DATABASE_URL is not set` (from `app/db/engine.py:15`, at import time)
+A **dummy** `DATABASE_URL` that is never connected to is sufficient to get past it — proven: with
+`DATABASE_URL='postgresql+asyncpg://u:p@localhost:5432/x'` the command reaches its correct
+"requires GOOGLE_MAPS_KEY" message. So it is a pure import-time side effect, not a real DB
+dependency. It matters because the fidelity check GATES the paid satellite run and is meant to be
+runnable anywhere with just the maps key; on a clean machine it emits a confusing Postgres error
+suggesting a database the user does not need. It stays hidden precisely because the prod box has
+DATABASE_URL set. Asked the builder to make the import lazy (preferred, makes the documented
+contract true) or else correct the docs and put a never-connected placeholder in the packaged
+command — plus a pinning test, and to check the FULL run command for the same undocumented
+requirement so the packaged commands are runnable exactly as written.
+
+## AWAITING — reviewer (fable, fresh context) + qa on caddie-bench cycle 4 @192a976
+All 5 builder commits landed on `integration/next` and INDEPENDENTLY verified by me in a clean
+detached worktree (never trusting the builder's own numbers):
+  40d144f commit 1 engine bend-cap arms on evidence   3306 passed / 0 failed
+  36482c2 commit 2 aggression_realism + evidence      3312 passed / 0 failed
+  089bfd8 commit 3 real tree fixtures + mix rebalance 3316 passed / 0 failed
+  363708e commit 4 satellite render hardening         3321 passed / 0 failed
+  192a976 commit 5 records + --render-only doc fix    3322 passed / 0 failed
+  (true pre-fix baseline 3297) — +25 net tests, ZERO regressions, ruff clean throughout.
+Commit 5 resolved the defect I found in commit 4: `--render-only` was falsely documented as
+maps-key-only. Builder diagnosed it correctly (import chain harness.py -> app.caddie.strategy -> ...
+-> app.caddie.session pulls app.db.engine, which raises at IMPORT time; SQLAlchemy never actually
+connects), chose to fix the DOCS rather than refactor 4 production modules outside this plan's scope
+(right call for a bench-only cycle), and added a SUBPROCESS pinning test that runs the packaged
+command exactly as written so the documented contract can't silently rot again.
+ON REVIEWER/QA VERDICTS: SHIP + PASS -> update PR #155 checklist (NOTICEABLE) + backlog, then STOP
+(do NOT ship/ping — coordinator directive). BLOCKING -> re-dispatch builder, re-review.
+Open questions I deliberately routed to the reviewer rather than deciding myself:
+  (a) the 0.30 knife edge (Red 14 at 0.29 vs Red 3 at 0.33 get opposite treatment; the pre-named
+      turn_angle_deg fallback at 45deg has a much cleaner measured gap, 20-32 vs 51-62deg);
+  (b) cap-side bench coverage is ONE hole x bag config (red_h6 x short_hitter) — enough or not?
+Still BLOCKED and unchanged: the satellite fidelity check + the full 150-case run need keys this
+machine does not have; prod-box execution was correctly denied. Owner must unblock.
+
+### Cycle-4 SCENARIO MIX — authoritative reconciliation (three numbers were floating; these are correct)
+Measured by executing `build_cases()` on the final head 192a976. The builder's report said "174
+advice / 31.0% trouble" and I earlier said "189 / 28.6%" — both were on different bases and the
+builder's advice count was slightly off. Exact figures:
+  `build_cases()` total = **189**  (FACT = 10, ADVICE = **179**);  canaries = 5;  GRAND TOTAL = **194**
+  ADVICE-ONLY basis (what the rubric actually judges — FACT cases are never judged, `judge=None`):
+    n=179 · tee 65, fairway 54, rough 27, bunker 27, greenside 6
+    trouble **30.2%** · ordinary **66.5%**
+  ALL-CASES basis (incl. FACT), which is the like-for-like comparison against the pre-change 46.0%
+  (that figure was measured over all 150 cases including FACT):
+    n=189 · tee 65, fairway 64, rough 27, bunker 27, greenside 6
+    trouble **28.6%** · ordinary **68.3%**
+**Headline, like-for-like: trouble lies 46.0% -> 28.6%; ordinary tee-and-fairway 52.0% -> 68.3%.**
+Case count 150 -> 189 (+5 canaries = 194). Use these numbers, not the plan's projection (33%/66%)
+and not the builder's 174/31.0%.
+Root of the plan's projection miss (builder diagnosed, verified): `bethpage_red_h1` has no mapped
+bunker polygon, so its BUNKER slot substitutes to GREENSIDE via the pre-existing `_LIE_FALLBACK` —
+a fixture-availability nuance the plan's uniform "9 holes x 1 bunker slot" hand-count could not know.
+Honest behavior (no fabricated bunker), just a projection that couldn't have been exact.
+
+### Builder self-corrections worth keeping (it found these by EXECUTION, not by trusting the plan)
+1. `band_pessimistic` is **64/68**, not the plan's predicted 68/72 (the separate headline test's
+   68/72 literal WAS correct — two different denominators, easy to conflate).
+2. Post-fix `bethpage_black_h18` does NOT go fully `straight=True`: a second real vertex (dev 24 @
+   275y, fraction 0.087) is promoted, so the spoken line improves from a phantom "~395" to "~275"
+   rather than disappearing. Far below the 0.30 arming fraction either way, so the club-cap fix is
+   unaffected. Documented rather than forced.
+3. The plan's claim that red_h6 arms the cap "for the owner bag" is wrong: at its real 292y the
+   owner's 300y driver reaches the green outright (`shot_kind=approach`), and the bend-cap lives only
+   on the positioning branch. Proven against `short_hitter` instead. This exposed a genuinely
+   separate gap, now backlogged as `caddie-reachable-branch-blind-to-corner-danger` — **the reachable
+   branch never consults `hole.bend` at all**, so a drivable short par 4 with a guarded corner gets
+   no corner reasoning whatsoever. Worth a future cycle.
+Also backlogged: `caddie-bench-lazy-db-import` (the preferred real fix for the --render-only import
+chain) and `caddie-shot-origin-offset-for-bend-and-corridor` (tee-anchored geometry reused mid-hole).
+
+### Cycle-4 QA — **PASS** (verified in a clean detached worktree at 192a976, then removed)
+  ruff check .                     All checks passed
+  full offline suite               **3322 passed, 154 skipped, 0 failed** (baseline 3297, +25 net)
+  must-not-regress set (8 files)   **308 passed, 0 failed**
+  bench suites                     **101 passed, 0 failed**
+  determinism                      101 passed identically at PYTHONHASHSEED 0 / 42 / random
+  packaged --render-only command   runs exactly as documented: reaches the key gate (exit 2), no
+                                   Postgres error, no DB connection attempted; and without the
+                                   placeholder it still fails at import exactly as the README says
+  secret-leak test                 PASSES (plants SECRET-KEY-MUST-NEVER-LEAK, asserts absent +
+                                   <redacted> present); `git diff | grep -iE "AIza|api[_-]?key="` empty
+  do-not-touch paths               `git diff --stat -- '*.env*' 'deploy/*' 'backend/migrations/*'` EMPTY
+  frontend gates                   NOT APPLICABLE, proven not asserted: `git diff --stat
+                                   af468a0..192a976 -- frontend/` is EMPTY (zero frontend files), and
+                                   `Hazard` has no mirror in frontend/src/lib/types.ts. The separate
+                                   stale mirror in frontend/src/lib/caddie/types.ts is pre-existing
+                                   drift this cycle neither touches nor worsens.
+  Playwright E2E                   N/A — no frontend surface in this diff.
+Awaiting the fable adversarial reviewer (both tails of the new dimension, rubric-gaming, no-regression
+on merits, plus rulings on the two open questions I routed to it: the 0.30 knife edge and the
+one-config cap-side bench coverage).
+
+### Cycle-4 REVIEWER (fable, fresh context) — **BLOCKING x2**, both in the bench instrument
+Engine fix (§A), dual-basis arithmetic (§D/§F), monkeypatch harness maintenance, honesty and cached-
+JSONB back-compat: all verified SOUND by execution. The two blockers are ~10 lines, no engine change.
+Both CONFIRMED INDEPENDENTLY BY ME before acting:
+
+**B1 — the judge's hazard evidence is truncated to the 12 hazards NEAREST THE TEE** (`judge.py:165`,
+`hazards_payload[:cap]`, cap=12). `intel.hazards` is carry-ascending, so `[:12]` keeps the near-tee
+ones and silently drops the rest, under an authoritative header that claims to list "MAPPED HAZARDS"
+with no disclosure. Measured by me on the committed fixtures:
+  pebble_beach_h3 (381y): n=20, shown up to 215y, **DROPPED [225,230,265,275,300,350,390,405]**
+     -> the owner bag's driver lands ~277-299, so **265/275/300 are dropped** — the entire landing zone
+  bethpage_red_h1 (465y): n=18, DROPPED [420..480] (all beyond driver range — harmless here)
+Pebble 3 is one of the TWO headline fixtures for this cycle's fix. Consequences: the reckless tail of
+`aggression_realism` goes blind exactly where it must see; a caddie that truthfully cites the trees at
+275 is graded against a list that doesn't contain them (false FAIL); and it presents partial data as
+complete — the opposite of the honest "unmapped — do not invent one" discipline the sibling corridor
+line applies. `hazard_awareness` has the same exposure.
+
+**B2 — the timid canary lands on a 210y par 3, where its answer isn't timid.** Confirmed by running
+`build_canary_cases`: the 5th canary binds to `bethpage_black_h8`, **par 3, 210y**. Its text is "take
+the 4-iron and lay it back safe... driver is way too risky". The owner bag's 4-iron is 230y — on a
+210y par 3 that is OVER-clubbing, and "driver is way too risky" is incoherent on a par 3. Worse, the
+rubric's own anti-hedging clause ("score the CLUB ACTUALLY RECOMMENDED, never the tone"), followed
+literally, tells the judge to ignore the timid rhetoric — the very thing that makes it a poison pill.
+The run-level gate probably still trips via other dimensions, so this is a hole in the PROBE, not in
+the gate: the only empirical teeth for the timid tail are only accidentally satisfied.
+Incidental fragility exposed: canary->fixture binding is `i % len(sorted(glob))`, so adding any
+alphabetically-early fixture reshuffles all five canaries.
+
+**Reviewer RULINGS on the two questions I routed to it (I accept both):**
+ (a) **0.30 knife edge -> SHIP IT, with a hard trigger.** Reasoning I found persuasive: the change is
+     MONOTONE (it can only REMOVE caps vs today, so every hole in the ambiguous band ends up better
+     than it is now, nothing regresses); the error costs are ASYMMETRIC (a false cap is the owner's
+     actual complaint, a missed cap is driver on a mild sweep, and the E-model still prices lateral
+     trouble) so the ambiguous 0.22-0.29 band falls on the cheap side; and decisively, `turn_angle_deg`
+     at 45deg looks better-conditioned only on the SAME under-sampled 9-hole table — it has never been
+     measured on the 18-hole continuum that exposed the fraction's problem. Swapping an under-sampled
+     scalar for an unmeasured one is the same bet with better marketing.
+     CONDITION: the risk lands when tree/woods ingestion is enabled beyond the current fixtures — a
+     known, dateable event. Backlog a TRIGGER-GATED item: measure turn_angle_deg across the full Red 18
+     + Black 18 and re-decide BEFORE enabling tree ingestion for any further course.
+ (b) **1-of-27 judged cap coverage -> SUFFICIENT.** A single LLM-judged case sits inside the
+     instrument's own noise band, so widening to 3-4 configs would still be inside noise. The real
+     regression detector is the DETERMINISTIC suite (test_bend_cap_corner_sharpness boundary probes at
+     0.2965/0.3009 and 44/46/None, test_corridor_bend_cap, test_13_red6, and the new offline
+     end-to-end assertion on real merged geometry). CONDITION: neither the README nor the report may
+     imply the bench "covers" the bend-cap path — state that judge-side coverage is one config and a
+     judged cap regression would not be detectable above noise.
+Nits to fold in: N1 (rubric demands "high-probability" punishment but gives the judge no probability
+and no lateral offset -> a bunker 60y off line reads as valid layup justification; rides along with
+B1's lateral_yards rendering + one rubric clause), N2 (`TOO_TIMID` is never wired to guidance so it
+will read as near-zero "no timidity" in the Pareto), N3 (A4 can in principle PROMOTE a shorter vertex
+with a HIGHER fraction; my 26-hole audit checked `straight`, not the fraction — worth one line).
+
+## AWAITING / STOPPED ON 529 — cycle 4 needs ONE more commit (6/6). Resume here.
+The builder died with `API Error: 529 Overloaded` (server-side, transient) while implementing the
+reviewer's two blockers. **Nothing was stranded**: `origin/integration/next` is at `2e76a8f`, the lane
+worktree is clean, and every completed thing is committed and pushed. Per the standing directive
+(checkpoint + stop on usage/529) this lane stops here rather than retrying into an overloaded API.
+
+**STATE: cycle 4 is code-complete and green EXCEPT the two reviewer blockers.**
+  Landed + independently verified: 40d144f, 36482c2, 089bfd8, 363708e, 192a976.
+  Gates at 192a976: ruff clean · full offline **3322 passed / 154 skipped / 0 failed** (baseline 3297,
+  +25 tests, zero regressions) · must-not-regress 308/0 · bench 101/0 · deterministic across 3
+  PYTHONHASHSEED values · key-free · no do-not-touch path touched · frontend gates proven N/A.
+  QA verdict: **PASS**.  Reviewer verdict: **BLOCKING x2** (both bench-instrument, ~10 lines, NO
+  engine change). The engine fix itself was verified sound and is the strongest part of the cycle.
+
+**TO RESUME — dispatch a builder with exactly this (full detail in the reviewer section above):**
+ B1. `judge.py:165` — `hazards_payload[:cap]` (cap=12) truncates to the hazards NEAREST THE TEE and
+     presents the result as a complete list. On `pebble_beach_h3` it drops carries
+     [225,230,265,275,300,350,390,405] — the owner bag's driver lands ~277-299, so the ENTIRE landing
+     zone is withheld from the judge, on one of the two headline fixtures for this cycle's fix.
+     Fix: sort by `abs(carry_yards - drive_total)` (drive_total available at run_caddie_bench.py:294)
+     before capping; disclose truncation in the header ("showing 12 of 20, nearest the shot");
+     render `lateral_yards` per entry (also closes N1). Pin with a test asserting Pebble 3's
+     landing-zone carries are present.
+ B2. `questions.py:225` — `fx = hole_fixtures[i % len(hole_fixtures)]` binds the new timid canary to
+     `bethpage_black_h8`, a **par 3, 210y**, where "take the 4-iron and lay it back safe" is
+     OVER-clubbing (owner's 4-iron = 230y) and "driver is way too risky" is incoherent. The rubric's
+     own anti-hedging clause then tells the judge to ignore the timid rhetoric — so the only empirical
+     teeth for the timid tail are satisfied only by accident. Fix: pin it to a long par 4/5
+     (`bethpage_black_h4`, 517y — the owner's own incident geometry) via a `min_par`/`min_yards`
+     selector, not `i % len(...)`; also fix the latent fragility that canary->fixture binding depends
+     on `sorted(glob)` order (adding an alphabetically-early fixture reshuffles all five). Pin it.
+ Plus nits N1/N2/N3 and the reviewer's two ruling CONDITIONS (trigger-gated turn_angle_deg backlog
+ item before any further tree ingestion; a README line stating bend-cap coverage is
+ deterministic-test-side and judge-side coverage is a single config, below judge noise).
+ Then: re-review (the fresh reviewer only needs to re-check B1/B2), re-run gates, done.
+
+**DO NOT** re-run the diagnosis, re-plan, or touch the engine — all settled and verified.
+**Still blocked on the owner** (unchanged): the satellite fidelity check + the full 150-case re-run
+need `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`; this machine has neither and prod-box execution was correctly
+denied by the permission system. Commands are packaged and verified runnable as written.
+NOT shipped, NOT pinged — per directive.
+Also verified independently: the case set is 150 (+4 canaries). Lie mix — fairway 50, rough 42,
+tee 28, bunker 24, greenside 3, recovery_trees 3 => trouble 69/150 = **46.0%**, ordinary
+(tee+fairway) 78/150 = **52.0%**. Hole par mix is only 4x par-4 / 3x par-5 / 1x par-3.
+And: `_SEVERITY_BY_TYPE` (hazards.py:121) hardcodes EVERY tree to "moderate", and `_tree_hazard`
+(hazards.py:846) computes the observation's lateral offset then discards it — `Hazard` has no
+lateral field. So the bend-cap's severity filter discriminates nothing and the cap cannot know
+whether the "corner trees" are 5y or 60y off the line. Its arming condition carries zero
+information about danger.
+Deviation-as-fraction-of-corner-distance cleanly separates the cases: pinned real dogleg 88/226 =
+39%; genuine fixtures 43-52%; the false positives that produce the 4-iron 10-19%.
+
+## DONE (2026-07-25) — CADDIE BENCH CYCLE 4, commit 6/6: reviewer's 2 BLOCKING findings fixed (builder, resumed after a 529, lane worktree-agent-a36e12e4dc633a855)
+
+Resumed from the STOPPED entry above (529 was transient; nothing was stranded, `origin/
+integration/next` was at `2e76a8f`/`aed7386` and the lane was clean). Fixed both BLOCKING
+findings + all 3 nits + both reviewer ruling conditions, in one commit, "do not touch the
+engine" respected exactly (verified: `git diff app/caddie/aim_point.py` shows a COMMENT-only
+change, zero logic/behavior touched; `hazards.py`/`types.py` untouched entirely).
+
+**B1 (judge.py `_format_hazards_payload`)** — the judge's mapped-hazard evidence used to keep
+the 12 hazards NEAREST THE TEE (`hazards_payload[:cap]` on a carry-ascending list) and present
+that as a complete list. On `pebble_beach_h3` (381y, one of this cycle's two headline
+fixtures, n=20 hazards) this silently dropped `[225,230,265,275,300,350,390,405]` — the owner
+bag's driver lands ~277-299y, so the ENTIRE landing zone was withheld from the judge on
+exactly the fixture this cycle's fix is judged against.
+  BEFORE (cap=12, carry-ascending): `[15,35,35,65,80,80,100,160,195,195,205,215]` — landing
+  zone entirely absent.
+  AFTER (`reference_yards=288`, the drive's own landing distance): `MAPPED HAZARDS (showing 12
+  of 20, nearest the shot; ...): bunker R 300y ... lat=18.7y; bunker R 275y ... lat=23.9y;
+  bunker R 265y ... lat=29.1y; bunker C 230y ...; trees R 350y ...; trees L 225y ...; ...` — the
+  entire landing zone (300/275/265/230) now present, closest-to-the-shot first.
+Fix: `_format_hazards_payload` now sorts by `abs(carry_yards - reference_yards)` before
+capping; `reference_yards` is derived INSIDE `judge_prompt` from data it already has (never a
+new kwarg/plumbing change) — `tee_shot_numbers.drive_total_yards` on a positioning turn (the
+drive's own landing distance is what's relevant), else `hole_yards` (the green IS the target
+on a reachable/approach turn, and sits at the hole's own tee-anchored length by the same frame
+`Hazard.carry_yards` is measured in). Truncation is DISCLOSED in the header whenever the real
+count exceeds the cap (never presented as complete — same honesty discipline the corridor line
+already had). Every entry now also renders `lateral_yards` (closes N1 below). `carry_yards is
+None` (defensive; never actually produced by the real `Hazard` model, which defaults to 0)
+sorts LAST, never crashes, never silently wins the cap. `reference_yards=None` (no signal)
+falls back to the original order — never a fabricated relevance ranking.
+Pinned: 6 new tests (`test_hazards_payload_pebble3_landing_zone_survives_the_cap` is the exact
+repro above; sort-by-relevance unit proof; `carry_yards=None` defensive proof; no-reference
+fallback proof; `judge_prompt`'s reference derivation on both positioning and non-positioning
+turns).
+
+**B2 (questions.py `build_canary_cases`)** — the 5th (timid) canary's binding
+(`hole_fixtures[i % len(hole_fixtures)]`) was PURELY POSITIONAL and landed it on
+`bethpage_black_h8` — a par 3, 210y — where the owner bag's 4-iron (230y) is an OVER-club and
+"driver is way too risky" is incoherent on a par 3; the rubric's own anti-hedging clause would
+then tell the judge to ignore the incoherent rhetoric anyway, so the timid tail's only
+empirical teeth were satisfied by accident. Fix: `_CANARY_ANSWERS` tuples gain
+`(min_par, min_yards)` — 0/0 (no real requirement) for the 4 reckless-tail canaries
+(self-contained poison: fabricated/inconsistent numbers, not hole-dependent — their existing
+bindings are UNCHANGED); `(4, 500)` for the timid canary. `build_canary_cases` now picks the
+alphabetically-first fixture satisfying a real requirement — deterministic AND correct
+regardless of population order, unlike positional indexing — landing the timid canary on
+`bethpage_black_h4` (517y, the owner's own incident geometry), where under-clubbing to a
+4-iron is unambiguously timid. Also fixes the latent fragility the reviewer named (an
+alphabetically-early fixture reshuffling all five bindings) for any FUTURE canary that needs a
+real constraint. A restricted `--holes` subset that can't satisfy a canary's requirement now
+SKIPS that canary (loud stderr warning) rather than crashing the whole run — a legitimate
+partial/debug run must not be held hostage by an unsatisfiable requirement (verified: this
+only ever fires on a deliberately narrowed `--holes` list; the full fixture set always
+satisfies it).
+Pinned: 4 new tests — binds to `bethpage_black_h4` specifically (+ sanity par>=4/yards>=500);
+binding is IDENTICAL whether `hole_fixtures` is passed forward or reversed (proves it's no
+longer position-dependent); the unsatisfiable-requirement skip-not-crash path.
+
+**N1** — rubric clause added: a mapped hazard the player's shot "cannot plausibly reach — far
+off the played line (large lateral offset), or beyond the range of the club actually in play —
+is NOT punitive evidence." Closes the gap where a moderate hazard 60y off-line could otherwise
+read as valid cover for a layup, now that lateral_yards is rendered per B1.
+**N2** — one sentence: "When this dimension FAILS on the conservative tail ..., set
+failure_class to 'too_timid' — never 'vague' or another class" — `FailureClass.TOO_TIMID` now
+has actual rubric guidance telling the judge to use it, so it won't sit near-zero in the
+Pareto and read as "no timidity" by omission.
+**N3** — one paragraph on `CORNER_MIN_DEVIATION_FRACTION` (aim_point.py, comment-only): A4's
+near-green exclusion operates on absolute deviation, not this fraction, so it can in principle
+PROMOTE a shorter vertex with a HIGHER fraction, newly arming the cap — not observed on any of
+the 26 real holes audited this cycle (which checked `straight`, not the fraction), named as a
+real checked-for-but-unobserved edge case.
+**Ruling condition 1** — new TRIGGER sentence on the same constant's comment + a new,
+deliberately `status: blocked` backlog item (`caddie-bend-cap-turn-angle-remeasure-trigger`):
+before tree/woods ingestion is enabled for ANY course beyond this cycle's fixtures, re-measure
+`turn_angle_deg` across the full Red 18 + Black 18 and re-decide 0.30 vs the 45deg criterion
+using that real measurement, not this cycle's 8-hole table.
+**Ruling condition 2** — new README.md section: bend-cap coverage is solid on the
+DETERMINISTIC offline suite (400+ pins) but thin inside the bench's own judged case matrix
+(exactly ONE hole x bag config actually arms the cap through a live synth+judge call) — a
+judged-run regression in the cap specifically would not clear judge noise to be detectable.
+Neither README nor any generated report may imply the bench "covers" the cap path on the
+judged headline score alone.
+
+**Note on a peer discrepancy, surfaced not silently accepted**: the eng-lead's own "authoritative
+mix reconciliation" commit (`af6eb2c`) states ADVICE=179/trouble=28.6%(or 30.2%) — I
+re-executed `build_cases()` directly on the current head and got ADVICE=**174**, tee=**60**
+(matching MY original commit-3/5 numbers exactly, unchanged). The likely cause: all 5 canary
+cases resolve to TEE lie (verified) — if a reconciliation script counted canaries as "advice"
+(174+5=179, tee 60+5=65 — both match eng-lead's stated figures exactly), that would explain the
+gap. Did not touch README's existing (correct, re-verified) case-math numbers to match the
+peer figure; flagging this for eng-lead directly rather than either silently overriding the
+record or silently adopting a number my own execution contradicts.
+
+Gates: ruff clean; bench suite **112 passed** (was 101, +11 new pins); must-not-regress set
+429 passed; full offline suite **3333 passed, 154 skipped, 0 failed** (was 3322 before this
+commit — +11 new tests, zero regressions). `git diff app/caddie/aim_point.py` confirmed
+comment-only (no engine logic changed); `hazards.py`/`types.py` untouched.
+
+Cycle 4 is now feature-complete pending re-review of B1/B2 only (per the reviewer's own
+stated scope for the re-check) and the owner's key-gated satellite/live-run execution
+(unchanged, still blocked on `GOOGLE_MAPS_KEY`/`OPENAI_API_KEY`, not on this machine).
+
+### Cycle-4 commit 6/6 VERIFIED INDEPENDENTLY — `c104cb3` (both reviewer blockers fixed)
+Clean verify at c104cb3: **3333 passed, 154 skipped, 0 failed**; ruff clean; must-not-regress
+**317 passed**; bench **112 passed**. (Baseline 3297 -> +36 tests across the whole cycle.)
+**B1 FIXED — proven by execution on the real Pebble 3 fixture, before/after:**
+  AFTER (`reference_yards=299`, the driver's own landing distance):
+    "MAPPED HAZARDS (showing 12 of 20, nearest the shot; tee-anchored carry, side, severity,
+     lateral offset from the line): bunker R 300y moderate lat=18.7y; bunker R 275y moderate
+     lat=23.9y; bunker R 265y moderate lat=29.1y; trees R 350y moderate lat=43.4y; ..."
+    -> the landing-zone carries 265 / 275 / 300 are now the FIRST THREE entries. All present.
+  BEFORE (tee-ascending fallback): 265y absent, 275y absent, 300y absent — the defect, confirmed.
+  Truncation is now DISCLOSED ("showing 12 of 20, nearest the shot") instead of a partial list
+  presented as complete, and `lateral_yards` is rendered per hazard — which also closes nit N1,
+  since the judge can now see e.g. `trees R 350y lat=43.4y` and discount it as non-punitive.
+  Selection falls back to the original carry-ascending order when no reference is available —
+  never a crash, never a fabricated relevance.
+**B2 FIXED — canary->fixture binding, verified by running `build_canary_cases`:**
+  the timid canary now binds to `canary__bethpage_black_h4__tee_strategy` — **par 5, 517y**, the
+  owner's own incident geometry, where "take the 4-iron and lay it back safe" (4-iron 230y vs
+  driver 300y on 517y) is UNAMBIGUOUSLY timid. Previously it sat on a 210y par 3 where a 230y
+  4-iron is over-clubbing and the poison pill wasn't poisonous.
+Dispatching a fresh reviewer (re-check B1/B2 only) + qa (full gate delta).
+
+## GREEN MIS-ANCHOR on bethpage_black_h18 — diagnosed from the data (coordinator's fidelity finding)
+Coordinator saw the composite banner read "Hole 18 · Par 4 · 411y · **508y to green**" — impossible.
+Diagnosed; none of the three hypotheses was right. **The tee is correct and the centerline is correct;
+the GREEN ANCHOR is a different hole's green.**
+  bethpage_black_h18: card 411y · polyline length **414.6y** (matches the card) · tee sits **0.0y**
+  from polyline[0] (correct) · but the SELECTED green is **105.4y from the polyline END** and 508.5y
+  from the tee.
+  The fixture carries **TWO green polygons**: green[1] is the real one (3.3y from the centerline end,
+  412.7y from the tee — matches the card); green[0] is a neighbouring green (105.4y off the end).
+  `geometry._tee_green_lonlat` takes `green_feats[0]` — **the first by file order** — and picks wrong.
+Scope, measured across all 10 fixtures: **only h18 is affected** (2 greens). Every other fixture has
+exactly 1 green and its selected green sits 0.2-5.1y from the centerline end.
+**PROD USES THE IDENTICAL RULE.** `app/caddie/hazards.py::_derive_tee_green` documents green priority
+as "A `green` Polygon centroid in the FeatureCollection (**first one found**)". Striking detail: prod
+already fixed exactly this bug class for TEES ("Finding A fix, 2026-07-16 — a multi-tee hole was
+picking the FIRST stored tee feature by file order, which silently anchored every carry/bend/corridor
+number to the wrong box"), but greens never got the same treatment. Latent, not demonstrated: the prod
+assembler over all 18 Bethpage Red holes yields **0/18** holes with != 1 green, so no reproduction in
+prod data I can reach — but the rule is unsafe and the owner plays Bethpage.
+Bench impact: `resolved.distance_to_green_yards` and the banner the JUDGE READS AS GROUND TRUTH are
+wrong on h18 (508 vs 411), and `approach_bearing_deg`/green depth+width are computed to the wrong
+green. It would poison every judged case on 1 of 10 fixtures. The club solve itself used `fx.yards`
+(411), so the engine's own pick was unaffected — but the judge would grade it against 508.
+
+### TRAP in the coordinator's proposed assert — a naive symmetric band would FALSE-FAIL every dogleg
+"|card_yards - tee-to-green geodesic| within a sane band" breaks on real doglegs, because a dogleg's
+straight-line distance is LEGITIMATELY much shorter than its card yardage. Measured:
+  bethpage_black_h7  card 553  geodesic 478.6  **-74.4**  <- CORRECT (a real dogleg; polyline 559.0y,
+                                                            green 0.6y from the centerline end)
+  bethpage_black_h18 card 411  geodesic 508.5  **+97.5**  <- THE BUG
+The asymmetry is the whole signal: a straight line can never be LONGER than the path along it, so
+**geodesic > card + tolerance is geometrically impossible** and is the real invariant. Shorter is
+normal. The robust primary check is therefore "the selected green must be within N yards of the hole
+polyline's END", with the geodesic<=card+tol assert as the secondary.
+## CORRECTION — the scenario-mix numbers I published were WRONG. The builder's were right.
+Coordinator asked me to reconcile the 174-vs-179 advice-count discrepancy. Doing so proved **my**
+figure wrong, not the builder's.
+Root of my error: **`build_cases()` already CONTAINS the canary cases** (verified: 5 of the 189 ids
+start with `canary__`, and `build_canary_cases()` returns exactly those same 5 — overlap = 5, it is a
+subset VIEW, not an additional set). I had treated canaries as an extra set on top, so I both
+inflated the advice count (189 - 10 FACT = 179, forgetting to remove the 5 canaries) and invented a
+"grand total 194" that double-counted them.
+**Authoritative composition @c104cb3:**
+  `build_cases()` = **189** total executed = **174 advice + 10 FACT + 5 canary**
+  reach the LLM judge = **179** (advice + canaries; the 10 FACT cases skip the judge)
+  scored in the rubric headline = **174** (canaries are excluded from the headline)
+  TOTAL executed = **189**, NOT 194. There is no 194.
+**Authoritative mix, like-for-like on the ADVICE-ONLY headline basis (the only honest comparison):**
+  BEFORE @af468a0: 138 advice cases — trouble 69/138 = **50.0%**, ordinary 66/138 = **47.8%**
+  AFTER  @c104cb3: 174 advice cases — trouble 54/174 = **31.0%**, ordinary 114/174 = **65.5%**
+  => **trouble lies 50.0% -> 31.0%  ·  ordinary tee-and-fairway 47.8% -> 65.5%  ·  cases 150 -> 189**
+My earlier published "46.0% -> 28.6% / 52.0% -> 68.3%" was wrong at BOTH ends (both denominators
+included FACT and canary cases, which are not rubric-scored). The real improvement is LARGER than I
+reported (-19.0 pts of trouble, not -17.4). PR #155 and the earlier progress entry are corrected.
+The builder's original "174 advice / 31.0%" was correct and I overrode it with a worse number —
+recorded here because the failure mode matters: I "reconciled" two figures by re-deriving one of them
+from an assumption I never checked, and published the result as authoritative.
+
+### Cycle-4 commit 7/7 VERIFIED INDEPENDENTLY — `59baa50` (h18 green mis-anchor + geometry precondition)
+Clean detached-worktree verify at 59baa50:
+  full offline suite  **3339 passed, 154 skipped, 0 failed**   ruff clean
+  bench               **118 passed**
+  must-not-regress    **317 passed** — I resolved the ambiguity the builder honestly flagged: it
+                      could not reconstruct my loosely-labelled "9-file / 317" set from the notes.
+                      The set is exactly: test_corridor_bend_cap, test_corner_tree_forward_bound,
+                      test_tee_club_expected_strokes, test_corridor_width_selection,
+                      test_tee_club_tree_severity_calibration, test_corridor_profile,
+                      test_tee_shot_numbers, test_hazards, test_bend_cap_corner_sharpness -> 317.
+  `git diff --stat c104cb3..59baa50 -- backend/app/` is EMPTY — zero production files touched.
+**Green fix verified across all 10 fixtures** (`tee->green` vs card, and green-to-centerline-end):
+  bethpage_black_h18  card 411  tee->green **412.7** (was 508.5)  green 3.3y from the line end  FIXED
+  every other fixture byte-identical; greens 0.2-5.1y from their centerline end; and
+  bethpage_black_h7 still legitimately reads 478.6 against a 553 card (a real dogleg) — the
+  precondition correctly does NOT flag it, because it asserts no lower bound.
+Precondition: green must be <=15y from the polyline's last vertex (real 0.2-5.1y, the bug 105.4y),
+plus geodesic <= card + 10y (the geometrically impossible direction only). Runs at fixture LOAD, so a
+bad fixture can never reach a paid run.
+
+### PRODUCTION DEFECT ESCALATED (not fixed here — backlogged p1 for its own review cycle)
+`caddie-green-anchor-nearest-centerline-end`. Reproduced through the REAL prod path
+(`app.services.osm_ingest.assemble_osm_course` -> `app.caddie.hazards._derive_tee_green`) on
+**Bethpage Black — the owner's course**:
+  holes with >1 green: **9 and 18**
+  hole  9 (par 4, centerline 477y): prod picks a green 2.9y from the end -> 430y. Correct, but only
+                                    by luck of file order — one re-ingest from flipping.
+  hole 18 (par 4, centerline 415y): prod picks a green **105.4y** from the end -> reads **508y**
+                                    instead of ~412y. **~102 yards wrong, live.**
+  Bethpage Red is clean (0/18), which is why my first scoping pass called this merely latent.
+Everything anchored to that green is wrong on Black 18: distance-to-green, `approach_bearing_deg`,
+green depth/width, and every hazard's `distance_from_green`. Prod's green priority is documented as
+"first one found" — the same bug class prod already fixed for TEES ("Finding A fix, 2026-07-16",
+multi-tee holes picking the first stored tee by file order) but never for greens. Fix is the same
+rule now used in the bench: select the green nearest the hole polyline's last vertex.
+
+### LESSON — the bench must validate its own inputs, not just its outputs (coordinator's note)
+Both of the reviewer's blockers and this green mis-anchor are the same class: **the instrument was
+feeding the judge wrong or partial ground truth while presenting it as authoritative.** A truncated
+hazard list shown as complete, a canary on a hole where its answer isn't the failure it's meant to
+probe, and a banner reading 508y on a 411y hole would each have silently corrupted the new-basis
+headline — and none would have shown up as a test failure, because every gate was green throughout.
+Going forward the bench treats its INPUTS as things to be proven, not assumed: fixture geometry is
+now validated at load (tee/green anchoring vs the hole's own centerline), evidence passed to the
+judge must disclose when it is partial, and a probe must be pinned to a case where the behavior it
+probes is unambiguous. Cheap, deterministic, offline — and it runs before any money is spent.
+
+## GREEN-ANCHOR PROD FIX (`caddie-green-anchor-nearest-centerline-end`) — lane opened @4ac6bbb
+
+### BLAST RADIUS IS WIDER THAN ESCALATED — reproduced first-hand, all 5 Bethpage courses
+The escalation checked Black + Red only. I re-ran the REAL ingestion path
+(`osm._parse_course_geometry_response` -> `osm_ingest.assemble_osm_course` -> `hazards._derive_tee_green`)
+over the committed `backend/tests/fixtures/bethpage_overpass.json`, which carries ALL FIVE Bethpage
+courses (Black, Blue, Green, Red, Yellow — 90 holes). Multi-green holes and the OLD-vs-NEW pick:
+
+| course | hole | greens | centerline | OLD -> green (off end) | NEW -> green (off end) | delta |
+|--------|------|--------|-----------|------------------------|------------------------|-------|
+| Black  |  9 | 2 | 476.3y | 429.8y (2.8y)   | 429.8y (2.8y) |  +0.0y  correct BY LUCK |
+| Black  | 18 | 2 | 414.2y | 507.7y (105.3y) | 412.1y (3.3y) | **-95.6y WRONG** |
+| Blue   | 14 | 2 | 381.7y | 392.0y (108.2y) | 367.5y (0.6y) | **-24.5y WRONG** |
+| Green  | 18 | 3 | 400.5y | 346.8y (84.0y)  | 384.7y (1.3y) | **+37.8y WRONG** |
+| Yellow |  9 | 2 | 380.2y | 432.2y (133.0y) | 346.1y (1.3y) | **-86.1y WRONG** |
+| Red    |  — | 0 | — | — | — | clean (0/18) |
+
+**FOUR live-wrong holes, not one.** Also note Bethpage Green 18 carries **THREE** green polygons —
+the predicate must handle n>2, not just a two-way choice. The separation is stark and is what makes a
+distance threshold defensible: correctly-anchored greens sit **0.6-3.3y** from their centerline end;
+every mis-anchored one sits **84-133y** away. Nothing lands in between.
+Pattern: the affected holes are 9s and 18s (holes that finish beside the clubhouse, where greens of
+different courses crowd together) — consistent with the assembler's nearest-hole spatial join pulling
+in a neighbouring course's green.
+Probe is READ-ONLY, offline, no DB. The prod DB audit (all 12 mapped courses, via SSM) is still owed —
+these 5 courses are fixture-derived; whether Blue/Green/Yellow are among the 12 ingested is TBD.
+
+### DONE so far this lane
+- Fable plan written + committed @00e74b4 -> `specs/caddie-green-anchor-nearest-centerline-end-plan.md`.
+  Key decisions: anchor = played line's LAST vertex (else valid `green=` arg as selector, else
+  first-stored); thread `path=` keyword-only into `_derive_tee_green`; green resolves BEFORE tee
+  selection (the no-arg back-tee branch reads green_pt); honest failure = always take the nearest
+  (ranking, not validation) + key-free WARNING past 30y, never raise, never go mute.
+- Adversarial file-order sweep DONE; 4 findings FILED in backlog.json @2e4b8c9. The pattern DOES
+  repeat — worst is `course_elevation._feature_center` (p1): first-by-file-order for BOTH green AND
+  tee, and it is the WRITER that persists elevation/green_slope, so bad values are baked into the DB
+  and consumers cannot detect them. Its tee half is the 2026-07-16 "Finding A" defect never applied
+  there. NOT fixed here (needs a re-sample/backfill = a prod DATA change, its own cycle).
+
+### BLOCKED (needs owner sanction, not a code problem)
+The 12-course PROD audit could not run: the permission classifier blocks unsanctioned prod-host
+shell/DB commands (SSM to i-0826ae70df62d9fe8 is Online and the runbook is written, plan §3.1).
+Mitigation: the audit script gets a `--fixture` offline mode reproducing the §0 table for 5 courses
+/ 90 holes with no DB, so the evidence is real and reproducible without prod. Ask the owner to
+authorize the prod run to complete the 12-course table.
+
+### builder DONE @910b790 — and its escalation is CONFIRMED CORRECT (eng-lead ruling)
+Builder landed the fix + 21 tests + the audit script, and correctly REFUSED to edit a test that
+went red, escalating instead. I verified its claim independently rather than taking it.
+
+**The red test:** `test_bend_cap_corner_sharpness.py::test_h18_near_green_vertex_excluded_demotes_
+to_the_real_minor_wobble`. It calls `extract_hole_bend(fc)` with NO green arg, so it resolved the
+green through `hazards._derive_tee_green` — the buggy first-by-file-order path. Its pinned numbers
+were therefore computed against a chord aimed at a NEIGHBOURING hole's green, 105y off the line end.
+
+**Measured post-fix (my own run, not the builder's):**
+  `extract_hole_bend` on bethpage_black_h18 -> `straight=True, deviation_yards=7`
+  spoken line: "Hole 18 shape: plays straight — no significant bend"
+The test previously asserted `straight is False` and "doglegs left at ~275y".
+
+**This is CONFIRMATION, not a regression.** That test's OWN docstring opens with
+"bethpage_black_h18 (par 4, 411y, **plays dead straight per the owner**)" — and then pinned a
+dogleg. The 24y "wobble" was an artifact of measuring vertex deviation against a chord pointed at
+the wrong green; with the correct chord the hole measures 7y, below the 15y straight threshold.
+The fix makes the caddie agree with the owner about his own home hole.
+
+**BUT there is a real cost I will not accept silently:** A4 (`_BEND_NEAR_GREEN_EXCLUDE_YDS`, the
+near-green vertex exclusion) had EXACTLY ONE test — this one. I measured it: with the corrected
+green, h18 is `straight=True, deviation 7` **whether A4 is enabled or disabled (exclude=40 vs 0)**.
+So h18 is no longer a vehicle for A4 at all; simply re-pinning it to "straight" would leave A4 with
+ZERO coverage. Confirmed by grep: `_BEND_NEAR_GREEN_EXCLUDE_YDS` appears only in hazards.py, an
+aim_point.py comment, and this one test.
+
+**RULING (re-dispatched to builder):** update the h18 pins to the corrected reality WITH the
+reason, and ADD synthetic coverage for A4 so the mechanism keeps a real pin independent of h18's
+data. This is not "editing a test to make it pass" — the test's premise was invalidated by a
+correctness fix, and the mechanism it covered gets stronger, not weaker, coverage.
+
+**Open question FILED, not resolved here:** A4 was built to exclude a "green-surround artifact" on
+h18 — an artifact that only existed because the green was mis-anchored. Whether A4 is still
+load-bearing on correctly-anchored data, or was a symptom-fix for this same root cause, is worth a
+look in its own cycle. Do NOT rip it out on this evidence; it remains a reasonable global guard.
+
+### CYCLE COMPLETE — `caddie-green-anchor-nearest-centerline-end` DONE @0f0ba97
+Nothing is awaited. Records are all updated: backlog flipped to `done` with a full resolution,
+PR #155 checklist has the NOTICEABLE entry, this file is current.
+
+**Verdicts:** reviewer (fable) **SHIP** · qa **PASS** · eng-lead independent gate run **green**.
+Gates: ruff clean, **3361 passed / 154 skipped / 0 failed** (baseline 3339 + 22 new). Frontend
+gates correctly N/A — proven by an empty `git diff -- frontend/`, not skipped silently. No
+forbidden path touched. Audit determinism proven by md5 across two runs.
+
+**Reviewer's attacks all held** (executed, not asserted): hand re-derivation of Black 18
+(105.4y vs 3.3y candidate offsets -> 412.6y vs the old 508.3y); a 90-degree dogleg with a decoy
+near the interior corner -> correct end green; the SYMMETRIC case of a neighbour green near the
+TEE -> new rule strictly better there too; reversed-way exposure unchanged; no existing test
+modified or deleted; audit script proven read-only and key-free.
+One non-blocking constructed edge, recorded honestly: a centerline ending >=40y short of its own
+green PLUS a foreign green within 30y of that endpoint would mis-pick under the 30y warn
+threshold. Zero observed instances (real greens measure 0.6-3.3y off their path end, and
+centerlines are card-validated at ingest), and the old rule was a coin-flip there anyway. This is
+the documented trade-off of D4's ranking-not-validation policy.
+
+**NOT shipped, NOT pinged** — per the directive. The bundle keeps accumulating on PR #155.
+
+### STILL OWED TO THE OWNER (needs his authorization, not more engineering)
+The **all-12-course PROD audit**. `backend/scripts/audit_green_selector.py` is written, read-only
+and verified; the SSM runbook is plan §3.1; SSM to i-0826ae70df62d9fe8 is Online. The permission
+classifier blocked the prod DB query because that host was not named as an approved target this
+session, and I did NOT route around it. The `--fixture` offline mode is real evidence for the 5
+Bethpage courses meanwhile. Open question only the prod run can settle: whether Bethpage
+Blue/Green/Yellow are even among the 12 ingested prod courses — if they are, four of the owner's
+holes were lying to him; if they are not, only Black 18 was.
+
+### THE BIGGER FIND — the same bug class, on a WRITER (filed p1, not fixed)
+`course_elevation._feature_center` is first-by-file-order for BOTH green and tee, and it is the
+writer that samples USGS 3DEP and PERSISTS tee/green elevation, delta_ft, plays_like_yards and
+green_slope to the DB. A wrong green there means the whole elevation + slope read is sampled at a
+neighbouring hole's green, and every consumer reads the persisted value with no way to detect it.
+Its tee half is the 2026-07-16 "Finding A" defect, never applied there. Fixing the selector only
+corrects FUTURE sampling, so it also needs a re-sample/backfill — a prod DATA change, its own
+cycle. Plus: ingest last-wins centerline (p2), the spatial join's missing per-hole cardinality
+check (p2 — the ROOT ENABLER that retires this whole class at the source), and get_course's
+missing ORDER BY (p3, the amplifier that makes "correct by luck" unstable).
+
+## PROD MULTI-GREEN AUDIT (2026-07-25, coordinator, read-only SSM) — the green-anchor blast radius
+The green-anchor fix (@0f0ba97) corrects far more than the 4 fixture holes: **23 holes across the
+ingested courses carry >1 green polygon**, i.e. every one was resolved by file order (coin flip):
+Augusta 5 (3 greens) + 18 · Bethpage Black 9 + 18 · Cypress Point 14 + 18 (3) · Kiawah 9 + 18 ·
+Muirfield Village 18 (**4 greens**) · Oakmont 14 · Pebble Beach 13 · Pine Valley 4 + 7 (3) + 18 ·
+Pinehurst No. 2 8 + 9 + 15 (4) · (+6 more beyond the printed head). Consequence pre-fix: wrong
+distance-to-green, approach bearing, green depth/width, hazard distance-from-green on any of those
+holes where file order picked a foreign green. The fix selects the green nearest the hole path's
+last vertex — correct greens sit 0.6-3.3y off, mis-anchored ones 84-133y (no ambiguous middle).
+FOLLOW-UPS (filed): `course_elevation._feature_center` has the same defect for BOTH tee and green
+and is the WRITER that persists elevation/green_slope to the DB (p1 — needs a re-sample/backfill,
+prod data change, its own cycle); the spatial join never asserts one-green-per-hole (root enabler).
+
+## AWAITING (2026-07-25) — caddie-bench CYCLE 5: diagnosis DONE, fable plan next
+Diagnosis measured from run `20260725-230324` (189 cases, satellite, 11-dim) results.jsonl on box
+i-0826ae70df62d9fe8 via read-only SSM. Written to `specs/caddie-bench-cycle5-diagnosis.md`.
+Bases: NEW 86.5% (11-dim) / legacy 85.2% (10-dim); trajectory 53.4 -> 77.0 -> 85.2 like-for-like.
+BRIEF'S LEAD HYPOTHESIS FALSIFIED: natural_speech is NOT dragged by degrades any more —
+DEGRADED 60.0% (n=25) vs CLEAN 61.3% (n=137). Cycle-4's degraded-line work closed that gap
+(cycle-3 was 32% vs 63.2%). So speech is a register problem, and the judge's own reasons name it.
+THREE ROOT CAUSES, all "engine framed it badly, model faithfully repeated it", all pinned to lines:
+- RC-1 numbers_coherence 74.9% (2x): `aim_point.py:794` leave_plays_like_yards = adjusted_yards -
+  club_dist — mixes THIS shot's wind-adjusted distance with a calm club number, so it is not a solve
+  of the next shot ("a 5-yard leave plays like 20"). 40/40 failing cases spoke the ENGINE's number
+  verbatim; 0 confabulated. 41/42 failures are positioning. numbers_coherence on the 76 positioning
+  cases = 46.1%. Fix = suppress the unsolved leave plays-like from the spoken payload.
+- RC-2 natural_speech 60.9%: the "No green slope is mapped" closer. negative-disclaimer answers
+  n=101 (62%) score 54.5% vs 69.4% for no-mention and 83.3% for a real read. Judge names it in 22
+  of 30 clean-failure speech critiques ("map metadata", "system readout", "robotic"). Source =
+  strategy.py _strategy_system() "say plainly what you don't know" + "one green note when the read
+  is available". Fix = keep never-invent, drop narrate-the-absence. ONE prompt-surface change,
+  needs explicit reviewer scrutiny that anti-confabulation survives.
+- RC-3 miss_side 63.7% + hazard 65.4% (both 2x): `aim_point.py:509-520` cycle-3 c4 branch fires on
+  68/162 cases (42%) scoring 52.9%/52.9% vs 74.5%/79.8% for named-side. Its own comment names the
+  cause: the `distance_from_green <= 20` evidence window; the judge keeps citing bunkers at 22-33y
+  short / 11-19y lateral. Hazards ARE in reasoning[] — payload-classification gap, not a mouth gap.
+  Also the degrade engine: 22 of 24 `validator:side-flip` degrades ride `preferred="short"`.
+  Fix = re-MEASURE the window off committed fixtures (never guess a threshold) + widen. HIGHEST risk
+  (live compute_miss_side), needs fable-grade review.
+DEGRADE TAXONOMY (first cycle with c2 data): 29/189 = 15.3% — validator:side-flip 24 (82.8%),
+validator:pin:favor-side 4, exception:ReadTimeout 1. Degrades now cost strategic_depth (28.0% vs
+87.6%), not speech. Do NOT touch the side-flip validator — fix RC-3 and they stop being generated.
+FACT routing 80%: both misroutes are the same phrasing `fact_distance_04` on 2 holes; n=10 too small
+— recorded, NOT fixed.
+NEXT: fable Plan -> builder (A,B,C) -> fresh adversarial reviewer (fable, by execution) -> qa full
+gates -> land on integration/next / PR #155. Do NOT ship, do NOT ping the owner this cycle.
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## AWAITING (2026-07-25, updated) — cycle 5: FABLE PLAN IN FLIGHT
+Landed so far on origin/integration/next: `9a84146` (diagnosis), `97e27c5` (measured greenside
+distribution), `48a5db9` (harness whitelist finding) — all in `specs/caddie-bench-cycle5-diagnosis.md`.
+Baseline gates GREEN at this head: `ruff check .` clean; bench offline + test_tee_shot_numbers +
+test_approach_frame = 325 passed.
+IN FLIGHT: Plan agent on the **fable** model writing `specs/caddie-bench-cycle5-plan.md` (scope =
+A leave-plays-like suppression, B green-slope narrate-the-absence removal, C measured greenside
+evidence window). It writes ONLY that file.
+ON PLAN LANDING -> read it, sanity-check it against the two addenda in the diagnosis (the measured
+26->33 distance void + 25y lateral separation for C; the harness.py:157 known-set edit for A), then
+dispatch `builder` to implement the plan on this worktree branch, committing per root cause.
+THEN: fresh adversarial `reviewer` on **fable** (correctness-critical; must verify BY EXECUTION, must
+confirm no judge/det-check/canary/side-flip-validator weakening, and must specifically audit B's
+prompt edit for survival of the never-invent contract) + `qa` (full gates) -> iterate on BLOCKING only
+-> ff onto integration/next -> update PR #155 checklist -> records.
+DO NOT ship, DO NOT ping the owner this cycle (explicit directive). Measurement is packaged for the
+coordinator to execute on the box; predictions are recorded IN ADVANCE in the final report.
+If the plan file never lands (planner died): re-dispatch the Plan agent with the same brief; the
+diagnosis + both addenda are already committed, so nothing is lost.
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## AWAITING (2026-07-25) — cycle 5: BUILDER IN FLIGHT on the fable plan @e942a7c
+Fable plan LANDED: `specs/caddie-bench-cycle5-plan.md` (525 lines, commit `e942a7c`). It independently
+reproduced my 78-hazard table byte-for-byte and then REFINED the cut: within the lateral-qualified
+population (lateral <= 24y) the distance void is **33 -> 42**, not 26 -> 33 — so the constants are
+distance <= 36.0 / lateral <= 24.0, which correctly admits the judge-cited 33y/19.1-lateral red_h16
+bunker that my "high-20s" reading would have excluded. It also found the STRUCTURAL source of
+`preferred="short"` on 121/162 cases: `Hazard.side == line_side` on the whole OSM path, so
+compute_miss_side's front/back buckets are always empty and the l/r-vs-f/b tie-break lands on "short".
+Key plan decisions: (A) REMOVE `leave_plays_like_yards` entirely rather than keep-and-hide (consumer
+set is closed + grep-verified; pydantic extra-ignore makes deletion cache-safe); (B) verbatim
+replacement sentences on three prompt surfaces, with the strategy brain dropping absence-narration
+outright (it provably never sees the player's question) and the two conversational mouths merely
+RESCOPED to the asked case; (C) the widened greenside band is EARNED ONLY BY A MEASURED LATERAL —
+`lateral_yards=None` keeps today's <=20 window, which makes every hand-built fixture and legacy cache
+byte-identical by construction and carries the ~752 tee-parity pins with no approach_framed gate.
+Plan also corrected my Addendum 3: test_caddie_caching's guard interpolates the constants on BOTH
+sides, so B is expected to need ZERO test edits (the Addendum-3 discipline is retained as contingency).
+BUILDER dispatched on the plan; it commits + pushes per step. Ride/defer gate on commit 3 (§3.4
+offline whole-bench before/after audit) — any diff outside the criterion => it defers C, lands A+B,
+escalates.
+ON BUILDER RETURN: fresh adversarial `reviewer` on **fable** (must verify BY EXECUTION; must confirm
+no judge/det-check/canary/side-flip-validator weakening; must specifically audit B's prompt diff for
+survival of the never-invent contract and for absence of persona padding; must re-derive C's void
+margins) + `qa` (full gates) -> iterate on BLOCKING only -> ff onto integration/next -> PR #155
+checklist -> records.
+DO NOT ship, DO NOT ping the owner this cycle. Packaged box commands + ADVANCE predictions are in the
+final report (predictions: numbers_coherence 74.9->88-95, natural_speech 60.9->~70, miss_side
+63.7->70-75, hazard 65.4->72-78, degrade rate materially down).
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## DONE (2026-07-25) — caddie-bench CYCLE 5: builder implemented the fable plan (A, B, C), 3 commits on integration/next
+
+Implemented `specs/caddie-bench-cycle5-plan.md` exactly as the contract, one commit per root
+cause, each independently green before the next started. All pushed to `integration/next`.
+
+**Commit 1 (A/RC-1) `564ad54`** — removed `leave_plays_like_yards` end-to-end: producer
+(`aim_point.py:794/807`), the `TeeShotNumbers` field (`types.py:298`), the `" (plays like ~N)"`
+render clause (`voice_prompts.py:351-352`), and the frontend wire mirror (declared, never read).
+`harness.py:157`'s `numbers_close` known-set edit is a TIGHTENING (a synth speaking the old bad
+number now goes RED instead of being whitelisted — Addendum 2). New RED->GREEN pin
+(`test_tee_shot_numbers.py::test_leave_plays_like_removed_end_to_end`) + new bench-teeth pin
+(`test_bench_teeth.py::test_numbers_close_goes_red_on_the_removed_leave_plays_like_arithmetic`).
+Frontend gates run (`npm run lint` clean, pre-existing unrelated warning only; `npx tsc --noEmit`
+clean) since `frontend/src/lib/caddie/types.ts` moved.
+
+**Commit 2 (B/RC-2) `d6d1c9d`** — stopped narrating absent data unprompted on all three mouths,
+verbatim per plan §2.1(a)(b)(c): `strategy.py::_strategy_system()` (the strategy brain never sees
+the question, so absence-narration is always unprompted there — "never announce the gap: leave
+that topic out of the strategy entirely"); `voice_prompts.py::_BASE_BEHAVIOR` and `::TOOL_USE_RULE`
+(these DO see the question, so "say plainly" survives scoped to the asked case). Every never-invent
+core sentence byte-identical (asserted verbatim in new tests); no persona/warmth/filler added. As
+Addendum 3 predicted, ZERO existing tests needed editing — the `test_caddie_caching.py` line-set
+guard interpolates constants on both sides and doesn't trip.
+
+**Commit 3 (C/RC-3) `9e0f477`** — the two-axis greenside evidence criterion, highest risk (live
+`compute_miss_side`). Re-derived the 78-hazard table byte-for-byte against the diagnosis ADDENDUM,
+per §3.1. **Found and corrected a real discrepancy in the plan's own derived void**: the plan's
+§0/§3.2 comment (and the diagnosis ADDENDUM's prose) stated the lateral<=24y-restricted distance
+void as 33->42 and picked `DISTANCE_YDS=36.0` — but that derived list omitted a real row
+(distance_from_green=35.0, lateral=8.8, bethpage_black_h8, a bunker tight to the line). The raw
+78-hazard table matches byte-for-byte; only the derived filtered list was wrong. TRUE void is
+35->42 (7y). Per the plan's own explicit contingency ("the constants follow the measurement if the
+honest voids differ"), landed `GREENSIDE_EVIDENCE_DISTANCE_YDS=38.5` (centered in the corrected
+void, margins 3.5/3.5 — was plan's 36.0) and kept `GREENSIDE_EVIDENCE_MAX_LATERAL_YDS=24.0`
+(void, jointly restricted by distance<=38.5, is actually 22.5->29.9, margins 1.5/5.9 — wider/safer
+than the raw-slice-only 22.5->25.0 the plan cited, since the two closest-lateral trees are already
+excluded by the distance axis). Full falsification-watch comment + margins live in `aim_point.py`
+next to the constants. Three call sites (`side_severity`, `side_hazard_desc`,
+`_greenside_hazards_line`) now route through one `_greenside_evidence(h)` predicate.
+`lateral_yards is None` never earns the widened band — byte-identical for the entire ~752-pin
+hand-built tee-parity population + every legacy cache, proven by 4 dedicated parity/boundary/
+retention tests in new file `test_greenside_evidence_window.py` (12 tests total).
+
+§3.4 offline whole-bench audit (RIDE, not deferred): 174 offline ADVICE-authored cases, 50 with any
+field diff, confined to exactly `{miss_side, reasoning, aim_point}` (every other field — club,
+target_yards, tee_shot_numbers, etc. — byte-identical). Diffs land on exactly the 5 predicted holes
+(black_h5 9, black_h7 7, black_h8 11, red_h16 7, red_h5 9) plus 7 reasoning-only additions on
+black_h4 (center-side bunkers now surface in the "Around the green:" line without moving
+miss_side). `black_h18` zero diffs (predicted — its bunkers are 156y+ out, positioning-side, out
+of scope). Zero diffs on tee-lie par-4/5 (positioning) cases; the 5 tee-lie diffs are all on
+bethpage_black_h8, a par-3 (tee IS the approach — the plan's named carve-out). Zero cases where the
+BEFORE side already had evidence — every diff is strictly evidence-gaining, never a flip away from
+an evidence-backed side.
+
+**Gates (every commit independently green):** `ruff check .` clean throughout. Backend full suite
+progression: 3363 (commit 1, baseline 3361 + 2 new tests) -> 3366 (commit 2, +3) -> 3378 (commit 3,
++12) passed / 154 skipped / 0 failed at each step — zero new skips, no deselects, zero pre-existing
+assertions edited anywhere in the three commits.
+
+No local Postgres was used (no container spun up); DB-backed tests run in CI. Live bench was NOT
+run (paid, owner's box only) per instruction.
+
+**Not shipped, owner not pinged this cycle** (explicit directive — see plan header). NEXT: fresh
+adversarial `reviewer` on fable (must verify BY EXECUTION; must confirm no judge/det-check/canary/
+side-flip-validator weakening; must independently re-derive C's void margins given the builder's
+correction above; must audit B's prompt diff for never-invent survival + absence of persona
+padding) + `qa` full gates -> iterate on BLOCKING only -> update PR #155 checklist -> the packaged
+post-merge live-bench command (unchanged from cycle 3/4, satellite default) is in
+`specs/caddie-bench-cycle5-plan.md`'s Verification-gates section for the coordinator to run on the
+box after merge.
+
+New backlog item `caddie-greenside-lateral-margin-remeasure` added (see backlog.json): the lateral
+void is only 1.5y from its near edge (22.5) on current fixtures; falsification trigger = any new
+fixture landing a greenside bunker at 23-24.5y lateral; pre-named fallback = type-aware evidence
+qualification (discrete bunker/water vs one tree-LINE observation point), not another nudged
+number. Also noted on the existing miss-side backlog items: `compute_positioning_miss_side`'s
+empty-zone `preferred="short"` default (the 10 positioning-path side-flip degrades) is deliberately
+unfixed pending the post-cycle-5 measured run.
+
+Commits: `564ad54` (A), `d6d1c9d` (B), `9e0f477` (C). All on `origin/integration/next`.
+
+## AWAITING (2026-07-25) — cycle 5: reviewer(fable) + qa on @d27347c
+BUILDER DONE. Four commits landed + pushed to origin/integration/next:
+  564ad54  A/RC-1  remove leave_plays_like_yards end-to-end
+  d6d1c9d  B/RC-2  stop narrating absent data unprompted (3 prompt surfaces, verbatim)
+  9e0f477  C/RC-3  two-axis greenside evidence window
+  d27347c  records (progress + backlog item caddie-greenside-lateral-margin-remeasure)
+Builder gates: ruff clean; pytest 3378 passed / 154 skipped / 0 failed (baseline 3361/154/0 + 17 new
+tests, zero new skips, no deselects, zero pre-existing assertions edited); frontend lint + tsc clean;
+voice smoke 278/278.
+NOTABLE — the builder FALSIFIED part of the plan and was right to: my ADDENDUM's raw 78-hazard table
+was correct, but the PLAN's *derived* "restricted to lateral<=24" list dropped a real row
+(distance_from_green=35.0, lateral=8.8, bethpage_black_h8 bunker), so the true void is 35->42, not
+33->42. It therefore landed GREENSIDE_EVIDENCE_DISTANCE_YDS=38.5 (centered, margins 3.5/3.5) instead
+of the plan's 36.0, and kept MAX_LATERAL=24.0 (jointly-restricted void 22.5->29.9, margins 1.5/5.9).
+This deviation is pre-authorized by the plan's own §3.1 "constants follow the measurement" rule; the
+fable reviewer is tasked with independently re-deriving it and ruling on whether 38.5 is honest.
+C §3.4 audit = RIDE (not deferred): 174 advice cases, 50 with diffs, all confined to
+{miss_side, reasoning, aim_point}, on the 5 predicted holes + 7 reasoning-only additions on black_h4;
+zero diffs on black_h18, zero on tee-lie par-4/5 positioning, zero flips away from an evidence-backed
+side.
+PROCESS DEFECT TO REMEMBER: my progress-checkpoint commit b30240b accidentally swept ~14 lines of the
+builder's in-flight aim_point.py edits into it, because I ran `git add -A` while a builder was working
+in the SAME worktree. Nothing lost, but commit boundaries in this range are not reliable for
+attribution — reviewer was told to review the whole range e942a7c..d27347c. LESSON: an eng-lead must
+never `git add -A` in a lane a builder is live in; stage explicit paths.
+ON REVIEWER+QA RETURN: iterate on BLOCKING only -> update PR #155 checklist -> records.
+DO NOT ship, DO NOT ping the owner this cycle. Packaged box commands + the ADVANCE predictions table
+go in the final report.
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## DONE (2026-07-25) — caddie-bench CYCLE 5 landed on integration/next @715e179 (NOT shipped, owner NOT pinged)
+Measured floor: run `20260725-230324`, 189 cases, satellite, 11-dim — NEW basis **86.5%**, legacy **85.2%**
+(trajectory 53.4 -> 77.0 -> 85.2 like-for-like). Diagnosis `specs/caddie-bench-cycle5-diagnosis.md`,
+Fable plan `specs/caddie-bench-cycle5-plan.md`. Commits: 564ad54 (A), d6d1c9d (B), 9e0f477 (C),
+d27347c (records), 715e179 (reviewer nits 1+2). PR #155 checklist updated. Backlog resolution appended
+(targeted string edit, JSON re-validated, purely additive — never json.load/dump per the standing rule).
+
+**The brief's lead hypothesis was FALSIFIED.** natural_speech is no longer dragged by degrades:
+DEGRADED 60.0% (n=25) vs CLEAN 61.3% (n=137). Cycle 3 measured 32% vs 63.2%; cycle-4's degraded-line
+cap/dedupe closed that gap entirely. Degrades now cost **strategic_depth** (28.0% vs 87.6%), not speech.
+Had we followed the hypothesis we would have spent the cycle fixing degrades and moved natural_speech
+by roughly nothing. Measuring the split before acting was the whole value of the first hour.
+
+**Degrade taxonomy** (first cycle with the cycle-3 c2 instrumentation): 29/189 = 15.3% —
+`validator:side-flip` 24 (82.8%), `validator:pin:favor-side` 4, `exception:ReadTimeout` 1. **22 of the
+24 side-flips ride `miss_side.preferred="short"`** — they are a SYMPTOM of root cause C, so they were
+fixed at the source and the validator was left untouched.
+
+**Three root causes, all the same standing pattern — the engine framed something badly and the model
+faithfully repeated it:**
+- **A** `aim_point.py:794` computed `leave_plays_like_yards = adjusted_yards - club_dist`, mixing this
+  shot's wind-adjusted distance with a CALM club yardage — never a solve of the next shot ("a 5-yard
+  leave plays like 20"). **40/40** failing numbers_coherence cases spoke the ENGINE's number verbatim;
+  zero confabulated. Removed end-to-end. The bench had been WHITELISTING it in `harness.py:157`'s
+  `numbers_close` known-set (why only 2/42 failures tripped the det-check) — removing it TIGHTENS.
+- **B** 101/162 answers (62%) closed with "No green slope is mapped" and scored 54.5% vs 69.4% for
+  answers that never mention it; the judge named this closer in 22 of 30 clean-failure speech
+  critiques. Source was the PROMPT, not the payload. Three surfaces rescoped asymmetrically.
+- **C** the lateral-blind `distance_from_green <= 20` window was a knife edge through the densest
+  cluster (eleven greenside bunkers at 20-26y: admitted 2, excluded 9). Replaced by a measured
+  two-axis criterion: near band <=20 unchanged, widened band <=38.5 EARNED only by measured lateral <=24.
+
+**The builder falsified the plan and was right.** The plan said 36.0; its own derived lateral-qualified
+list had dropped a real row (bethpage_black_h8, 35.0y/8.8 lateral), so the honest void is 35->42 and it
+landed 38.5 (midpoint, margins 3.5/3.5). Independently re-derived by eng-lead, qa AND the reviewer.
+
+**Verdicts.** Fable reviewer **SHIP**, verified by execution — swept the distance constant across the
+void and proved 36.0/38.5/41.9 byte-identical on all 184 cases (the OPPOSITE of a knife edge, unlike
+the CORNER_MIN_DEVIATION_FRACTION scar where every nudge moved cases); lateral cut mid-plateau
+(22.6-29.8 identical); a 56,000-config `lateral_yards=None` parity sweep against the real pre-change
+code hashed IDENTICAL (SHA-256); all 12 grounding constants hashed unchanged; judge/report/schema/
+validators untouched with zero deleted assertions. 3 non-blocking nits, 1+2 closed @715e179.
+QA **PASS** independently reproduced: ruff clean; **3379 passed / 154 skipped / 0 failed** (pre-change
+baseline 3361 that I measured myself, +18 new tests), deterministic across three collection orders
+including fully reversed; frontend lint + tsc clean; voice smoke 278/278; every new test confirmed
+RED-before/GREEN-after. Security review: no HIGH or MEDIUM.
+
+**PREDICTIONS STATED IN ADVANCE** (the next measured run checks a real prediction, not a post-hoc
+story): numbers_coherence 74.9 -> **88-95** · natural_speech 60.9 -> **~70** (should NOT exceed that on
+this fix alone) · miss_side_evidence 63.7 -> **70-75** · hazard_awareness 65.4 -> **72-78** · degrade
+rate 15.3 -> materially down · strategic_depth up as degrades stop being generated. C least certain.
+If the run lands outside these bands that is signal about the FIX, never a mandate to touch the judge.
+
+**PENDING (the cycle ends only when measured):** coordinator executes on the box — full-189 satellite
+re-run (~$8, `--budget-usd 14`) then `judge_noise --run-id <new> --sample-size 30`. PRE-FLIGHT: `/` is
+at 90% (720M free) and the last satellite run wrote 118M — prune superseded runs' `composites`/
+`tile_cache` first, keeping `results.jsonl` + `report.md`, and keep `20260725-230324` intact (it is the
+cycle-5 baseline). SSM runs as root; every `git` call needs `sudo -u ubuntu` (repo is ubuntu-owned).
+
+**PROCESS LESSON (worth keeping):** my progress-checkpoint commit `b30240b` accidentally swept ~14
+lines of the builder's in-flight `aim_point.py` edits into it because I ran `git add -A` while a
+builder was live in the SAME worktree. Nothing was lost, but commit boundaries in `e942a7c..d27347c`
+are not reliable for attribution (the reviewer was told to review the whole range). An eng-lead must
+stage EXPLICIT PATHS, never `git add -A`, in a lane a child is working in.

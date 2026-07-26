@@ -66,6 +66,11 @@ class Hazard(BaseModel):
     # older cached HoleIntelligence JSONB still validates.
     carry_yards: int = 0  # yards from the tee along the tee→green line
     line_side: str = "center"  # left | right | center, relative to tee→green travel
+    # Perpendicular offset (yards) of this hazard's observation point from
+    # the hole's played centerline — additive + defaulted so older cached
+    # HoleIntelligence JSONB still validates. None = not measured (legacy
+    # cache / hand-built fixture), never "on the line".
+    lateral_yards: Optional[float] = None
 
 
 # ── Green Slope ──
@@ -290,7 +295,6 @@ class TeeShotNumbers(BaseModel):
     drive_total_yards: int  # physics total under today's conditions (276); == stored in competition_legal
     leave_exact_yards: int  # to_green_yards - drive_total_yards, SIGNED (may be <= 0) — closes EXACTLY
     leave_yards: int  # round-to-5 of max(0, leave_exact) (the calm, floored spoken number)
-    leave_plays_like_yards: Optional[int] = None  # what that approach plays like (labeled extra, never the primary leave)
     # Corridor-width club selection (specs/corridor-width-club-selection-plan.md
     # §5) — additive, populated ONLY on profile-present turns where the width
     # rule fired or grounded the chosen club. All None on a v1 (corridor-

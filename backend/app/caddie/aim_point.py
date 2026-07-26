@@ -353,6 +353,63 @@ _SPOKEN_SIDE_WORD: dict[str, str] = {
 }
 
 
+# Greenside-evidence criterion (cycle-5 RC-3, specs/caddie-bench-cycle5-plan.md
+# §3). Measured over all 10 committed bench fixtures via the production
+# extraction path (78 hazards — table in the cycle-5 diagnosis ADDENDUM and
+# this commit's message). The old lateral-blind `distance_from_green <= 20`
+# cut was a knife edge through the densest cluster in the distribution
+# (eleven greenside bunkers at 20-26y: 2 admitted, 9 excluded) — the
+# CORNER_MIN_DEVIATION_FRACTION scar repeating. The widened band is EARNED
+# by a measured lateral: tight greenside bunkers measure 2.8-22.5y off the
+# played line while the flanking tree lines run 29.9-35.4y within the same
+# distance band — so GREENSIDE_EVIDENCE_MAX_LATERAL_YDS = 24.0 sits in that
+# (22.5 -> 29.9, margins 1.5/5.9) lateral void.
+#
+# Builder re-derivation note (this commit): the plan's own §0/§3.2 comment
+# stated the distance void restricted to lateral<=24y as "..., 26, 33 | void
+# | 42, ..." (i.e. 33->42) — but the re-derived table (byte-identical to the
+# diagnosis ADDENDUM's raw 78-hazard listing) shows a bunker at
+# distance_from_green=35.0, lateral=8.8 (bethpage_black_h8) that both the
+# diagnosis ADDENDUM's prose and the plan's derived comment omitted from
+# that filtered list. The TRUE void is 35 -> 42 (7y wide), not 33 -> 42.
+# Per the plan's own decision rule ("the constants follow the measurement if
+# the honest voids differ"), GREENSIDE_EVIDENCE_DISTANCE_YDS = 38.5 sits
+# centered in the CORRECTED void (margins 3.5/3.5) — still admits the
+# judge-cited 33y/19.1-lateral bunker (red_h16) a "high-20s" cut would
+# exclude, and additionally, correctly, admits the 35y/8.8-lateral bunker
+# that was missed. `lateral_yards is None` (legacy cached JSONB / hand-built
+# fixtures) NEVER earns the widened band and NEVER disqualifies the near
+# band — unknown is unknown, and every pre-cycle-4 course keeps today's
+# behavior byte-identical until re-ingest measures it.
+# Falsification watch (backlog: caddie-greenside-lateral-margin-remeasure):
+# the lateral void is 1.5y from its near edge (22.5) on current fixtures;
+# any new fixture landing a greenside bunker at 23-24.5y lateral re-opens
+# this cut, and the pre-named fallback is type-aware evidence qualification
+# (a discrete bunker/water feature vs one observation point of a tree
+# LINE), not another nudged number.
+# SCOPE (cycle-5 reviewer nit 2 — the record kept honest): `compute_miss_side`
+# runs on ANY reachable turn, so on a measured-lateral course this criterion
+# can move a TEE shot wherever the tee shot legitimately IS the approach —
+# a par 3, but equally a driveable par 4. The committed fixtures only exercise
+# the par-3 case today (the audit's 5 tee-lie diffs are all bethpage_black_h8),
+# which is why the plan's carve-out said "par-3"; that is narrower than the
+# real behavior, not a guarantee. Par-4/5 POSITIONING tees are untouched —
+# they route through `compute_positioning_miss_side`, a different function.
+GREENSIDE_EVIDENCE_NEAR_YDS: float = 20.0
+GREENSIDE_EVIDENCE_DISTANCE_YDS: float = 38.5
+GREENSIDE_EVIDENCE_MAX_LATERAL_YDS: float = 24.0
+
+
+def _greenside_evidence(h: Hazard) -> bool:
+    if h.distance_from_green <= GREENSIDE_EVIDENCE_NEAR_YDS:
+        return True  # today's window, lateral-blind — byte-compatible with all legacy data
+    return (
+        h.distance_from_green <= GREENSIDE_EVIDENCE_DISTANCE_YDS
+        and h.lateral_yards is not None
+        and h.lateral_yards <= GREENSIDE_EVIDENCE_MAX_LATERAL_YDS
+    )
+
+
 def compute_miss_side(
     hole: HoleIntelligence,
     player_stats: Optional[PlayerStatistics],
@@ -393,7 +450,7 @@ def compute_miss_side(
     }
 
     for h in hole.hazards:
-        if h.side in side_severity and h.distance_from_green <= 20:
+        if h.side in side_severity and _greenside_evidence(h):
             side_severity[h.side].append(h.penalty_severity)
 
     # Find worst and best sides
@@ -441,7 +498,7 @@ def compute_miss_side(
     def side_hazard_desc(side: str) -> str:
         hazards_on_side = [
             h for h in hole.hazards
-            if h.side == side and h.distance_from_green <= 20
+            if h.side == side and _greenside_evidence(h)
         ]
         if not hazards_on_side:
             return "open"
@@ -478,6 +535,13 @@ def compute_miss_side(
         "left": "the left", "right": "the right", "short": "the front", "long": "the back",
     }
 
+    # cycle-3 commit 4: `avoid_text` is set explicitly only by the new
+    # both-open/approach-framed sub-branch below; every other branch leaves
+    # it `None` here and falls through to the SAME generic construction as
+    # before this change — byte-identical for every non-approach-framed (or
+    # avoid-side-has-evidence) caller.
+    avoid_text: Optional[str] = None
+
     if preferred_desc_suffix == "open":
         if approach_framed and avoid_desc_suffix != "open":
             # Name the evidence that drove the pick: the AVOID side's own
@@ -493,6 +557,26 @@ def compute_miss_side(
                 f"{avoid_desc_suffix.capitalize()} guards {avoid_word} — "
                 f"miss {preferred}"
             )
+        elif approach_framed:
+            # cycle-3 commit 4 (Target 2a): BOTH sides open on an
+            # approach-framed turn — the "safe side, easy recovery" claim in
+            # the `else` branch below is evidence-free (no side's own
+            # mapped hazard drove the pick). cycle-5 RC-3 widened the
+            # evidence window from the old lateral-blind `distance_from_green
+            # <= 20` cut to the two-axis `_greenside_evidence` criterion
+            # above — this branch is what's left for the truly-empty case:
+            # no hazard on either side clears that criterion. Honest
+            # degrade (contract option 2): state there is no strong
+            # miss-side mapping instead of an unsupported "safe" claim.
+            # `preferred`/`avoid` SELECTION is untouched — only these two
+            # spoken clauses soften, and only on this sub-branch. Wording is
+            # deliberately hazard-noun-free (`_HAZARD_PATTERNS` would
+            # false-red a synth that echoes "no water") and side-word-free
+            # next to any hazard noun (`_has_side_flip`'s proximity scan —
+            # same trap the comment above already documents), with no
+            # "safe" claim anywhere.
+            pref_text = "No strong miss side mapped — middle of the green, two-putt range"
+            avoid_text = "No mapped trouble tight to the green"
         else:
             pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — safe side, easy recovery"
     else:
@@ -505,7 +589,8 @@ def compute_miss_side(
         else:
             pref_text = f"Miss {pref_label.get(preferred, preferred).lower()} — {preferred_desc_suffix} but manageable"
 
-    avoid_text = f"Don't miss {avoid_side} — {avoid_desc_suffix}"
+    if avoid_text is None:
+        avoid_text = f"Don't miss {avoid_side} — {avoid_desc_suffix}"
 
     return MissSide(
         preferred=preferred,
@@ -518,9 +603,9 @@ def _greenside_hazards_line(hazards: list[Hazard]) -> Optional[str]:
     """P2 hazard-awareness seed (approach-solve plan §1.3), reachable branch
     only, gated on `approach_framed` by the caller: types+sides only, no
     numbers — reads the exact same greenside population `compute_miss_side`
-    does (`distance_from_green <= 20`). `None` when nothing is mapped near
-    the green (never a placeholder line)."""
-    near = [h for h in hazards if h.distance_from_green <= 20]
+    does (the two-axis `_greenside_evidence` criterion, cycle-5 RC-3). `None`
+    when nothing is mapped near the green (never a placeholder line)."""
+    near = [h for h in hazards if _greenside_evidence(h)]
     if not near:
         return None
     parts: list[str] = []
@@ -750,11 +835,15 @@ def compute_tee_shot_numbers(
     could diverge). `leave_exact_yards` is the raw closing arithmetic
     (`to_green_yards - drive_total_yards`, SIGNED — may be <= 0 on a
     residual sub-boundary case); `leave_yards` is its round-to-5, floored-at-
-    0 spoken form. `leave_plays_like_yards` keeps today's plays-like-frame
-    number as a labeled extra, never the primary leave
-    (specs/caddie-numbers-coherence-plan.md §2.2's documented leave-frame
-    redefinition — the raw frame is what the golfer's own arithmetic checks,
-    so it's the frame the caddie now speaks).
+    0 spoken form — the ONLY spoken leave. The plays-like-frame "labeled
+    extra" from specs/caddie-numbers-coherence-plan.md §2.2 is GONE
+    (cycle-5, RC-1 — supersedes that section's labeled-extra decision):
+    `adjusted_yards - club_dist` mixed THIS shot's wind-adjusted distance
+    with a CALM stored yardage and re-attributed the whole wind adjustment
+    to a next shot with a different bearing, club, and lie — it was never a
+    solve of anything, and the bench proved the model spoke it verbatim as
+    a bad number. If a plays-like for the next shot is ever wanted, it must
+    come from an actual solve of that shot.
     """
     if drive_yards is not None:
         drive_carry_yards, drive_total_yards = drive_yards
@@ -765,7 +854,6 @@ def compute_tee_shot_numbers(
 
     leave_exact_yards = distance_yards - drive_total_yards
     leave_yards = round(max(0, leave_exact_yards) / 5) * 5
-    leave_plays_like_yards = round(max(0, adjusted_yards - club_dist) / 5) * 5
 
     return TeeShotNumbers(
         hole_number=hole.hole_number,
@@ -778,7 +866,6 @@ def compute_tee_shot_numbers(
         drive_total_yards=drive_total_yards,
         leave_exact_yards=leave_exact_yards,
         leave_yards=leave_yards,
-        leave_plays_like_yards=leave_plays_like_yards,
     )
 
 
@@ -819,8 +906,70 @@ CORNER_TREE_LOOKBACK_YDS: int = 20
 # layer, never touching the E-model or water costs.
 CORNER_TREE_FORWARD_YDS: int = 40
 
+# A corner only arms the cap when the bend vertex's chord deviation is a
+# substantial FRACTION of its own tee-anchored distance — i.e. the hole
+# genuinely TURNS there, rather than gently sweeping. Empirical table
+# (specs/caddie-bench-cycle4-plan.md §0, measured on real fixtures
+# 2026-07-25): clear holes the cap was ruining measure 0.10-0.19 (Black 4,
+# Pebble 3, Black 18); every genuine, pinned corner measures 0.39-0.52 (Red
+# 6, Black 7, Red 16, the synthetic bend-cap fixture). 0.30 sits in the gap
+# with >=0.09 margin both ways. A fixed yardage (_BEND_MIN_DEVIATION_YARDS,
+# hazards.py) is the wrong SHAPE of criterion here: the corner distances are
+# all similar while deviations differ 3x. Falsification: a real, genuinely
+# blind, tree-walled, cappable corner measuring dev/dist < 0.30 (search
+# ground: the 166-hole prod audit, specs/caddie-tee-selector-audit-before
+# .md) would mean the criterion is the wrong SHAPE, not just the wrong
+# number — the named fallback is a `turn_angle_deg` field on HoleBend
+# (additive, computed from the two legs extract_hole_bend already forms)
+# with a 45 deg threshold (measured gap: sweeps 20-32 deg, corners 51-62
+# deg). Do not build the fallback speculatively; this comment names it.
+#
+# KNOWN RISK (eng-lead audit, 2026-07-25, all 18 Bethpage Red holes assembled
+# from the committed Overpass fixture): the 8-hole calibration table above is
+# a clean void, but across all 18 Red holes dev/dist is a CONTINUUM
+# straddling 0.30: 0.07, 0.08, 0.18, 0.22, 0.22, 0.26, 0.27, 0.29 | 0.30 |
+# 0.33, 0.35, 0.43, 0.45 — Red 14 (0.29) and Red 3 (0.33) get opposite
+# treatment on near-identical geometry. 0.30 is a knife edge through a
+# populated region, not a cut through a void, on the FULL Red sample.
+# Practical impact today is nil (the Overpass fixture carries no trees, so
+# none of these holes arms the cap at all — the risk is latent and lands
+# when trees are ingested for these courses). Built at 0.30 anyway per this
+# plan; if the knife-edge proves unacceptable in review, the pre-named
+# turn_angle_deg fallback above is much better-conditioned (sweeps 20-32 deg
+# vs corners 51-62 deg) and should replace this fraction, not patch it.
+#
+# TRIGGER (reviewer ruling condition, cycle-4 commit 6 — non-speculative,
+# not "build the fallback now"): BEFORE tree/woods ingestion is enabled for
+# ANY course beyond the fixtures already committed this cycle, measure
+# `turn_angle_deg` across the FULL Red 18 + Black 18 (not just this cycle's
+# 8-hole calibration table) and re-decide 0.30 vs the 45-degree turn-angle
+# criterion using that measurement — the risk above is latent only because
+# no further course has live tree data yet; this is what makes it stop
+# being latent.
+#
+# N3 (reviewer nit, cycle-4 commit 6): A4's near-green vertex exclusion
+# (`_BEND_NEAR_GREEN_EXCLUDE_YDS`, hazards.py) operates on absolute
+# deviation (argmax |dev_m|), not this fraction — it can in principle
+# PROMOTE a SHORTER candidate vertex whose dev/dist fraction is HIGHER than
+# the one it excludes, newly arming the cap on a hole that was previously
+# unarmed (the mirror image of Black 18's demotion, specs/caddie-bench-
+# cycle4-plan.md commit-1 finding). This has NOT happened on any of the 26
+# real holes audited this cycle (the audit checked `straight`, not this
+# fraction, on the post-exclusion result) — named here as a real, checked-
+# for-but-unobserved edge case, not a speculative one.
+CORNER_MIN_DEVIATION_FRACTION: float = 0.30
+
 _SEVERITY_RANK: dict[str, int] = {"mild": 1, "moderate": 2, "severe": 3, "death": 5}
 _MODERATE_RANK: int = _SEVERITY_RANK["moderate"]
+
+# Corner-guarding tree evidence only counts within this lateral distance of
+# the played line. Red 6 (the pinned legit bend-cap) measures 29y/35y; the
+# extraction cap (_TREE_MAX_LATERAL_YARDS, hazards.py) admits observations
+# to 70y, and a tree edge 45+y off the line is ~2.6 sigma for a hcp-15
+# driver cone (width ~70y, sigma ~17.5) — sub-1% tail, not "guarding".
+# `None` (legacy cache / hand-built fixture) never disqualifies — unknown is
+# unknown ([[no-fake-data-fallbacks]]).
+CORNER_TREE_MAX_LATERAL_YDS: float = 45.0
 
 
 def _select_club_capped_at(
@@ -1274,8 +1423,15 @@ def generate_recommendation(
             and not bend.straight
             and bend.distance_yards is not None
             and bend.distance_yards >= CORNER_MIN_DISTANCE_YDS
+            and bend.deviation_yards >= CORNER_MIN_DEVIATION_FRACTION * bend.distance_yards
             and tee_shot_numbers.drive_total_yards > bend.distance_yards + CORNER_OVERSHOOT_TOLERANCE_YDS
         ):
+            # Root cause #5 (specs/caddie-bench-cycle4-plan.md §A5, OUT OF
+            # SCOPE, backlogged loudly as caddie-shot-origin-offset-for-bend-
+            # and-corridor): bend.distance_yards is tee-anchored, but this
+            # positioning branch is shared by mid-hole strokes with no
+            # shot-origin offset — a mid-hole re-solve can misjudge a corner
+            # that's actually already behind the player.
             corner_trees = [
                 h for h in hole.hazards
                 if h.type == "trees"
@@ -1283,6 +1439,11 @@ def generate_recommendation(
                     <= h.carry_yards
                     <= bend.distance_yards + CORNER_TREE_FORWARD_YDS
                 and _SEVERITY_RANK.get(h.penalty_severity, 0) >= _MODERATE_RANK
+                # Vacuous today: every mapped tree hazard is hardcoded
+                # penalty_severity="moderate" (hazards.py), so this rank
+                # filter currently admits every tree. Retained for future
+                # non-tree corner evidence with a real severity spread.
+                and (h.lateral_yards is None or abs(h.lateral_yards) <= CORNER_TREE_MAX_LATERAL_YDS)
             ]
             if corner_trees:
                 capped = _select_club_capped_at(

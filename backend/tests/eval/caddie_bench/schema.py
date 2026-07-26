@@ -67,6 +67,11 @@ class FailureClass(str, Enum):
     FABRICATED = "fabricated"
     NOT_ANSWERED = "not_answered"
     GOOD = "good"
+    # cycle-4 (specs/caddie-bench-cycle4-plan.md §B1) — names the owner's
+    # exact complaint ("recommends a 4 iron on a clear driver hole") so the
+    # Pareto can distinguish it from the pre-existing reckless-tail classes
+    # (bad_club/missed_hazard).
+    TOO_TIMID = "too_timid"
 
 
 class JudgeDimension(str, Enum):
@@ -82,14 +87,23 @@ class JudgeDimension(str, Enum):
     STRATEGIC_DEPTH = "strategic_depth"
     NATURAL_SPEECH = "natural_speech"
     NON_REPETITIVE = "non_repetitive"
+    # cycle-4 (specs/caddie-bench-cycle4-plan.md §B1) — 11th dimension. Judges
+    # RISK POSTURE (timid vs reckless) against the player bag + mapped
+    # hazard/corridor evidence. Division of labor vs CLUB_CORRIDOR: that
+    # dimension stays the GEOMETRIC one (corridor respected); this one is
+    # the risk-calibration one (aggression matched to actual danger).
+    AGGRESSION_REALISM = "aggression_realism"
 
 
 # Correctness axes weighted 2x in the headline score (§5b) — drawn from the
-# owner's known caddie failure memories.
+# owner's known caddie failure memories. cycle-4: AGGRESSION_REALISM joins
+# this set (6 -> 7 members); report.CRUX_DIMENSIONS is derived by complement
+# so it stays the same 4 crux dims automatically.
 CORRECTNESS_DIMENSIONS: frozenset[JudgeDimension] = frozenset({
     JudgeDimension.NUMBERS_COHERENCE, JudgeDimension.SHOT_REACHABILITY,
     JudgeDimension.MISS_SIDE_EVIDENCE, JudgeDimension.CLUB_CORRIDOR,
     JudgeDimension.HAZARD_AWARENESS, JudgeDimension.WIND_AWARENESS,
+    JudgeDimension.AGGRESSION_REALISM,
 })
 
 
@@ -204,6 +218,15 @@ class CaseResult(BaseModel):
     contested: bool = False
     cost_usd: float = 0.0
     latency_ms: float = 0.0
+    # cycle-3 commit 2 — additive, both default None: old JSONL lines
+    # (written before this instrumentation) lack these keys and load fine
+    # via the defaults, `extra='forbid'` above notwithstanding. Categorizes
+    # WHY a case degraded (`app.caddie.strategy_turn.run_strategy_turn`'s new
+    # `degrade_reason`) and captures the raw pre-validation synth text (only
+    # on degraded cases — see harness.py::run_case) so a degrade is locally
+    # replayable offline with zero live calls.
+    degrade_reason: Optional[str] = None
+    raw_synth_text: Optional[str] = None
 
 
 # ── Question bank (questions_v1.jsonl) ───────────────────────────────────────

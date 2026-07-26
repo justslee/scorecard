@@ -154,7 +154,7 @@ def _known_numbers(engine_ref: CaddieRecommendation) -> set[int]:
     if tsn is not None:
         for v in (
             tsn.to_green_yards, tsn.plays_like_yards, tsn.club_stored_yards, tsn.drive_carry_yards,
-            tsn.drive_total_yards, tsn.leave_exact_yards, tsn.leave_yards, tsn.leave_plays_like_yards,
+            tsn.drive_total_yards, tsn.leave_exact_yards, tsn.leave_yards,
             tsn.corridor_pinch_width_yards, tsn.corridor_pinch_distance_yards,
             tsn.corridor_club_window_yards, tsn.corridor_width_yards, tsn.corridor_alt_leave_yards,
             tsn.corridor_alt_total_yards,
@@ -413,6 +413,8 @@ async def run_case(
     cost_usd = 0.0
     latency_ms = 0.0
     reduced_checks = False
+    degrade_reason: Optional[str] = None
+    raw_synth_text: Optional[str] = None
 
     if case.canary:
         answer = case.canary_answer or ""
@@ -439,6 +441,13 @@ async def run_case(
         answer = result.get("strategy") or ""
         degraded = bool(result.get("degraded"))
         cost_usd = float(getattr(synth, "last_cost_usd", 0.0) or 0.0)
+        # cycle-3 commit 2 — measurement only. `degrade_reason` arrives exact
+        # from `run_strategy_turn`'s returned dict; `raw_synth_text` is only
+        # captured on a DEGRADED case (keeps results.jsonl lean) and reads
+        # `synth.last_raw_text` (getattr with a None default so an offline
+        # canned-stub synth without the attribute is handled gracefully).
+        degrade_reason = result.get("degrade_reason")
+        raw_synth_text = getattr(synth, "last_raw_text", None) if degraded else None
 
     det_checks = run_det_checks(
         answer, hazards_payload, engine_ref, bag.clubs, reduced=reduced_checks, hole_yards=intel.yards,
@@ -447,4 +456,5 @@ async def run_case(
     return CaseResult(
         case_id=case.id, resolved=resolved, intent=intent.value, answer=answer, degraded=degraded,
         engine_ref=engine_ref.model_dump(), det_checks=det_checks, cost_usd=cost_usd, latency_ms=latency_ms,
+        degrade_reason=degrade_reason, raw_synth_text=raw_synth_text,
     )

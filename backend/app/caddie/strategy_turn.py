@@ -229,6 +229,7 @@ async def run_strategy_turn(
         return {
             "available": False, "hole_number": hole, "strategy": None,
             "degraded": False, "reason": rec["error"], "numbers": numbers,
+            "degrade_reason": None,
         }
 
     model = strategy_mod._strategy_model()
@@ -239,28 +240,38 @@ async def run_strategy_turn(
         return {
             "available": True, "hole_number": hole, "strategy": cached["strategy"],
             "degraded": cached["degraded"], "reason": None, "numbers": numbers,
+            "degrade_reason": None,
         }
 
     try:
         raw_text, _usage = await strategy_mod.synthesize_strategy(ground_truth, model=model)
-        validated = strategy_mod.validate_strategy_text(
+        validated, reject_reason = strategy_mod.validate_strategy_text_with_reason(
             raw_text, conditions.get("hazards") or [], recommendation=rec,
         )
         if validated is None:
-            flat = " ".join((raw_text or "").split())
-            pin_reason = strategy_mod._verdict_pin_reject_reason(flat, rec)
-            if pin_reason is not None:
-                log.warning("session_strategy: verdict-pin reject (%s) hole=%s", pin_reason, hole)
+            # reject_reason arrives exact from the validator now (cycle-3
+            # commit 2) — no more post-hoc re-derivation via
+            # `_verdict_pin_reject_reason`; side-flip/hazard-type/injection
+            # rejects, previously all logged as the same generic line, are
+            # now individually attributable too. Both log lines' SHAPE is
+            # kept unchanged so no log-based alerting drifts.
+            if reject_reason is not None and reject_reason.startswith("pin:"):
+                log.warning(
+                    "session_strategy: verdict-pin reject (%s) hole=%s",
+                    reject_reason.removeprefix("pin:"), hole,
+                )
             else:
                 log.warning("session_strategy: validator rejected narrative for hole=%s", hole)
             strategy_text = compose_degraded_line(
                 rec, green_read, carries, payload.get("wind_relative")
             )
             degraded = True
+            degrade_reason = f"validator:{reject_reason}"
         else:
             strategy_text = validated
             degraded = False
-    except Exception:
+            degrade_reason = None
+    except Exception as e:
         # Missing key / network / API error / bad model id — never surfaced
         # to the client, and never a fabricated strategy. A recommendation
         # exists here (the honest-empty branch above already returned), so
@@ -270,6 +281,7 @@ async def run_strategy_turn(
             rec, green_read, carries, payload.get("wind_relative")
         )
         degraded = True
+        degrade_reason = f"exception:{type(e).__name__}"
 
     if not degraded:
         # Only successful, validated syntheses are cached — a transient
@@ -279,4 +291,13 @@ async def run_strategy_turn(
     return {
         "available": True, "hole_number": hole, "strategy": strategy_text,
         "degraded": degraded, "reason": None, "numbers": numbers,
+        # Measurement-only (cycle-3 commit 2) — categorizes WHY a case
+        # degraded, never changes the decision above. Deliberately NOT the
+        # `reason` key: the voice paths at routes/caddie.py (~1063, ~1261)
+        # SPEAK `result.get("reason")` as fallback text when `strategy` is
+        # falsy — a reject-class string like this must never be TTS-able.
+        # `SessionStrategyResponse(**result)` (routes/caddie.py) has default
+        # pydantic config (extra ignored), so this key is silently dropped
+        # before it ever reaches a client.
+        "degrade_reason": degrade_reason,
     }

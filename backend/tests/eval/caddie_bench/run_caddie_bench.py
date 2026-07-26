@@ -20,12 +20,31 @@ all key-free. Exit codes mirror run_tier2: 0 pass-bar met / 1 missed /
 4 REAL-CALL CANARY TRIPPED — run-level self-check that the synth call
 actually left the process (see `report.check_real_call_canary` /
 `REAL_CALL_CANARY_MAX_DEGRADED_RATE` / `REAL_CALL_CANARY_MIN_SYNTH_LATENCY_MS`);
-this run's numbers must be treated as invalid and discarded, never graded.
+this run's numbers must be treated as invalid and discarded, never graded /
+5 RENDER FAILURE — a per-case composite render aborted the run (§E2,
+specs/caddie-bench-cycle4-plan.md). `results.jsonl` is append-resumable, so
+aborting here is cheap; the failed case is recorded in `runs/<run_id>/
+render_failures.jsonl` and is NEVER judged without its composite, and the
+run NEVER silently falls back to vector mode for the remaining cases (a
+mixed-basis run corrupts the comparison the owner's satellite directive
+exists to produce) — re-run (or `--resume <run_id>`) once the underlying
+issue (usually quota/billing) is fixed.
 
 Invocation (never in CI — run this yourself, after a reviewer signs off on
 the judge rubric, per the builder's contract):
     cd backend && CADDIE_EVAL_LIVE=1 OPENAI_API_KEY=... uv run python -m \\
         tests.eval.caddie_bench.run_caddie_bench --budget-usd 8.00
+
+DATABASE_URL (defect found in cycle-4 review, documented rather than fixed
+this cycle — see backlog item caddie-bench-lazy-db-import): importing this
+module (even `--render-only`, even `--help`) pulls in `app.caddie.harness`
+-> `app.caddie.strategy` -> ... -> `app.db.engine`, which raises at IMPORT
+TIME if `DATABASE_URL` is unset — a pure side effect of the import chain,
+NOT a real database dependency (SQLAlchemy's `create_async_engine` never
+actually connects until a query runs, and this module never issues one).
+Every invocation in this file's docstrings/README needs a placeholder, e.g.
+`DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/unused` —
+it is never connected to, just needs to be a well-formed asyncpg URL.
 """
 
 from __future__ import annotations
@@ -39,6 +58,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from app.caddie import hazards
 from tests.eval.caddie_bench import geometry as geo
 from tests.eval.caddie_bench import harness, judge as judge_mod, questions as q, render, report
 from tests.eval.caddie_bench.schema import (
@@ -66,6 +86,7 @@ _EXIT_MISSED_BAR = 1
 _EXIT_GATE_REFUSAL = 2
 _EXIT_BUDGET_ABORT = 3
 _EXIT_REAL_CALL_CANARY_INVALID = 4
+_EXIT_RENDER_FAILURE = 5  # cycle-4 §E2 — a per-case composite render aborted the run
 
 
 def _cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -109,12 +130,20 @@ class _LiveSynth:
         self.case_id_ref = case_id_ref  # mutable 1-elem list holding the CURRENT case id
         self.last_cost_usd = 0.0
         self.last_latency_ms = 0.0
+        # cycle-3 commit 2 — the raw pre-validation synth text for the CURRENT
+        # in-flight case, reset at the top of every `__call__` (see there).
+        self.last_raw_text: Optional[str] = None
         # The REAL, un-patched synth — resolved once, before any patch exists.
         self._real_synthesize_strategy = real_synthesize_strategy
 
     async def __call__(self, ground_truth: str, *, model: str) -> tuple[str, dict]:
+        # Staleness guard (cycle-3 commit 2): cleared FIRST, before the real
+        # call — if the call raises, `last_raw_text` must never leak the
+        # PREVIOUS case's text onto this one.
+        self.last_raw_text = None
         start = time.monotonic()
         text, usage = await self._real_synthesize_strategy(ground_truth, model=model)
+        self.last_raw_text = text
         self.last_latency_ms = (time.monotonic() - start) * 1000
         self.last_cost_usd = _cost_usd(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
         self.cost_log.append({
@@ -212,7 +241,29 @@ async def run(args: argparse.Namespace) -> int:
 
         result = await harness.run_case(case, fx, phrasing, bag, synth=synth)
 
-        composite_path = render.render_case(case, fx, result.resolved, mode=args.render_mode, out_dir=out_dir)
+        # cycle-4 §E2 — fail LOUDLY per-case, never fall back to vector: a
+        # mixed-basis run (some cases judged against satellite imagery,
+        # others against the offline vector substrate) corrupts the
+        # comparison the owner's satellite directive exists to produce.
+        # results.jsonl is append-resumable, so aborting the WHOLE run here
+        # is cheap and a partial mixed run is never produced; the failed
+        # case is recorded and never judged without its composite.
+        try:
+            composite_path = render.render_case(case, fx, result.resolved, mode=args.render_mode, out_dir=out_dir)
+        except RuntimeError as e:
+            _append_jsonl(out_dir / "render_failures.jsonl", {
+                "case_id": case.id, "error": str(e), "render_mode": args.render_mode,
+            })
+            print("=" * 78, file=sys.stderr)
+            print(f"RENDER FAILURE on case {case.id!r} — ABORTING THE RUN (never falling back to vector)", file=sys.stderr)
+            print(f"  {e}", file=sys.stderr)
+            print(
+                "results.jsonl is append-resumable — fix the underlying issue (usually maps-key "
+                "quota/billing) and re-run with --resume to continue from here.", file=sys.stderr,
+            )
+            print("=" * 78, file=sys.stderr)
+            return _EXIT_RENDER_FAILURE
+
         det_summary = "; ".join(f"{d.check.value}={'PASS' if d.passed else 'FAIL'}" for d in result.det_checks)
 
         # #6 fix: FACT-class cases are canned one-liner distance readouts —
@@ -226,9 +277,40 @@ async def run(args: argparse.Namespace) -> int:
         if case.question_type == QuestionType.FACT_DISTANCE:
             first_scores, second_scores, contested, judge_cost = None, None, False, 0.0
         else:
+            # cycle-4 §B3 — evidence the judge actually needs (never just the
+            # picture): the player's real bag, the mapped hazards, and (for a
+            # positioning shot) the corridor sample at the recommended club's
+            # landing distance. Recomputed here (deterministic, cheap — the
+            # same call harness.run_case already makes internally) rather
+            # than threaded through CaseResult, so results.jsonl never bloats
+            # with judge-only evidence.
+            intel = geo.hole_intel_from_fixture(fx)
+            hazards_payload = [h.model_dump() for h in intel.hazards] if intel.hazards else None
+            corridor_summary: Optional[str] = None
+            if result.engine_ref.get("shot_kind") == "positioning":
+                tsn = result.engine_ref.get("tee_shot_numbers") or {}
+                drive_total = tsn.get("drive_total_yards")
+                sample = (
+                    hazards.corridor_sample_at(intel.corridor, float(drive_total))
+                    if drive_total is not None else None
+                )
+                if sample is not None and sample.width_yards is not None:
+                    left_desc = f"{sample.left_source or '?'} L {sample.left_yards}y"
+                    right_desc = f"{sample.right_source or '?'} R {sample.right_yards}y"
+                    corridor_summary = (
+                        f"corridor at recommended club's landing (~{drive_total}y): "
+                        f"danger-to-danger width {sample.width_yards}y ({left_desc} / {right_desc})"
+                    )
+                else:
+                    corridor_summary = (
+                        "corridor width at landing zone: unmapped — no danger-edge evidence (do not invent one)"
+                    )
+
             first_scores, judge_usage = await judge_mod.judge_case(
                 case, result.resolved, result.engine_ref, result.answer, det_summary,
                 composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
+                bag_clubs=bag.clubs, bag_handicap=bag.handicap,
+                hazards_payload=hazards_payload, corridor_summary=corridor_summary,
             )
             judge_cost = _cost_usd(judge_mod._judge_model(), judge_usage.get("input_tokens", 0), judge_usage.get("output_tokens", 0)) if judge_usage else 0.0
             cost_log.append({
@@ -246,6 +328,8 @@ async def run(args: argparse.Namespace) -> int:
             second_scores, contested, judge2_usage = await judge_mod.second_pass_if_needed(
                 first_scores, result.det_checks, case, result.resolved, result.engine_ref, result.answer,
                 det_summary, composite_path=composite_path, hole_number=fx.hole_number, par=fx.par, hole_yards=fx.yards,
+                bag_clubs=bag.clubs, bag_handicap=bag.handicap,
+                hazards_payload=hazards_payload, corridor_summary=corridor_summary,
             )
             if judge2_usage:
                 judge2_cost = _cost_usd(
@@ -268,6 +352,11 @@ async def run(args: argparse.Namespace) -> int:
             degraded=result.degraded, engine_ref=result.engine_ref, det_checks=result.det_checks,
             judge=first_scores, judge_second=second_scores, contested=contested,
             cost_usd=case_cost, latency_ms=result.latency_ms,
+            # cycle-3 commit 2 — this explicit constructor is the silent-drop
+            # trap: without copying these two fields from `result` (already
+            # populated by `harness.run_case`), they'd default to None here
+            # and every degrade would look uninstrumented. Teeth-tested.
+            degrade_reason=result.degrade_reason, raw_synth_text=result.raw_synth_text,
         )
         _append_jsonl(results_path, json.loads(final.model_dump_json()))
         for entry in cost_log:
@@ -278,11 +367,20 @@ async def run(args: argparse.Namespace) -> int:
 
     all_results = report.load_results(results_path) if results_path.exists() else []
     headline = report.compute_headline(all_results)
+    # cycle-4 §D/§E — render_failure_count reads runs/<id>/render_failures
+    # .jsonl when present (§E2 populates it on a per-case render abort); 0 on
+    # every run before that file exists (e.g. this run had no failures, or
+    # predates §E2's file-writing).
+    render_failures_path = out_dir / "render_failures.jsonl"
+    render_failure_count = 0
+    if render_failures_path.exists():
+        with open(render_failures_path, encoding="utf-8") as f:
+            render_failure_count = sum(1 for line in f if line.strip())
     meta = report.RunMeta(
         run_id=run_id, synth_model=synth.model, judge_model=judge_mod._judge_model(),
         synth_effort=os.getenv("CADDIE_STRATEGY_REASONING_EFFORT", "none"),
         total_cost_usd=sum(r.cost_usd for r in all_results), wall_time_s=time.monotonic() - start_wall,
-        case_count=len(all_results),
+        case_count=len(all_results), render_mode=args.render_mode, render_failure_count=render_failure_count,
     )
     report_path = report.write_report(all_results, meta, Path(args.report_out) if args.report_out else out_dir / "report.md")
     print(f"Report written to: {report_path}")
@@ -316,6 +414,74 @@ async def run(args: argparse.Namespace) -> int:
     return _EXIT_PASS
 
 
+def render_only(args: argparse.Namespace) -> int:
+    """cycle-4 §E3 (specs/caddie-bench-cycle4-plan.md) — one-time composite
+    fidelity check. Renders composites for the selected cases (position
+    resolution only — no synth/judge/det-checks, no cost) and exits 0.
+    Gated ONLY on the maps key (never CADDIE_EVAL_LIVE/OPENAI_API_KEY,
+    which this never needs — it never calls the synth or the judge).
+    Georegistration has never run against real tiles at scale before this;
+    a projection bug would mislead every judge call, so this is the gate
+    before any full satellite run.
+
+    KNOWN DEFECT (found in cycle-4 review, documented not fixed — see the
+    module docstring's DATABASE_URL paragraph and backlog item
+    caddie-bench-lazy-db-import): reaching THIS gate at all requires
+    `DATABASE_URL` to already be set, because importing this module (at
+    the top of the file, before `main()` ever runs) transitively imports
+    `app.db.engine`. A placeholder value works (never actually connected
+    to) — see the packaged command in README.md.
+
+    Verification checklist (see README.md for the full text): player pin
+    on the sampled lie, green pin on the green, hazard outlines tracking
+    real bunkers/water, centerline on the fairway, header/wind annotations
+    legible — at the fitted zoom on a long hole, a sharp dogleg, and a
+    par 3."""
+    if args.render_mode == "satellite" and not (
+        os.getenv("GOOGLE_MAPS_KEY") or os.getenv("NEXT_PUBLIC_GOOGLE_MAPS_KEY")
+    ):
+        print(
+            "--render-only (satellite, the default) requires GOOGLE_MAPS_KEY (or "
+            "NEXT_PUBLIC_GOOGLE_MAPS_KEY) set — the whole point is a fidelity check against real "
+            "imagery. Pass --render-mode vector for an offline/no-key smoke (not a fidelity check).",
+            file=sys.stderr,
+        )
+        return _EXIT_GATE_REFUSAL
+
+    run_id = args.resume or time.strftime("%Y%m%d-%H%M%S")
+    out_dir = RUNS_DIR / run_id
+
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    hole_paths = sorted(HOLES_DIR.glob("*.json"))
+    if args.holes:
+        wanted = set(args.holes)
+        hole_paths = [p for p in hole_paths if p.stem in wanted]
+    fixtures = {p.stem: geo.load_hole_fixture(p) for p in hole_paths}
+    fx_list = list(fixtures.values())
+
+    cases = q.build_cases(fx_list, bank)
+    if args.max_cases is not None:
+        cases = cases[: args.max_cases]
+
+    for case in cases:
+        fx = fixtures[case.hole_fixture]
+        resolved = geo.sample_position(fx, case.position)
+        try:
+            composite_path = render.render_case(case, fx, resolved, mode=args.render_mode, out_dir=out_dir)
+        except RuntimeError as e:
+            print(f"RENDER FAILURE on case {case.id!r}: {e}", file=sys.stderr)
+            return _EXIT_RENDER_FAILURE
+        print(f"wrote {composite_path}")
+
+    print(f"\n{len(cases)} composite(s) written to {out_dir / 'composites'}")
+    print(
+        "Verification checklist: player pin on the sampled lie, green pin on the green, hazard "
+        "outlines tracking real bunkers/water, centerline on the fairway, header/wind annotations "
+        "legible. See README.md for the full checklist."
+    )
+    return _EXIT_PASS
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--budget-usd", type=float, default=40.00)
@@ -332,9 +498,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--render-mode", choices=["vector", "satellite"], default="satellite",
         help="Composite renderer backend (default: satellite, the owner's fidelity flow; "
-        "requires GOOGLE_MAPS_KEY). Use 'vector' for a key-free/offline smoke.",
+        "requires GOOGLE_MAPS_KEY). Use 'vector' for a key-free/offline smoke, NEVER a judged basis.",
+    )
+    # cycle-4 §E3 — one-time composite fidelity check, key-gated only (never
+    # CADDIE_EVAL_LIVE/OPENAI_API_KEY). Handled BEFORE the live-pilot gate
+    # below so it never needs an OpenAI key it doesn't use.
+    parser.add_argument(
+        "--render-only", action="store_true",
+        help="Render composites for the selected cases and exit — no synth/judge calls, no cost. "
+        "Gated on GOOGLE_MAPS_KEY only (satellite mode) — but DATABASE_URL must still be set to a "
+        "placeholder (a never-connected asyncpg URL) or this module fails to even import; see "
+        "README.md for the exact command. Use to verify georegistration before a full run.",
     )
     args = parser.parse_args(argv)
+
+    if args.render_only:
+        return render_only(args)
 
     if os.getenv("CADDIE_EVAL_LIVE") != "1" or not os.getenv("OPENAI_API_KEY"):
         print(

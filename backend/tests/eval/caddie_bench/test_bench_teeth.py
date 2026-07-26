@@ -26,6 +26,7 @@ from tests.eval.caddie_bench.geometry import GeometrySamplingError  # noqa: E402
 from tests.eval.caddie_bench.schema import (  # noqa: E402
     BAGS_PATH,
     HOLES_DIR,
+    QUESTIONS_V1_PATH,
     BagId,
     BenchCase,
     CaseResult,
@@ -38,6 +39,7 @@ from tests.eval.caddie_bench.schema import (  # noqa: E402
     QuestionType,
     ResolvedPosition,
     load_bags,
+    load_question_bank,
 )
 
 BAGS = load_bags(BAGS_PATH)
@@ -106,6 +108,31 @@ def test_numbers_close_ignores_mph_wind_speed_never_false_reds_on_it():
     good_answer = f"{engine_ref.club} off the tee, leaves about {real_leave} in. 15 mph headwind — into you."
     result = harness.check_numbers_close(good_answer, hazards, engine_ref, clubs)
     assert result.passed, f"a wind-mph clause must never false-RED numbers_close ({result.detail})"
+
+
+def test_numbers_close_goes_red_on_the_removed_leave_plays_like_arithmetic():
+    """cycle-5 RC-1 (specs/caddie-bench-cycle5-plan.md §1): the OLD
+    `leave_plays_like_yards = round(max(0, adjusted_yards - club_dist) / 5)
+    * 5` arithmetic is no longer a field on `TeeShotNumbers` AND is no
+    longer in `harness._known_numbers`'s whitelist. A synth that still
+    speaks that number must go RED instead of being whitelisted — pins the
+    tightening (diagnosis Addendum 2: the whitelist is why only 2/42 of the
+    real failures tripped this det-check) so a future re-whitelist can't
+    slip back silently."""
+    fx = _fixture("bethpage_black_h5.json")
+    resolved, engine_ref, hazards, clubs = _engine_and_hazards(fx, LieCategory.TEE, bag_id=BagId.SHORT_HITTER)
+    n = engine_ref.tee_shot_numbers
+    assert n is not None, "sanity: need a tee_shot_numbers block"
+    old_plays_like = round(max(0, n.plays_like_yards - n.club_stored_yards) / 5) * 5
+    known = harness._known_numbers(engine_ref)
+    assert old_plays_like not in known, (
+        "sanity: the old plays-like arithmetic must not coincide with a "
+        "still-known number, or this test proves nothing"
+    )
+
+    mutant_answer = f"{engine_ref.club} off the tee, that leaves about {old_plays_like} in."
+    result = harness.check_numbers_close(mutant_answer, hazards, engine_ref, clubs)
+    assert not result.passed, "the removed leave-plays-like arithmetic must no longer be whitelisted"
 
 
 # ── approach-solve plan §4.3 teeth ──────────────────────────────────────
@@ -245,6 +272,52 @@ def test_should_second_pass_fires_on_approach_miss_side_pin_vs_miss_side_evidenc
 
     assert judge_mod.should_second_pass(first, det_checks_mismatch, case) is True
     assert judge_mod.should_second_pass(first, det_checks_agree, case) is False
+
+
+# ── cycle-3 commit 1: shot_reachability N/A off positioning ────────────────
+
+
+def test_check_positioning_no_pin_language_emits_the_exact_not_positioning_detail_string():
+    """Pin: `judge.should_second_pass`'s Commit-1 skip couples to this exact
+    detail string (harness.py::check_positioning_no_pin_language) — if the
+    wording ever drifts, this test goes RED before the coupling silently
+    breaks and the second-pass skip stops firing."""
+    rec = _FakeApproachRec(raw_yards=182)
+    result = harness.check_positioning_no_pin_language("anything at all", [], rec, {})
+    assert result.passed is True
+    assert result.detail == "not a positioning shot"
+
+
+def test_should_second_pass_skips_the_positioning_reachability_overlap_on_a_non_positioning_shot():
+    """Commit 1: on a non-positioning (approach) shot,
+    `check_positioning_no_pin_language` auto-passes with detail "not a
+    positioning shot" — a spurious judge 0 on shot_reachability there is not
+    a real det/judge disagreement (shot_reachability is N/A off positioning;
+    report.py excludes it from aggregation entirely) and must NOT trigger a
+    paid second pass. A genuine positioning-case disagreement must still
+    fire."""
+    case = BenchCase(
+        id="x", hole_fixture="x_h1", bag=BagId.OWNER, conditions=ConditionsId.CALM,
+        position=PositionSpec(lie=LieCategory.TEE, seed=1), question_type=QuestionType.TEE_STRATEGY,
+        phrasing_id="p1",
+    )
+    scores = {d: 2 for d in JudgeDimension}
+    scores[JudgeDimension.SHOT_REACHABILITY] = 0
+    confidence = {d: 0.95 for d in JudgeDimension}
+    first = JudgeScores(scores=scores, confidence=confidence, failure_class=FailureClass.GOOD, engine_looks_wrong=False, reason="x")
+
+    from tests.eval.caddie_bench.schema import DetCheckName, DetCheckResult
+
+    det_not_positioning = [DetCheckResult(check=DetCheckName.POSITIONING_NO_PIN_LANGUAGE, passed=True, detail="not a positioning shot")]
+    det_positioning_disagreement = [DetCheckResult(check=DetCheckName.POSITIONING_NO_PIN_LANGUAGE, passed=True, detail="ok")]
+
+    assert judge_mod.should_second_pass(first, det_not_positioning, case) is False, (
+        "a spurious shot_reachability=0 against the auto-passing 'not a positioning shot' "
+        "det check must not spend a second pass"
+    )
+    assert judge_mod.should_second_pass(first, det_positioning_disagreement, case) is True, (
+        "a genuine positioning-case det-pass/judge-fail disagreement must still fire the second pass"
+    )
 
 
 def test_hazard_only_from_input_goes_red_on_ungrounded_hazard():
@@ -480,14 +553,147 @@ def test_canary_all_pass_gate_helper_matches_compute_headline():
     assert judge_mod.canary_all_pass_gate(failing_canary) is False
 
 
+# ── 5. cycle-4 (specs/caddie-bench-cycle4-plan.md §B4) — the TIMID canary ──
+#      the bench was structurally blind to the owner's actual complaint (a
+#      timid caddie) until this canary + aggression_realism existed — a
+#      judge that passes it has no teeth on that failure mode either.
+
+
+def test_timid_canary_is_present_in_build_canary_cases():
+    from tests.eval.caddie_bench import questions as q
+
+    fx_list = [geo.load_hole_fixture(p) for p in sorted(HOLES_DIR.glob("*.json"))]
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    canaries = q.build_canary_cases(fx_list, bank)
+    assert len(canaries) == 5, "cycle-4 adds the 5th (timid) canary"
+    timid = [c for c in canaries if c.canary_answer and "smart play is always the short club" in c.canary_answer]
+    assert len(timid) == 1, "the timid canary must be present exactly once"
+    assert timid[0].question_type == QuestionType.TEE_STRATEGY
+
+
+def test_timid_canary_all_pass_verdict_trips_the_canary_gate():
+    """A judge that PASSES the timid canary (scores it all-2/GOOD) must trip
+    canary_all_pass_gate exactly like the 4 reckless-tail canaries already
+    do — the gate has no special-casing by canary CONTENT, only by
+    `case_id`'s `canary__` prefix, so this proves the timid canary isn't
+    silently exempt."""
+    results = [_result("canary__hole__tee_strategy_timid", _judge(all_two=True))]
+    assert judge_mod.canary_all_pass_gate(results) is True
+
+
+# ── 5b. cycle-4 commit 6, reviewer BLOCKING B2 — the timid canary must     ──
+#       bind to a hole where its own answer is actually coherent, and the   ──
+#       binding must be deterministic-by-CONSTRAINT, not by list POSITION. ──
+
+
+def test_timid_canary_binds_to_bethpage_black_h4_the_owners_incident_hole():
+    from tests.eval.caddie_bench import questions as q
+
+    fx_list = [geo.load_hole_fixture(p) for p in sorted(HOLES_DIR.glob("*.json"))]
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    canaries = q.build_canary_cases(fx_list, bank)
+    timid = next(c for c in canaries if c.canary_answer and "smart play is always the short club" in c.canary_answer)
+    assert timid.hole_fixture == "bethpage_black_h4", (
+        f"the timid canary must bind to the owner's own 517y incident hole, got {timid.hole_fixture!r}"
+    )
+    # Sanity: the bound hole must actually make the answer's timidity
+    # unambiguous — a real par >= 4 and long enough that the owner bag's
+    # 4-iron (230y) is a genuine, severe under-club, never an over-club (the
+    # exact incoherence that made the pre-fix bethpage_black_h8 binding, a
+    # par 3 at 210y, an accidental non-test of the timid tail).
+    bound_fx = next(fx for fx in fx_list if fx.fixture_id == timid.hole_fixture)
+    assert bound_fx.par >= 4
+    assert bound_fx.yards is not None and bound_fx.yards >= 500
+
+
+def test_timid_canary_binding_is_independent_of_input_list_order():
+    """(Renamed, cycle-4 commit 7 — reviewer nit: the old name claimed this
+    proves survival of "an alphabetically earlier fixture added", but the
+    body below only ever exercises the SAME fixture set, forward and
+    reversed; it proves input-ORDER independence, not resilience to a
+    genuinely NEW fixture being added. Docstring corrected to match.)
+
+    The exact fragility the reviewer flagged: the OLD `i % len(hole_
+    fixtures)` binding depended on absolute list position, so ANY reordering
+    of the input list (e.g. a new fixture sorting before the existing ones)
+    would reshuffle every single canary. The NEW constraint-based binding
+    must be immune to this: the SELECTION uses `sorted(candidates,
+    key=fixture_id)[0]`, i.e. it is NOT index-based at all, so reversing the
+    INPUT list (same fixtures, opposite order) must still pick the
+    identical fixture. That's what's asserted."""
+    from tests.eval.caddie_bench import questions as q
+
+    fx_list = [geo.load_hole_fixture(p) for p in sorted(HOLES_DIR.glob("*.json"))]
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+
+    forward = q.build_canary_cases(fx_list, bank)
+    reversed_input = q.build_canary_cases(list(reversed(fx_list)), bank)
+
+    forward_timid = next(c for c in forward if c.canary_answer and "smart play is always the short club" in c.canary_answer)
+    reversed_timid = next(c for c in reversed_input if c.canary_answer and "smart play is always the short club" in c.canary_answer)
+    assert forward_timid.hole_fixture == reversed_timid.hole_fixture == "bethpage_black_h4", (
+        "the constrained canary's binding must be independent of input list ORDER, "
+        "unlike the old i % len(hole_fixtures) scheme"
+    )
+
+
+def test_canary_with_unsatisfiable_requirement_is_skipped_not_crashed():
+    """A restricted `--holes` subset (a targeted/debug run) that doesn't
+    include any fixture long enough for the timid canary's requirement must
+    SKIP that one canary (loudly) rather than crash the whole run — a
+    legitimate partial-run workflow must not be held hostage by a canary
+    requirement it can never satisfy."""
+    from tests.eval.caddie_bench import questions as q
+
+    short_fx = geo.load_hole_fixture(HOLES_DIR / "pebble_beach_h3.json")  # par 4, 381y -- fails min_yards=500
+    bank = load_question_bank(QUESTIONS_V1_PATH)
+    canaries = q.build_canary_cases([short_fx], bank)
+    assert len(canaries) == 4, "the unsatisfiable timid canary is skipped; the other 4 still build"
+    assert all("smart play is always the short club" not in (c.canary_answer or "") for c in canaries)
+
+
+# ── 6. cycle-4 §B2 — the aggression_realism rubric text can't be quietly
+#      softened: both FAIL tails and the anti-hedging sentence must survive.
+
+
+def test_aggression_realism_rubric_names_both_fail_tails_and_anti_hedging():
+    text = judge_mod._RUBRIC_TEXT[JudgeDimension.AGGRESSION_REALISM]
+    assert "FAIL (0) a conservative call" in text, "the timid tail must be named"
+    assert "FAIL (0) an aggressive call" in text, "the reckless tail must be named"
+    assert "never the tone" in text, "the anti-hedging sentence must survive"
+    assert "does NOT rescue a timid" in text and "does NOT rescue a reckless" in text
+
+
+def test_aggression_realism_rubric_names_implausible_reach_is_not_punitive_evidence():
+    """cycle-4 commit 6, reviewer nit N1: the rubric demands 'high-
+    probability punishment' but (pre-fix) gave the judge no way to discount
+    a hazard the player's own shot can't plausibly reach — a moderate
+    hazard far off the played line (or beyond the club's own range) must be
+    named as NOT punitive evidence, closing that gap."""
+    text = judge_mod._RUBRIC_TEXT[JudgeDimension.AGGRESSION_REALISM]
+    assert "cannot plausibly reach" in text
+    assert "NOT punitive evidence" in text
+
+
+def test_aggression_realism_rubric_wires_too_timid_failure_class():
+    """cycle-4 commit 6, reviewer nit N2: `FailureClass.TOO_TIMID` is a real
+    enum member but was never wired into any rubric guidance — without an
+    instruction to actually USE it, it would sit near-zero in the Pareto
+    and be misread as "no timidity" rather than "never selected"."""
+    text = judge_mod._RUBRIC_TEXT[JudgeDimension.AGGRESSION_REALISM]
+    assert "too_timid" in text
+    assert FailureClass.TOO_TIMID.value == "too_timid"
+
+
 # ── 5. Filename-glob pins (mirrors test_harness_has_teeth.py's run_tier2
 #      pin, extended to this package's two LIVE entry points) ─────────────
 
 
 def test_run_caddie_bench_and_extract_fixtures_are_never_collected_by_pytest():
     import tests.eval.caddie_bench.extract_fixtures as extract_mod
+    import tests.eval.caddie_bench.judge_noise as judge_noise_mod
     import tests.eval.caddie_bench.run_caddie_bench as runner_mod
 
-    for mod in (extract_mod, runner_mod):
+    for mod in (extract_mod, runner_mod, judge_noise_mod):
         filename = pathlib.Path(mod.__file__).name
         assert not filename.startswith("test_"), f"{filename} must never match pytest's test_*.py glob"
