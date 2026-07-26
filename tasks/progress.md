@@ -3954,3 +3954,19 @@ ruff check .` clean. No local Postgres used.
 
 **Not yet run:** `/security-review` + `/code-review` (plan requires both before "done" — auth-
 surface adjacency). Next: reviewer + qa, then fast-forward `integration/next` + open the bundle PR.
+
+## AWAITING (3) — reviewer(fable, /security-review + /code-review) + qa on p0-login-fix @8182ea7
+Builder DONE @b59cb78. Two contradictions of the plan found + fixed by the builder (both were
+silent-failure modes the postbuild scan caught): (1) the ternary form does NOT dead-code-eliminate
+under Next 16/Turbopack — Next only inlines a NEXT_PUBLIC_* var when the key is PRESENT at build
+time, so `next.config.ts` now force-defines it; (2) `AuthSpikePanel.tsx` was a SECOND unconditional
+import of NativeAuthDiag that defeated the proof regardless of the SignInClient fix.
+Gates (builder-run): lint 0 err, tsc clean, build+scan green, vitest 155 files/2865 tests
+(baseline 153/2850, +15 new, 0 regressions), voice-smoke 278/278, ruff clean.
+OPEN QUESTION sent to reviewer: `assert-no-auth-diag.mjs` WARNS (exit 0) instead of failing when
+NEXT_PUBLIC_AUTH_DIAG=1, and `ops/ios/ship.sh` never pins that var — so a stray env var in the
+shipping shell could still upload a panel-bearing build. Sibling guard assert-no-auth-bypass.mjs
+hard-FAILS by comparison. Want a BLOCKING/NON-BLOCKING ruling.
+On outcomes: SHIP+PASS → fast-forward `integration/next` to this branch, push, open a FRESH bundle
+PR (none open; #155 merged) classified NOTICEABLE, then hand to the coordinator for the ship ask.
+BLOCKING → re-dispatch builder, re-review. Do NOT re-run finished children; reconcile from commits.
