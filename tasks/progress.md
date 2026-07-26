@@ -3831,3 +3831,25 @@ auth-hdr=FALSE tok=true napi=true origin=capacitor://localhost path=/v1/client):
 Awaiting: Plan(fable) root-cause+plan → specs/p0-login-blocked-plan.md; sim repro for ground truth.
 On outcomes: plan+repro → builder → reviewer(/security-review)+qa → land on integration/next,
 update bundle PR NOTICEABLE. Do NOT re-run a finished child; reconcile from branch commits.
+
+### SCOPE ADD (coordinator, same cycle): enable Google/Apple SSO buttons
+Surface: `frontend/src/components/auth/OAuthButtons.tsx` — both buttons render disabled behind a
+local `const OAUTH_LIVE = false` (line 19) with the caption "Apple & Google coming online shortly".
+Flipping it is a one-line diff BUT the native ID-token path has THREE hard prerequisites that are
+NOT met in this repo — enabling `oauth_google` on the Clerk instance is necessary, NOT sufficient:
+1. `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` + `NEXT_PUBLIC_GOOGLE_IOS_SERVER_CLIENT_ID` are unset
+   everywhere (`ops/ios/ship.sh` exports neither). `native-social.ts:39-46` needs them to
+   `SocialLogin.initialize()`. The SERVER one MUST equal the Clerk Google connection's **web**
+   client ID — logged as "epic risk #1" in specs/login-onboarding-redesign-plan.md:415.
+2. Apple: NO `.entitlements` file exists under `frontend/ios/App/App/` → the "Sign in with Apple"
+   Xcode capability is not enabled; also needs Clerk Native Applications registration (Team ID +
+   Bundle ID) and `NEXT_PUBLIC_APPLE_CLIENT_ID`. The spike deliberately did NOT edit these.
+3. No `com.googleusercontent.apps.*` URL scheme in `frontend/ios/App/App/Info.plist`.
+Also: the native flows are NOT "spike-proven live" — specs/auth-headless-spike-verdict.md:41-42
+says both were "built, typechecked, unit-tested against a **mocked** plugin"; §7 states live
+round-trips "were, as planned from the start, never claimed as proven". The web-redirect fallback
+(`signIn.sso`) is not a Google workaround either: Google blocks OAuth in embedded WebViews.
+DECISION: build Clerk-`/v1/environment`-driven enablement detection + wire the handlers, but keep
+each button enabled ONLY when (provider enabled in Clerk) AND (its native config is present), so we
+never ship a live-looking button that fails on tap (no-fake-data principle). Report the 3 blockers
+as owner/ops actions. P0 fixes A+B take priority and are built/reviewed FIRST.
