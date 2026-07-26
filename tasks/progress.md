@@ -3807,3 +3807,27 @@ TestFlight state read from the ASC REST API with a JWT this session minted itsel
 from human-readable CLI text. Per owner instruction, all background caddie-bench processes on the box
 were killed before this ship and are NOT restarted — the box stays quiet after the deploy confirms
 above; cycle-6 (degrade-rate 23.3%, judge-noise ceiling) stays PAUSED pending explicit direction.
+
+## AWAITING — P0 login-blocked (owner field report v1.1.22, 2026-07-26)
+Branch: `p0-login-fix` (off bc2ceeb) in worktree agent-a7710cdcb719cffd8; lands on `integration/next`.
+Two defects from the owner's on-device AUTH DIAG (loaded=true signed=false native-sent=true
+auth-hdr=FALSE tok=true napi=true origin=capacitor://localhost path=/v1/client):
+
+- **A — diag panel ships in Release.** ROOT CAUSE FOUND: `frontend/src/components/NativeAuthDiag.tsx:89,140`
+  `if (!isNative && !authDiagEnabled) return null;` — `isNative = Capacitor.isNativePlatform()`
+  means it renders on EVERY device/TestFlight build. Not a flag leak; the gate is
+  "native OR opt-in". Fix = build-time exclusion from production, dev opt-in only.
+- **B — login wedge.** Evidence gathered: (i) NOT a v1.1.22 regression — `git diff 7a50218..bc2ceeb -- frontend/src`
+  touches only `lib/caddie/types.ts` (1 line); zero auth-adjacent changes. (ii) origin=capacitor://localhost
+  is EXPECTED/latent, not causal: `frontend/ios/SIMTEST.md:8` documents that origin, Clerk allowlists
+  both origins (backlog-archive.json:982), and CapacitorHttp bypasses CORS regardless of scheme —
+  i.e. `capacitor.config.ts` `iosScheme:"https"` has never taken effect on iOS. `capacitor.config.json`
+  IS bundled (pbxproj Resources) so it is not an unsynced-config problem. (iii) Leading cause:
+  `AuthProvider.tsx:76-90` unconditionally injects the persisted JWT into `authorization` on EVERY
+  FAPI request and NOTHING ever clears it on rejection (`clearNativeToken` is called only from
+  sign-out teardown) → a stale/invalid client JWT poisons even a fresh sign-in → permanent wedge.
+  This is the FILED-never-fixed `clerk-jwt-keychain-swap` LOW "cold-start stale-token clear".
+
+Awaiting: Plan(fable) root-cause+plan → specs/p0-login-blocked-plan.md; sim repro for ground truth.
+On outcomes: plan+repro → builder → reviewer(/security-review)+qa → land on integration/next,
+update bundle PR NOTICEABLE. Do NOT re-run a finished child; reconcile from branch commits.
