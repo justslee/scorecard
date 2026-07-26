@@ -387,6 +387,14 @@ _SPOKEN_SIDE_WORD: dict[str, str] = {
 # this cut, and the pre-named fallback is type-aware evidence qualification
 # (a discrete bunker/water feature vs one observation point of a tree
 # LINE), not another nudged number.
+# SCOPE (cycle-5 reviewer nit 2 — the record kept honest): `compute_miss_side`
+# runs on ANY reachable turn, so on a measured-lateral course this criterion
+# can move a TEE shot wherever the tee shot legitimately IS the approach —
+# a par 3, but equally a driveable par 4. The committed fixtures only exercise
+# the par-3 case today (the audit's 5 tee-lie diffs are all bethpage_black_h8),
+# which is why the plan's carve-out said "par-3"; that is narrower than the
+# real behavior, not a guarantee. Par-4/5 POSITIONING tees are untouched —
+# they route through `compute_positioning_miss_side`, a different function.
 GREENSIDE_EVIDENCE_NEAR_YDS: float = 20.0
 GREENSIDE_EVIDENCE_DISTANCE_YDS: float = 38.5
 GREENSIDE_EVIDENCE_MAX_LATERAL_YDS: float = 24.0

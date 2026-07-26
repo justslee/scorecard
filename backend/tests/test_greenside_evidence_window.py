@@ -92,6 +92,27 @@ def test_bethpage_red_h16_admits_the_judge_cited_33y_bunker(monkeypatch):
 # ── Boundary pins on `_greenside_evidence` ──────────────────────────────────
 
 
+def test_greenside_constants_are_pinned_to_the_measured_voids():
+    """Literal pin so a future silent nudge can't slip past (cycle-5 reviewer
+    nit 1). The parametrized boundary cases below are expressed RELATIVE to the
+    constants, so on their own they would still pass if someone moved 38.5 to
+    41.0. These values are not taste -- each sits inside a void MEASURED over
+    all 78 hazards in the ten committed fixtures (see `aim_point.py`'s comment):
+    the lateral<=24-qualified distance sequence is ..., 33, 35 | void | 42, ...
+    so 38.5 is that void's midpoint (margins 3.5/3.5); the jointly-restricted
+    lateral void is 22.5 -> 29.9, so 24.0 sits mid-plateau (margins 1.5/5.9).
+    Changing either number is a MEASUREMENT decision, not a tuning knob --
+    re-derive the table first, then update this pin deliberately. The standing
+    scar is `CORNER_MIN_DEVIATION_FRACTION` at 0.30, a threshold picked by feel
+    through a populated continuum (see backlog.json).
+    """
+    assert (
+        GREENSIDE_EVIDENCE_NEAR_YDS,
+        GREENSIDE_EVIDENCE_DISTANCE_YDS,
+        GREENSIDE_EVIDENCE_MAX_LATERAL_YDS,
+    ) == (20.0, 38.5, 24.0)
+
+
 @pytest.mark.parametrize(
     "distance,lateral,expected",
     [
