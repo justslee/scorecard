@@ -3582,3 +3582,84 @@ DO NOT ship, DO NOT ping the owner this cycle. Packaged box commands + ADVANCE p
 final report (predictions: numbers_coherence 74.9->88-95, natural_speech 60.9->~70, miss_side
 63.7->70-75, hazard 65.4->72-78, degrade rate materially down).
 On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## DONE (2026-07-25) — caddie-bench CYCLE 5: builder implemented the fable plan (A, B, C), 3 commits on integration/next
+
+Implemented `specs/caddie-bench-cycle5-plan.md` exactly as the contract, one commit per root
+cause, each independently green before the next started. All pushed to `integration/next`.
+
+**Commit 1 (A/RC-1) `564ad54`** — removed `leave_plays_like_yards` end-to-end: producer
+(`aim_point.py:794/807`), the `TeeShotNumbers` field (`types.py:298`), the `" (plays like ~N)"`
+render clause (`voice_prompts.py:351-352`), and the frontend wire mirror (declared, never read).
+`harness.py:157`'s `numbers_close` known-set edit is a TIGHTENING (a synth speaking the old bad
+number now goes RED instead of being whitelisted — Addendum 2). New RED->GREEN pin
+(`test_tee_shot_numbers.py::test_leave_plays_like_removed_end_to_end`) + new bench-teeth pin
+(`test_bench_teeth.py::test_numbers_close_goes_red_on_the_removed_leave_plays_like_arithmetic`).
+Frontend gates run (`npm run lint` clean, pre-existing unrelated warning only; `npx tsc --noEmit`
+clean) since `frontend/src/lib/caddie/types.ts` moved.
+
+**Commit 2 (B/RC-2) `d6d1c9d`** — stopped narrating absent data unprompted on all three mouths,
+verbatim per plan §2.1(a)(b)(c): `strategy.py::_strategy_system()` (the strategy brain never sees
+the question, so absence-narration is always unprompted there — "never announce the gap: leave
+that topic out of the strategy entirely"); `voice_prompts.py::_BASE_BEHAVIOR` and `::TOOL_USE_RULE`
+(these DO see the question, so "say plainly" survives scoped to the asked case). Every never-invent
+core sentence byte-identical (asserted verbatim in new tests); no persona/warmth/filler added. As
+Addendum 3 predicted, ZERO existing tests needed editing — the `test_caddie_caching.py` line-set
+guard interpolates constants on both sides and doesn't trip.
+
+**Commit 3 (C/RC-3) `9e0f477`** — the two-axis greenside evidence criterion, highest risk (live
+`compute_miss_side`). Re-derived the 78-hazard table byte-for-byte against the diagnosis ADDENDUM,
+per §3.1. **Found and corrected a real discrepancy in the plan's own derived void**: the plan's
+§0/§3.2 comment (and the diagnosis ADDENDUM's prose) stated the lateral<=24y-restricted distance
+void as 33->42 and picked `DISTANCE_YDS=36.0` — but that derived list omitted a real row
+(distance_from_green=35.0, lateral=8.8, bethpage_black_h8, a bunker tight to the line). The raw
+78-hazard table matches byte-for-byte; only the derived filtered list was wrong. TRUE void is
+35->42 (7y). Per the plan's own explicit contingency ("the constants follow the measurement if the
+honest voids differ"), landed `GREENSIDE_EVIDENCE_DISTANCE_YDS=38.5` (centered in the corrected
+void, margins 3.5/3.5 — was plan's 36.0) and kept `GREENSIDE_EVIDENCE_MAX_LATERAL_YDS=24.0`
+(void, jointly restricted by distance<=38.5, is actually 22.5->29.9, margins 1.5/5.9 — wider/safer
+than the raw-slice-only 22.5->25.0 the plan cited, since the two closest-lateral trees are already
+excluded by the distance axis). Full falsification-watch comment + margins live in `aim_point.py`
+next to the constants. Three call sites (`side_severity`, `side_hazard_desc`,
+`_greenside_hazards_line`) now route through one `_greenside_evidence(h)` predicate.
+`lateral_yards is None` never earns the widened band — byte-identical for the entire ~752-pin
+hand-built tee-parity population + every legacy cache, proven by 4 dedicated parity/boundary/
+retention tests in new file `test_greenside_evidence_window.py` (12 tests total).
+
+§3.4 offline whole-bench audit (RIDE, not deferred): 174 offline ADVICE-authored cases, 50 with any
+field diff, confined to exactly `{miss_side, reasoning, aim_point}` (every other field — club,
+target_yards, tee_shot_numbers, etc. — byte-identical). Diffs land on exactly the 5 predicted holes
+(black_h5 9, black_h7 7, black_h8 11, red_h16 7, red_h5 9) plus 7 reasoning-only additions on
+black_h4 (center-side bunkers now surface in the "Around the green:" line without moving
+miss_side). `black_h18` zero diffs (predicted — its bunkers are 156y+ out, positioning-side, out
+of scope). Zero diffs on tee-lie par-4/5 (positioning) cases; the 5 tee-lie diffs are all on
+bethpage_black_h8, a par-3 (tee IS the approach — the plan's named carve-out). Zero cases where the
+BEFORE side already had evidence — every diff is strictly evidence-gaining, never a flip away from
+an evidence-backed side.
+
+**Gates (every commit independently green):** `ruff check .` clean throughout. Backend full suite
+progression: 3363 (commit 1, baseline 3361 + 2 new tests) -> 3366 (commit 2, +3) -> 3378 (commit 3,
++12) passed / 154 skipped / 0 failed at each step — zero new skips, no deselects, zero pre-existing
+assertions edited anywhere in the three commits.
+
+No local Postgres was used (no container spun up); DB-backed tests run in CI. Live bench was NOT
+run (paid, owner's box only) per instruction.
+
+**Not shipped, owner not pinged this cycle** (explicit directive — see plan header). NEXT: fresh
+adversarial `reviewer` on fable (must verify BY EXECUTION; must confirm no judge/det-check/canary/
+side-flip-validator weakening; must independently re-derive C's void margins given the builder's
+correction above; must audit B's prompt diff for never-invent survival + absence of persona
+padding) + `qa` full gates -> iterate on BLOCKING only -> update PR #155 checklist -> the packaged
+post-merge live-bench command (unchanged from cycle 3/4, satellite default) is in
+`specs/caddie-bench-cycle5-plan.md`'s Verification-gates section for the coordinator to run on the
+box after merge.
+
+New backlog item `caddie-greenside-lateral-margin-remeasure` added (see backlog.json): the lateral
+void is only 1.5y from its near edge (22.5) on current fixtures; falsification trigger = any new
+fixture landing a greenside bunker at 23-24.5y lateral; pre-named fallback = type-aware evidence
+qualification (discrete bunker/water vs one tree-LINE observation point), not another nudged
+number. Also noted on the existing miss-side backlog items: `compute_positioning_miss_side`'s
+empty-zone `preferred="short"` default (the 10 positioning-path side-flip degrades) is deliberately
+unfixed pending the post-cycle-5 measured run.
+
+Commits: `564ad54` (A), `d6d1c9d` (B), `9e0f477` (C). All on `origin/integration/next`.
