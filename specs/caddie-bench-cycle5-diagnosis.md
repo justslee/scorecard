@@ -305,3 +305,26 @@ removing an entry from the known-set makes `numbers_close` **stricter** (a model
 number now goes RED). This is a validator *tightening*, not a loosening, and must not be confused
 with judge-weakening. If the field is deleted from `TeeShotNumbers` outright, this line has to move
 anyway or the harness will not import.
+
+## ADDENDUM 3 — the test surfaces change B will touch (builder + reviewer note)
+
+- `backend/tests/test_caddie_caching.py` carries a **line-set-identical brain-regression guard** that
+  embeds the expected `_BASE_BEHAVIOR` prompt text verbatim (see its header, "rendered content is
+  line-set-identical to the ..."). Editing the voice mouth's narrate-the-absence clause
+  (`voice_prompts.py:55`, *"If a tool reports data as unavailable, say so plainly"*) **will** trip it.
+  That is the guard working as designed: it exists to force a prompt change to be deliberate.
+  Updating its expected text for an intentional edit is legitimate — but the reviewer must confirm
+  the update contains **exactly** the intended clause change and that no other prompt line drifted
+  along with it. This is the one place in the cycle where "a test changed" is acceptable, and it must
+  be justified in the diff, never quietly re-baselined.
+- Neither clause is pinned verbatim anywhere else in `tests/` (grepped), so the blast radius is that
+  one guard plus `tests/test_caddie_register_consistency.py`, which sweeps the prompts and
+  sub-templates for register violations and should stay green without edits.
+- The strategy mouth's clause (`strategy.py:558-559`) is exercised through
+  `tests/eval/test_strategy_tool.py` and `tests/test_lore_consumption.py`; neither asserts the
+  sentence text.
+
+### Pre-change baseline at `48a5db9` (for QA to diff against)
+- `cd backend && ruff check .` -> **All checks passed!**
+- `cd backend && uv run --frozen pytest tests/ -q -p no:randomly` -> **3361 passed, 154 skipped, 0 failed**
+- bench offline + `test_tee_shot_numbers` + `test_approach_frame` -> **325 passed**
