@@ -291,3 +291,17 @@ trade one wrong claim for another.
 The builder must re-derive this table itself (the command above is reproducible in ~10s offline,
 zero DB) and justify the final constants against it — but the measurement is done and the answer is
 not "bump 20 to 25". Handing this to the plan/builder so no one picks a number by feel.
+
+## ADDENDUM 2 — why the bench never caught RC-1 (and how the fix must tighten it)
+
+`backend/tests/eval/caddie_bench/harness.py:157` adds `tsn.leave_plays_like_yards` to the
+**known-numbers set** that the `numbers_close` det-check validates a synth answer against. So the
+bench has been explicitly *whitelisting* the bad number — which is exactly why only **2 of the 42**
+numbers_coherence failures tripped `numbers_close` while the vision judge caught all of them.
+
+Consequence for change A: when the unsolved leave plays-like stops being spoken, `harness.py` must
+stop treating it as a legitimate number too. Note the direction of that edit for the reviewer —
+removing an entry from the known-set makes `numbers_close` **stricter** (a model that speaks the
+number now goes RED). This is a validator *tightening*, not a loosening, and must not be confused
+with judge-weakening. If the field is deleted from `TeeShotNumbers` outright, this line has to move
+anyway or the harness will not import.
