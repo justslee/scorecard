@@ -3531,3 +3531,24 @@ FACT routing 80%: both misroutes are the same phrasing `fact_distance_04` on 2 h
 NEXT: fable Plan -> builder (A,B,C) -> fresh adversarial reviewer (fable, by execution) -> qa full
 gates -> land on integration/next / PR #155. Do NOT ship, do NOT ping the owner this cycle.
 On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## AWAITING (2026-07-25, updated) — cycle 5: FABLE PLAN IN FLIGHT
+Landed so far on origin/integration/next: `9a84146` (diagnosis), `97e27c5` (measured greenside
+distribution), `48a5db9` (harness whitelist finding) — all in `specs/caddie-bench-cycle5-diagnosis.md`.
+Baseline gates GREEN at this head: `ruff check .` clean; bench offline + test_tee_shot_numbers +
+test_approach_frame = 325 passed.
+IN FLIGHT: Plan agent on the **fable** model writing `specs/caddie-bench-cycle5-plan.md` (scope =
+A leave-plays-like suppression, B green-slope narrate-the-absence removal, C measured greenside
+evidence window). It writes ONLY that file.
+ON PLAN LANDING -> read it, sanity-check it against the two addenda in the diagnosis (the measured
+26->33 distance void + 25y lateral separation for C; the harness.py:157 known-set edit for A), then
+dispatch `builder` to implement the plan on this worktree branch, committing per root cause.
+THEN: fresh adversarial `reviewer` on **fable** (correctness-critical; must verify BY EXECUTION, must
+confirm no judge/det-check/canary/side-flip-validator weakening, and must specifically audit B's
+prompt edit for survival of the never-invent contract) + `qa` (full gates) -> iterate on BLOCKING only
+-> ff onto integration/next -> update PR #155 checklist -> records.
+DO NOT ship, DO NOT ping the owner this cycle (explicit directive). Measurement is packaged for the
+coordinator to execute on the box; predictions are recorded IN ADVANCE in the final report.
+If the plan file never lands (planner died): re-dispatch the Plan agent with the same brief; the
+diagnosis + both addenda are already committed, so nothing is lost.
+On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
