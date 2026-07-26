@@ -3693,3 +3693,68 @@ ON REVIEWER+QA RETURN: iterate on BLOCKING only -> update PR #155 checklist -> r
 DO NOT ship, DO NOT ping the owner this cycle. Packaged box commands + the ADVANCE predictions table
 go in the final report.
 On resume: reconcile from `git log origin/integration/next`; do NOT re-run a finished child.
+
+## DONE (2026-07-25) — caddie-bench CYCLE 5 landed on integration/next @715e179 (NOT shipped, owner NOT pinged)
+Measured floor: run `20260725-230324`, 189 cases, satellite, 11-dim — NEW basis **86.5%**, legacy **85.2%**
+(trajectory 53.4 -> 77.0 -> 85.2 like-for-like). Diagnosis `specs/caddie-bench-cycle5-diagnosis.md`,
+Fable plan `specs/caddie-bench-cycle5-plan.md`. Commits: 564ad54 (A), d6d1c9d (B), 9e0f477 (C),
+d27347c (records), 715e179 (reviewer nits 1+2). PR #155 checklist updated. Backlog resolution appended
+(targeted string edit, JSON re-validated, purely additive — never json.load/dump per the standing rule).
+
+**The brief's lead hypothesis was FALSIFIED.** natural_speech is no longer dragged by degrades:
+DEGRADED 60.0% (n=25) vs CLEAN 61.3% (n=137). Cycle 3 measured 32% vs 63.2%; cycle-4's degraded-line
+cap/dedupe closed that gap entirely. Degrades now cost **strategic_depth** (28.0% vs 87.6%), not speech.
+Had we followed the hypothesis we would have spent the cycle fixing degrades and moved natural_speech
+by roughly nothing. Measuring the split before acting was the whole value of the first hour.
+
+**Degrade taxonomy** (first cycle with the cycle-3 c2 instrumentation): 29/189 = 15.3% —
+`validator:side-flip` 24 (82.8%), `validator:pin:favor-side` 4, `exception:ReadTimeout` 1. **22 of the
+24 side-flips ride `miss_side.preferred="short"`** — they are a SYMPTOM of root cause C, so they were
+fixed at the source and the validator was left untouched.
+
+**Three root causes, all the same standing pattern — the engine framed something badly and the model
+faithfully repeated it:**
+- **A** `aim_point.py:794` computed `leave_plays_like_yards = adjusted_yards - club_dist`, mixing this
+  shot's wind-adjusted distance with a CALM club yardage — never a solve of the next shot ("a 5-yard
+  leave plays like 20"). **40/40** failing numbers_coherence cases spoke the ENGINE's number verbatim;
+  zero confabulated. Removed end-to-end. The bench had been WHITELISTING it in `harness.py:157`'s
+  `numbers_close` known-set (why only 2/42 failures tripped the det-check) — removing it TIGHTENS.
+- **B** 101/162 answers (62%) closed with "No green slope is mapped" and scored 54.5% vs 69.4% for
+  answers that never mention it; the judge named this closer in 22 of 30 clean-failure speech
+  critiques. Source was the PROMPT, not the payload. Three surfaces rescoped asymmetrically.
+- **C** the lateral-blind `distance_from_green <= 20` window was a knife edge through the densest
+  cluster (eleven greenside bunkers at 20-26y: admitted 2, excluded 9). Replaced by a measured
+  two-axis criterion: near band <=20 unchanged, widened band <=38.5 EARNED only by measured lateral <=24.
+
+**The builder falsified the plan and was right.** The plan said 36.0; its own derived lateral-qualified
+list had dropped a real row (bethpage_black_h8, 35.0y/8.8 lateral), so the honest void is 35->42 and it
+landed 38.5 (midpoint, margins 3.5/3.5). Independently re-derived by eng-lead, qa AND the reviewer.
+
+**Verdicts.** Fable reviewer **SHIP**, verified by execution — swept the distance constant across the
+void and proved 36.0/38.5/41.9 byte-identical on all 184 cases (the OPPOSITE of a knife edge, unlike
+the CORNER_MIN_DEVIATION_FRACTION scar where every nudge moved cases); lateral cut mid-plateau
+(22.6-29.8 identical); a 56,000-config `lateral_yards=None` parity sweep against the real pre-change
+code hashed IDENTICAL (SHA-256); all 12 grounding constants hashed unchanged; judge/report/schema/
+validators untouched with zero deleted assertions. 3 non-blocking nits, 1+2 closed @715e179.
+QA **PASS** independently reproduced: ruff clean; **3379 passed / 154 skipped / 0 failed** (pre-change
+baseline 3361 that I measured myself, +18 new tests), deterministic across three collection orders
+including fully reversed; frontend lint + tsc clean; voice smoke 278/278; every new test confirmed
+RED-before/GREEN-after. Security review: no HIGH or MEDIUM.
+
+**PREDICTIONS STATED IN ADVANCE** (the next measured run checks a real prediction, not a post-hoc
+story): numbers_coherence 74.9 -> **88-95** · natural_speech 60.9 -> **~70** (should NOT exceed that on
+this fix alone) · miss_side_evidence 63.7 -> **70-75** · hazard_awareness 65.4 -> **72-78** · degrade
+rate 15.3 -> materially down · strategic_depth up as degrades stop being generated. C least certain.
+If the run lands outside these bands that is signal about the FIX, never a mandate to touch the judge.
+
+**PENDING (the cycle ends only when measured):** coordinator executes on the box — full-189 satellite
+re-run (~$8, `--budget-usd 14`) then `judge_noise --run-id <new> --sample-size 30`. PRE-FLIGHT: `/` is
+at 90% (720M free) and the last satellite run wrote 118M — prune superseded runs' `composites`/
+`tile_cache` first, keeping `results.jsonl` + `report.md`, and keep `20260725-230324` intact (it is the
+cycle-5 baseline). SSM runs as root; every `git` call needs `sudo -u ubuntu` (repo is ubuntu-owned).
+
+**PROCESS LESSON (worth keeping):** my progress-checkpoint commit `b30240b` accidentally swept ~14
+lines of the builder's in-flight `aim_point.py` edits into it because I ran `git add -A` while a
+builder was live in the SAME worktree. Nothing was lost, but commit boundaries in `e942a7c..d27347c`
+are not reliable for attribution (the reviewer was told to review the whole range). An eng-lead must
+stage EXPLICIT PATHS, never `git add -A`, in a lane a child is working in.
