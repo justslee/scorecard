@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { checkAuthBypass } from "../../scripts/assert-no-auth-bypass.mjs";
@@ -83,6 +83,32 @@ describe("containsAuthDiagMarker (pure predicate)", () => {
     expect(
       containsAuthDiagMarker("let t=(0,r.getAuthDiagnostics)();throw Error(`Transcribe 401`)"),
     ).toBe(false);
+  });
+
+  // ── MARKER COUPLING (reviewer fold, P0 2026-07-26) ────────────────────────
+  // The scan proves the panel is absent from out/ by grepping for prose the
+  // panel contains ("Auth diag", "Looper Auth Diagnostic", "[authdiag]").
+  // Minifiers rename identifiers but preserve string literals, so prose is a
+  // sound marker — but ONLY while the panel still contains it. If someone
+  // later rewords the header or the copy-button text, every marker would stop
+  // matching, the scan would go permanently green, and it would prove nothing
+  // while looking healthy. That silent rot is the failure mode this test
+  // exists to prevent: it pins the predicate to the ACTUAL component source,
+  // so a copy edit that removes the last marker fails here instead of quietly
+  // disarming the release gate that keeps the panel out of TestFlight.
+  it("stays coupled to the real NativeAuthDiag source (marker set cannot rot)", () => {
+    const panelSource = readFileSync(
+      path.resolve(__dirname, "../components/NativeAuthDiag.tsx"),
+      "utf8",
+    );
+    expect(containsAuthDiagMarker(panelSource)).toBe(true);
+  });
+
+  // Same coupling for the state module: its setAuthDiag console mirror is the
+  // other thing that must never reach a shipped bundle's device log.
+  it("stays coupled to the real auth-diag state module", () => {
+    const diagSource = readFileSync(path.resolve(__dirname, "./auth-diag.ts"), "utf8");
+    expect(containsAuthDiagMarker(diagSource)).toBe(true);
   });
 });
 
