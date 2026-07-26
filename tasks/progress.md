@@ -3998,3 +3998,48 @@ Services ID, Info.plist URL scheme — and the flows are unit-tested against a M
 live-proven). Enabling the Clerk connections is necessary but NOT sufficient. The owner must sign
 in with **Continue with email**; if he taps a social button he will find it dead and reasonably
 conclude the fix failed.
+
+## PARTIAL SHIP — bundle #156 -> main @8ac6adc, v1.1.23 (2026-07-26) (release-manager)
+Owner approval in-session, verbatim: **"Ship it"** — given for the bundle pinned at `835ca16`, all
+three gates verified SUCCESS on that exact SHA just prior (structured `gh pr checks --json`, not
+scraped). Sequence run inline/foreground throughout, no backgrounding.
+1. Confirmed PR #156 head == `835ca16` and all 3 required checks (`Frontend gates`, `Backend gate`,
+   `E2E smoke advisory`) SUCCESS directly on that SHA (`gh pr checks 156 --json name,state,bucket`).
+   Local `integration/next` was stale (orphaned local-only commit from the prior session, diverged
+   after the last recut) — working tree was clean, so hard-reset to `origin/integration/next`
+   (`835ca16`) to sync before touching anything; no work lost (the stale commit was a superseded
+   records-only commit, content already captured in `main` from bundle #155's own merge).
+2. VERSION bumped 1.1.22 -> 1.1.23 (`ad177dc`, patch — P0 fix bundle, not a milestone), pushed.
+   Polled CI on `ad177dc` inline to completion: SUCCESS. Re-verified all 3 required PR checks
+   SUCCESS on `ad177dc` via `gh pr checks --json` before merging.
+3. `gh pr merge 156 --merge` -> merge commit `8ac6adc56394c8d39bc68bf43728da2c4030a422`. Post-merge
+   `CI` on `main` polled inline to completion: SUCCESS. `Deploy backend (SSM)` correctly did NOT
+   trigger — bundle #156 touched zero `backend/**` files (path-filtered workflow), so no backend
+   redeploy was needed or expected.
+4. Key-free confirms: `curl https://api.looperapp.org/health` = `{"status":"ok"}`; SSM Run-Command
+   on-box `git rev-parse HEAD` = `6dcc32c...` (unchanged from bundle #155's deploy — correct, since
+   #156 has no backend diff, the running API is unaffected by this frontend-only fix);
+   `APP_ACCESS_MODE=open` in `.env` untouched; no caller/outbound-call process running (`ps aux`
+   count 0); `systemctl is-active scorecard-api` = `active`.
+5. **TestFlight upload BLOCKED — Apple App Store Connect API outage, not our code.** `bash
+   ops/ios/ship.sh` run in the foreground from synced `main` @ `8ac6adc`, VERSION 1.1.23. The
+   archive step (`xcodebuild ... archive`) succeeded cleanly on **5 consecutive attempts**
+   (confirms the P0 fix + the hardened ship.sh flags + `assert-no-auth-diag.mjs` postbuild scan all
+   pass). Every attempt then failed at `[4/4] Distribution-sign + upload`:
+   `error: exportArchive Error Downloading App Information` / `** EXPORT FAILED **`. Root cause
+   confirmed via `IDEDistributionAppStoreConnect.log` each time: xcodebuild's own provisioning
+   step (`Apps.apps-get_collection: GET /v1/apps?filter[bundleId]=com.looperapp.app&...`) got
+   `status code 500` directly from `https://api.appstoreconnect.apple.com` using our valid API key
+   (`QG927KHTXR` / issuer `f58bfc06-...`) — identical failure across all 5 attempts over ~15
+   minutes, ruling out a one-off blip. This exact script/key/flags uploaded v1.1.22 successfully
+   a few hours earlier today (bundle #155), so this is an Apple-side ASC API incident, not a local,
+   credential, or code regression. Stopped per protocol (checkpoint + STOP + exact error) rather
+   than unilaterally switching to the Xcode Cloud fallback (not set up in this repo, and switching
+   upload mechanisms mid-P0 is a bigger call than this brief authorized).
+**State:** code fix is LIVE on `main` (merge-ready for any future TestFlight build once Apple's API
+recovers) but the owner does NOT yet have a new installable build — he remains on v1.1.22 (blocked
+sign-in) until a ship.sh retry succeeds. `integration/next` was NOT recut (holding at `835ca16`'s
+lineage, now merged) pending a successful upload. Owner alerted via PushNotification + board comment
+given the release-blocking, time-critical nature. Next action: retry `bash ops/ios/ship.sh` from
+`main` @ `8ac6adc` (or later) once Apple's App Store Connect API recovers — no code changes needed,
+just a clean re-run.
