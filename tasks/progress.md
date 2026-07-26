@@ -3970,3 +3970,31 @@ hard-FAILS by comparison. Want a BLOCKING/NON-BLOCKING ruling.
 On outcomes: SHIP+PASS → fast-forward `integration/next` to this branch, push, open a FRESH bundle
 PR (none open; #155 merged) classified NOTICEABLE, then hand to the coordinator for the ship ask.
 BLOCKING → re-dispatch builder, re-review. Do NOT re-run finished children; reconcile from commits.
+
+## DONE — P0 login-blocked LANDED @e918824 on integration/next · PR #156 (NOTICEABLE)
+ONE defect, not two. The AUTH DIAG panel shipped in Release and physically occluded (and, via
+pointerEvents:auto, intercepted taps on) the sign-in controls — including "Continue with email",
+the owner's ONLY working path since both OAuth buttons are hard-disabled. Defect B was a phantom
+manufactured by the panel's own display bug (see the FALSIFIED section above).
+Fix: build-time exclusion (statement-form imports + next.config.ts force-define — the ternary did
+NOT survive Turbopack; Next only inlines NEXT_PUBLIC_* when the key is PRESENT at build time) +
+a second import site in AuthSpikePanel.tsx + postbuild bundle scan (proof, teeth-verified) +
+ship.sh pinning both debug flags off unconditionally + marker-coupling tests + honest non-occluding
+dev diagnostic + doc truth (capacitor.config.ts origin claim, SIMTEST.md signing flags).
+ZERO auth token-flow changes (reviewer-verified byte-identical).
+Gates: lint 0 err · tsc clean · build+scan green · vitest 155/2867 (base 153/2850, +17, 0 regress) ·
+voice 278/278 · ruff clean · Playwright 10/10 clean skip. out/ marker greps: ZERO matches.
+Reviewer(fable) SHIP · /security-review no HIGH/MEDIUM · qa PASS.
+NOT shipped/pinged — the coordinator takes the ship ask.
+
+### Correction for the record (do NOT propagate the coordinator's assumption)
+A relayed message stated Google/Apple SSO is live and that "the buttons read the environment
+dynamically per the scope-add". BOTH are false in the shipped code and were verified:
+`git diff bc2ceeb..HEAD -- frontend/src/components/auth/OAuthButtons.tsx` is EMPTY — the file is
+untouched. `OAUTH_LIVE = false` still hardcoded; both buttons `disabled`; caption still reads
+"Apple & Google coming online shortly". No enablement-detection was built (decision recorded
+@8930c9c: blocked on 3 missing prerequisites — Google iOS + server client IDs, Apple entitlement/
+Services ID, Info.plist URL scheme — and the flows are unit-tested against a MOCKED plugin, never
+live-proven). Enabling the Clerk connections is necessary but NOT sufficient. The owner must sign
+in with **Continue with email**; if he taps a social button he will find it dead and reasonably
+conclude the fix failed.
