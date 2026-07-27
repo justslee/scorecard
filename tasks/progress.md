@@ -3998,3 +3998,13 @@ Services ID, Info.plist URL scheme — and the flows are unit-tested against a M
 live-proven). Enabling the Clerk connections is necessary but NOT sufficient. The owner must sign
 in with **Continue with email**; if he taps a social button he will find it dead and reasonably
 conclude the fix failed.
+
+## Bundle #156 SHIP COMPLETE (2026-07-27, coordinator)
+v1.1.23 uploaded to TestFlight on retry attempt 3 (build 202607262041) after Apple's ASC API
+outage cleared (5 identical HTTP-500s at export, external — the archive + no-diag scan passed
+every attempt). Merge @8ac6adc; frontend-only (no backend redeploy needed, deployed HEAD
+correctly unchanged @6dcc32c). Owner instruction delivered: update + "Continue with email",
+nothing destructive. PR #157 (the mid-outage checkpoint) superseded by this record — close it.
+Follow-ups standing: SSO app-side wiring (Google client IDs + Apple entitlement + Info.plist
+URL scheme — owner's Clerk side is DONE, Apple enabled on prod); clerk-native-revoked-client-
+token-probe (LOW). Box quiet; loop remains stopped per owner.
