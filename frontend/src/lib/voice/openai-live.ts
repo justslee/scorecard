@@ -21,6 +21,11 @@
 import { fetchAPI } from '../api';
 import { PcmCapture } from './pcm-capture';
 import type { DeepgramLiveEvents } from './deepgram-live';
+// Type-only — erased at compile time, so importing this ONE shared
+// definition back from live-stt.ts (which itself imports the OpenAILiveTranscriber
+// VALUE from this file) creates no runtime circular dependency
+// (specs/live-transcription-plan.md §9 — the shared-types pair).
+import type { LiveSttSession } from './live-stt';
 
 const OPENAI_TRANSCRIBE_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
 
@@ -28,13 +33,6 @@ const OPENAI_TRANSCRIBE_WS_URL = 'wss://api.openai.com/v1/realtime?intent=transc
 // = {type:"audio/pcm", rate:24000}) — distinct from Deepgram's 16kHz PCM
 // path; PcmCapture's targetRate constructor param exists for exactly this.
 const OPENAI_LIVE_STT_SAMPLE_RATE = 24000;
-
-interface LiveSttSessionResponse {
-  engine: 'deepgram' | 'openai';
-  access_token: string;
-  expires_in: number;
-  model?: string;
-}
 
 /** base64-encode a chunk of Int16 PCM samples (little-endian) for the
  *  `input_audio_buffer.append` WS frame. Chunked String.fromCharCode calls
@@ -86,7 +84,7 @@ export class OpenAILiveTranscriber {
    * start() contract today.
    */
   async start(stream: MediaStream): Promise<void> {
-    const session = await fetchAPI<LiveSttSessionResponse>('/api/voice/live-session', {
+    const session = await fetchAPI<LiveSttSession>('/api/voice/live-session', {
       method: 'POST',
       body: JSON.stringify({ keyterms: [...this.keyterms] }),
     });

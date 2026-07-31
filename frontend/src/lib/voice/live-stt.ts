@@ -37,7 +37,15 @@ export interface LiveTranscriber {
   stop(): void;
 }
 
-interface LiveSttSessionResponse {
+/** Mirrors backend/app/routes/voice.py::LiveSttSessionResponse
+ *  (specs/live-transcription-plan.md §9 — the shared-types pair). `engine`
+ *  tells the browser which transcriber to construct; `access_token`/
+ *  `expires_in` feed the matching vendor's WS auth (Deepgram's 'token'
+ *  subprotocol, or OpenAI's `openai-insecure-api-key.<token>` subprotocol).
+ *  `model` is present only for engine:"openai" (echoed into its
+ *  session.update defense-in-depth frame — see openai-live.ts). Exported so
+ *  openai-live.ts imports this ONE definition instead of duplicating it. */
+export interface LiveSttSession {
   engine: 'deepgram' | 'openai';
   access_token: string;
   expires_in: number;
@@ -55,9 +63,9 @@ class FlaggedLiveTranscriber implements LiveTranscriber {
   }
 
   async start(stream: MediaStream): Promise<void> {
-    let session: LiveSttSessionResponse;
+    let session: LiveSttSession;
     try {
-      session = await fetchAPI<LiveSttSessionResponse>('/api/voice/live-session', {
+      session = await fetchAPI<LiveSttSession>('/api/voice/live-session', {
         method: 'POST',
         body: JSON.stringify({ keyterms: [...this.keyterms] }),
       });
