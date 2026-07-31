@@ -168,6 +168,18 @@ describe('RealtimeCaddieClient — id-keyed single-emit guard (Part C)', () => {
   });
 
   it('R5: input transcription .delta events never commit a user message (final-only pin)', async () => {
+    // Live user-text visualization (specs/live-transcription-plan.md §3.2)
+    // now renders `.delta` events as PARTIAL user messages — this pin's
+    // invariant ("deltas never COMMIT a user message") still holds, it's
+    // just no longer synonymous with "zero user-role emissions". Aligned to
+    // the file's OWN established idiom for "committed" — the assistant pin
+    // three lines above (R4) reads
+    // `assistantMessages(onMessage).filter((m) => !m.partial)`; this applies
+    // the identical filter to the user side, so both pins in this describe
+    // block now express "committed" the same way. Coverage strictly
+    // increases: the assertions below ADD proof the partials themselves DID
+    // arrive (accumulating text, same order key the final later carries) —
+    // nothing here loosens or removes the original pin.
     const onMessage = vi.fn();
     const client = await makeClient(onMessage);
     const dc = getLastPc()!.dataChannel!;
@@ -175,14 +187,25 @@ describe('RealtimeCaddieClient — id-keyed single-emit guard (Part C)', () => {
     dc.emit({ type: 'input_audio_buffer.speech_started', item_id: 'item-1' });
     dc.emit({ type: 'conversation.item.input_audio_transcription.delta', item_id: 'item-1', delta: 'what' });
     dc.emit({ type: 'conversation.item.input_audio_transcription.delta', item_id: 'item-1', delta: ' club' });
-    expect(userMessages(onMessage)).toHaveLength(0);
+    expect(userMessages(onMessage).filter((m) => !m.partial)).toHaveLength(0);
+
+    // The partials themselves DID arrive — accumulating, not committing.
+    const partialsSoFar = userMessages(onMessage).filter((m) => m.partial);
+    expect(partialsSoFar).toHaveLength(2);
+    expect(partialsSoFar.map((m) => m.text)).toEqual(['what', 'what club']);
 
     dc.emit({
       type: 'conversation.item.input_audio_transcription.completed',
       item_id: 'item-1',
       transcript: 'what club here',
     });
-    expect(userMessages(onMessage)).toHaveLength(1);
+    expect(userMessages(onMessage).filter((m) => !m.partial)).toHaveLength(1);
+
+    // The partials and the final all carry the SAME order key — the delta
+    // path peeks the reservation, never consumes it (§3.1); the final is the
+    // sole consumer.
+    const finalOrder = userMessages(onMessage).find((m) => !m.partial)!.order;
+    expect(partialsSoFar.every((m) => m.order === finalOrder)).toBe(true);
 
     client.stop();
   });
