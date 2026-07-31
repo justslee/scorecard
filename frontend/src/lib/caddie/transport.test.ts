@@ -154,8 +154,8 @@ describe('messagesToTurns — realtime transcript → VoiceSheet turns', () => {
       msg({ id: 'a1', role: 'assistant', text: 'Easy 8.', order: 1 }),
     ]);
     expect(turns).toEqual([
-      { role: 'user', text: 'What should I hit?' },
-      { role: 'caddy', text: 'Easy 8.' },
+      { role: 'user', text: 'What should I hit?', partial: false },
+      { role: 'caddy', text: 'Easy 8.', partial: false },
     ]);
   });
 
@@ -164,6 +164,13 @@ describe('messagesToTurns — realtime transcript → VoiceSheet turns', () => {
       msg({ id: 'a1', role: 'assistant', text: '  ', partial: true }),
       msg({ id: 'u1', role: 'user', text: 'wind?' }),
     ]);
-    expect(turns).toEqual([{ role: 'user', text: 'wind?' }]);
+    expect(turns).toEqual([{ role: 'user', text: 'wind?', partial: false }]);
+  });
+
+  it('carries the partial flag through (specs/live-transcription-plan.md §3.5) so live user text can stream in place', () => {
+    const turns = messagesToTurns([
+      msg({ id: 'u1', role: 'user', text: 'what', partial: true }),
+    ]);
+    expect(turns).toEqual([{ role: 'user', text: 'what', partial: true }]);
   });
 });

@@ -381,10 +381,28 @@ export function useCaddieLiveSession({
     maxOrderRef.current = Math.max(maxOrderRef.current, applied.order);
     setMessages((prev) => {
       const i = prev.findIndex((x) => x.id === applied.id);
+      // Retraction sentinel (specs/live-transcription-plan.md §3.3): a user
+      // `.delta` partial the UI already saw was dropped by .completed
+      // (empty/priming-echo) or .failed — remove it rather than render an
+      // empty final bubble. No-op if the partial was never in state.
+      if (applied.role === 'user' && !applied.partial && applied.text.trim() === '') {
+        return i === -1 ? prev : prev.filter((_, j) => j !== i);
+      }
       const merged = i === -1 ? [...prev, applied] : prev.map((x, j) => (j === i ? applied : x));
       // Conversation order, not arrival order — see lib/voice/realtime-ordering.ts.
       return sortByOrder(merged);
     });
+  }, []);
+
+  /** Terminal-status settle (specs/live-transcription-plan.md §3.3/§3.5): a
+   *  user `.delta` partial left mid-utterance when the socket dies
+   *  (closed/error) never gets a final from THAT client — settle it to
+   *  non-partial in place (caret stops blinking, text stays) rather than
+   *  leave it blinking forever. Idempotent (a no-op once already settled),
+   *  so it's safe to call from every closed/error branch below regardless
+   *  of which one (suspend/reconnect/fallback) runs next. */
+  const settleUserPartials = useCallback(() => {
+    setMessages((prev) => prev.map((m) => (m.role === 'user' && m.partial ? { ...m, partial: false } : m)));
   }, []);
 
   /** Silently re-anchors the live session to the current hole
@@ -496,6 +514,11 @@ export function useCaddieLiveSession({
         setStatus(s);
         if (s === "connected" || s === "listening" || s === "speaking") {
           lastActivityAtRef.current = Date.now();
+        }
+        if (s === "closed" || s === "error") {
+          // §3.3/§3.5 terminal settle — regardless of which branch below
+          // (suspend / reconnect fallback / final fallback) runs next.
+          settleUserPartials();
         }
 
         if (reconnectingRef.current) {

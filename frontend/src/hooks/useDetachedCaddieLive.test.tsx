@@ -183,6 +183,50 @@ describe("useDetachedCaddieLive — start/stop lifecycle", () => {
     expect(result.current.session.messages).toHaveLength(1);
   });
 
+  it("a retraction sentinel deletes the emitted partial; a terminal close settles a lingering partial in place (specs/live-transcription-plan.md §3.3/§3.5)", async () => {
+    const { result } = renderHook((props) => useDetachedCaddieLive(props), {
+      initialProps: baseOptions(),
+    });
+
+    act(() => result.current.start());
+    await flush();
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client.emitStatus("connected"));
+    await flush();
+
+    // A partial arrives (live user text as the golfer speaks)...
+    act(() => {
+      client.emitMessage({ id: "u1", role: "user", text: "uh", partial: true, order: 1 });
+    });
+    await flush();
+    expect(result.current.session.messages).toHaveLength(1);
+    expect(result.current.session.messages[0]).toMatchObject({ id: "u1", partial: true, text: "uh" });
+
+    // ...then realtime.ts's .completed drops the turn (empty/priming-echo)
+    // and emits the retraction sentinel — the hook DELETES it rather than
+    // rendering an empty final bubble.
+    act(() => {
+      client.emitMessage({ id: "u1", role: "user", text: "", partial: false, order: 1 });
+    });
+    await flush();
+    expect(result.current.session.messages).toHaveLength(0);
+
+    // A second partial is left mid-utterance when the socket dies — the hook
+    // settles it to non-partial IN PLACE (text stays, caret stops blinking)
+    // rather than leaving it blinking forever.
+    act(() => {
+      client.emitMessage({ id: "u2", role: "user", text: "what clu", partial: true, order: 2 });
+    });
+    await flush();
+    expect(result.current.session.messages.find((m) => m.id === "u2")).toMatchObject({ partial: true });
+
+    act(() => client.emitStatus("closed"));
+    await flush();
+
+    const settled = result.current.session.messages.find((m) => m.id === "u2");
+    expect(settled).toMatchObject({ partial: false, text: "what clu" });
+  });
+
   it("end() calls session.stop() then flips the gate off (liveOn false)", async () => {
     const { result } = renderHook((props) => useDetachedCaddieLive(props), {
       initialProps: baseOptions(),
