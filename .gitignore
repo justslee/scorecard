@@ -91,3 +91,9 @@ backend/tests/eval/last_strategy_latency_run.json
 # Caddie bench (specs/caddie-bench-plan.md) — per-case results/costs/composites/tile cache from
 # a LIVE run; all gitignored (key-free filenames, but the artifacts themselves are local-only)
 backend/tests/eval/caddie_bench/runs/
+
+# STT A/B bench (specs/live-transcription-plan.md §7) — synthesized TTS audio
+# and a specific run's results are local-only artifacts; the utterances +
+# scored terms that produce them (utterances.json) stay version-controlled.
+backend/bench/stt_ab/audio/
+backend/bench/stt_ab/results.json

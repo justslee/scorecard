@@ -31,6 +31,10 @@ dev = [
     # test-only: caddie_bench/render.py draws the map-composite context pack
     # (specs/caddie-bench-plan.md §1 render.py) — never imported by app/.
     "pillow>=11.0.0",
+    # bench-only: bench/stt_ab/synthesize.py generates pink-noise/wind-noise
+    # augmented audio fixtures (specs/live-transcription-plan.md §7) — never
+    # imported by app/. The ONE new dependency this bundle introduces.
+    "numpy>=1.26.0",
 ]
 
 [tool.pytest.ini_options]
