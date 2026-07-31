@@ -4196,3 +4196,94 @@ NEXT CYCLE — resume at plan §11 step 2. Priority order (from the plan, do not
 Then: designer (BLOCKING on the live-text idiom), reviewer + /security-review (only needed once step 4
 adds the endpoint; steps 2-3 are frontend-only), qa.
 Per the owner's directive for this arc: do NOT ship and do NOT ping.
+
+## DONE (2026-07-31) — live-transcription: ALL of specs/live-transcription-plan.md §11 steps 1-7 built, green, pushed (builder, lane worktree-agent-a7ff743ade6e18867)
+
+Implemented the full plan (Part A owner-visible feature + Part C flagged silent rider + the A/B
+bench), one commit per step, each pushed to `integration/next` as it landed so the branch survived
+every await point:
+
+1. `cf55d27` — `MessageOrderTracker.peekOrderForUserTranscript` (non-consuming order reservation).
+2. `3232127` — the `.delta` event case in `realtime.ts` (guard table byte-exact: pre-open gate YES,
+   `processedUserItems` read-only, priming-echo stops emission only, `setInputClass`/`resolveHeldFor`
+   NEVER from a partial, order PEEKed never consumed), retraction (empty/priming-echo/`.failed` drops
+   emit a `{text:'',partial:false}` sentinel) + P1 telemetry (`input_delta_first`). R5 pin aligned per
+   §3.4 — applied the file's OWN idiom (`assistantMessages(...).filter((m) => !m.partial)`, already
+   used 3 lines above by R4) to the user side, then ADDED assertions proving the partials arrived
+   (accumulating text, same order key the final later carries) — coverage strictly increased, nothing
+   loosened. New `realtime-user-partials.test.ts` (10 tests).
+3. `d0b50fd` — consumer wiring: `transport.ts` `messagesToTurns` carries `partial` through,
+   `Voice.tsx` streaming flag prefers the turn's own partial flag, `useCaddieLiveSession.ts` +
+   `useVoiceCaddie.ts` retraction-delete + terminal-status settle-in-place, plus
+   `VoiceRoundSetupRealtime.tsx` (NOT in the plan's file list but rides the same onMessage stream —
+   added the same retraction-delete there too, one deliberate minimal plan deviation, noted in the
+   commit). **Part A (the complete owner-visible feature) is done here.**
+4. `cbe28ab` — backend: `LIVE_STT_ENGINE` flag (default `deepgram`, inert), `LIVE_STT_OPENAI_MODEL`,
+   `build_transcription_session_payload`/`mint_transcription_session` in `realtime_relay.py`,
+   `POST /api/voice/live-session` in `routes/voice.py`, a separate cheap `live_session_rate_limited_user`
+   (20rpm, not the LLM budget limiter). New `test_live_stt_session.py` (14 tests, DB-free).
+5. `e7f4391` — frontend: `PcmCapture` gains `targetRate` (24kHz for OpenAI); `DeepgramLiveTranscriber`
+   gains a pre-fetched-token constructor option; new `OpenAILiveTranscriber` (openai-live.ts) + new
+   `createLiveTranscriber` fallback ladder (live-stt.ts) — engine "openai" that fails ANY way (mint,
+   WS handshake, first-frame) GENUINELY falls back to Deepgram via the legacy self-fetch path, proven
+   by `live-stt.test.ts`'s mocked-class ladder tests (7) and `openai-live.test.ts`'s event-mapping/
+   utterance-end-guard/session.update tests (12). Switched the 3 REAL construction sites
+   (`useLooperDictation.ts`, `CaddieSheet.tsx`, `ScoreSheet.tsx` — CourseSearch/LooperSheet/
+   CaddieOrbSheet all ride on `useLooperDictation`, confirmed by grep, no separate edit needed despite
+   being named in the plan's file list). Had to extend 4 `CaddieSheet.*.test.tsx` suites' mocks
+   (`@/lib/api`'s `fetchAPI`, `importOriginal`-spread) since the new factory's own `/live-session` mint
+   call now precedes the already-mocked `DeepgramLiveTranscriber` — root-caused via a RED run
+   (`CaddieSheet.handsfree.test.tsx` 7 failures) before fixing, not guessed.
+6. `c717596` — types sync: promoted the response shape to one exported `LiveSttSession` (was
+   duplicated locally in two files) mirroring backend's `LiveSttSessionResponse`; `backend/README.md`
+   (was empty) documents the 3 new env vars — `.env.example` matches the guard hook's `**/.env*`
+   block per the plan's own caveat, never touched it.
+7. `64451a7` — `backend/bench/stt_ab/` (wer.py pure+unit-tested 18 tests, synthesize.py, run_ab.py,
+   utterances.json, README.md incl. the P2 probe curl) + `specs/stt-live-ab-report.md`. Per this
+   cycle's explicit instruction: code + README ONLY, deliberately NOT run (no API keys on this
+   machine, no EC2 access attempted) — report states UNRUN, `LIVE_STT_ENGINE` stays `deepgram` per
+   the plan's own "UNRUN -> NO CUTOVER" rule.
+
+**Final gates (all re-run clean at HEAD `64451a7`, not asserted):** frontend `npm run lint` clean (1
+pre-existing unrelated warning); `npx tsc --noEmit` clean; `npm run build` clean; voice-tests smoke
+278/278; full `npx vitest run` 159 files / 2908 tests, 0 failed (baseline before this cycle was 156
+files / 2882 tests — net +3 files / +26 tests once the 4 CaddieSheet suites' fix is counted, 0
+regressions); backend `ruff check .` clean; `pytest tests/test_live_stt_session.py` 14/14; backend
+`pytest tests/ --ignore=tests/integration` 3393 passed/1 skipped (baseline 3379/1, +14, 0
+regressions); `pytest bench/stt_ab/test_wer.py` 18/18.
+
+**Part C is fully inert with the flag off** — `LIVE_STT_ENGINE` unset/`deepgram` is byte-equivalent to
+pre-existing behavior at every layer (mint endpoint returns the same `grant_live_token()` shape;
+`createLiveTranscriber`'s deepgram branch reuses that token, same WS/subprotocol Deepgram path as
+before). The fallback ladder is proven genuine (not just documented) by `live-stt.test.ts`'s
+"engine openai FAILURE" test — constructs+starts OpenAILiveTranscriber, it throws, asserts Deepgram
+is THEN constructed+started with telemetry, exactly the flag-on-with-a-bad-key scenario the reviewer
+is expected to check.
+
+**Not done by me (explicitly out of scope, per the task brief):** step 8 — iOS sim run
+(`frontend/ios/SIMTEST.md`), designer review (BLOCKING per plan §8), `/security-review` +
+`/code-review` (plan §5 — required before this is ready-to-ship, since it added a new auth'd
+endpoint + user-facing capability). The bench run itself (needs API keys, not on this machine).
+
+**One deviation from the plan, already called out per-commit above:** `VoiceRoundSetupRealtime.tsx`
+got the same retraction-delete fix as the two hooks even though the plan's §3.5 consumer list didn't
+name it — it rides the identical `onMessage` stream (§2) and would otherwise render a blank bubble
+for a dropped-turn retraction sentinel. Minimal, same idiom as the two files the plan DID list.
+
+Files touched (frontend): `lib/voice/realtime-ordering.ts`(+test), `lib/voice/realtime.ts`,
+`lib/voice/realtime-dedup.test.ts`, `lib/voice/realtime-user-partials.test.ts`(new),
+`lib/caddie/transport.ts`(+test), `components/yardage/Voice.tsx`,
+`components/VoiceRoundSetupRealtime.tsx`, `hooks/useCaddieLiveSession.ts`, `hooks/useVoiceCaddie.ts`,
+`hooks/useDetachedCaddieLive.test.tsx`, `lib/voice/pcm-capture.ts`(+test),
+`lib/voice/deepgram-live.ts`, `lib/voice/deepgram-live-prefetch.test.ts`(new),
+`lib/voice/openai-live.ts`(new,+test), `lib/voice/live-stt.ts`(new,+test),
+`hooks/useLooperDictation.ts`, `components/CaddieSheet.tsx`(+4 test files),
+`components/yardage/ScoreSheet.tsx`. Backend: `app/services/realtime_relay.py`,
+`app/services/rate_limit.py`, `app/routes/voice.py`, `tests/test_live_stt_session.py`(new),
+`app/services/openai_tts.py`, `bench/stt_ab/*`(new), `README.md`, `pyproject.toml`, `uv.lock`.
+Repo root: `.gitignore`, `specs/stt-live-ab-report.md`(new).
+
+NEXT: eng-lead/reviewer picks up at plan §11 step 8 — designer review (blocking), `/security-review` +
+`/code-review` on the new `/api/voice/live-session` endpoint, then the iOS sim proof before any
+consideration of flipping `LIVE_STT_ENGINE`. Do NOT run the A/B bench or flip the flag without a real
+measured run per specs/stt-live-ab-report.md's UNRUN status.
