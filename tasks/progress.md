@@ -4108,3 +4108,30 @@ designer (BLOCKING on the live-text idiom), reviewer (fresh; no client-side key 
 genuinely works), qa (278 voice-tests + the A/B numbers). If absent → re-dispatch the fable Plan with the
 research + seam map recorded in the two blocks above; do NOT redo the research or the seam sweep.
 NO application code has been written this cycle. Only records + one CLAUDE.md doc correction (@d2e36fa).
+
+## STOPPED CLEANLY (2026-07-31) — live-transcription cycle ended at the plan await
+The fable Plan agent did not write specs/live-transcription-plan.md within the cycle's wait budget
+(>1h wall clock). Stopping rather than hanging the loop, per the no-hung-cycle rule. Everything is
+committed and pushed to integration/next; NO application code was written, so nothing is half-built.
+The Plan agent writes its file directly — if it finishes after this stop, specs/live-transcription-plan.md
+will simply appear on disk and the next cycle should USE it rather than re-plan.
+
+NEXT CYCLE, in order:
+1. `test -f specs/live-transcription-plan.md` — if present, skip straight to the builder.
+   If absent, re-dispatch the fable Plan feeding it the two committed blocks above (research findings
+   @1f7c069, seam map @1ebc0ba) plus the R5 resolution @12a34b2. Do NOT redo the web research or the
+   seam sweep — both are done and recorded.
+2. builder on integration/next; 3. designer BLOCKING on the live-text idiom; 4. reviewer (fresh:
+   no client-side key exposure, fallback flag genuinely works); 5. qa (voice-tests 278 stay green
+   + the A/B numbers). Classify NOTICEABLE. Do NOT ship/ping per the owner's directive for this arc.
+
+HEADLINE FINDING TO CARRY FORWARD (already evidence-backed, do not re-litigate):
+The owner's feature — seeing his words as he speaks — does NOT require gpt-live-transcribe. In the
+in-round live caddie, OpenAI already streams `conversation.item.input_audio_transcription.delta` and
+`frontend/src/lib/voice/realtime.ts` throws it away in its `default:` case (L1044-1046) while streaming
+the CADDIE's half (L844/L857). The renderer for the missing half already exists and is unused
+(`yardage/Transcript.tsx` streaming caret L152-165; `CaddieSheet.tsx:1837` already maps
+`streaming: m.partial`). gpt-live-transcribe is a separate, defensible ACCURACY + vendor-consolidation
+decision at $0.017/min vs Deepgram's $0.0077/min (~2.2x), and per the owner's own bench discipline it
+must be justified by the A/B, not by the launch announcement. Recommend shipping the live-text feature
+first (cheap, zero vendor risk) and deciding the vendor swap on measurements.
