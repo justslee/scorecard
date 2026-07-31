@@ -4135,3 +4135,25 @@ the CADDIE's half (L844/L857). The renderer for the missing half already exists 
 decision at $0.017/min vs Deepgram's $0.0077/min (~2.2x), and per the owner's own bench discipline it
 must be justified by the A/B, not by the launch announcement. Recommend shipping the live-text feature
 first (cheap, zero vendor risk) and deciding the vendor swap on measurements.
+
+## AWAITING (2026-07-31) — builder on specs/live-transcription-plan.md @b6757af
+The fable plan LANDED after the earlier stop note: its harness was read-only, so it returned the
+document instead of writing it; I saved it verbatim to specs/live-transcription-plan.md @b6757af.
+Disregard the "STOPPED CLEANLY" block above — the cycle resumed.
+
+Seam chosen (plan §2): **D = A + C**.
+- **A (the NOTICEABLE feature):** handle `conversation.item.input_audio_transcription.delta` in
+  frontend/src/lib/voice/realtime.ts and emit `{role:'user', partial:true}`. Zero vendor change,
+  zero added $/min, renders through the already-built-and-unused `Transcript.tsx` streaming caret.
+- **C (silent rider, inert by default):** `OpenAILiveTranscriber` (gpt-live-transcribe) implementing
+  the exact `DeepgramLiveEvents` contract behind server flag `LIVE_STT_ENGINE`, default `deepgram`,
+  with a genuine Deepgram fallback ladder. Option B (a parallel transcription session next to the
+  caddie realtime session) was REJECTED: $0.17-0.51/round + double uplink + a two-transcript merge.
+Cutover rule (plan §7): the A/B gates it; **UNRUN A/B == NO cutover**, flag stays `deepgram`.
+
+Bundle PR #158 open (integration/next -> main). Item classified NOTICEABLE.
+AWAITING: builder (plan §11 steps 1-7). SHIP-shaped return -> designer (BLOCKING on the live-text
+idiom) + reviewer (fresh, /security-review — new endpoint) + qa (278 voice-tests + full vitest).
+BLOCKING findings -> back to builder, then re-review. Do NOT re-run finished children; reconcile
+from `git log origin/integration/next`.
+Per the owner's directive for this arc: do NOT ship and do NOT ping when it goes green.
