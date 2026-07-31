@@ -4041,3 +4041,48 @@ whether realtime deltas are already arriving and being DROPPED client-side, and 
 render surface. NEXT on its return → fable Plan (specs/live-transcription-plan.md) → builder →
 designer (BLOCKING on the live-text idiom) → reviewer → qa.
 If this cycle dies here: nothing is built yet; re-read this block and resume at the fable plan.
+
+### Seam map VERIFIED (2026-07-31) — the feature is a dropped event, not a missing vendor
+- **`frontend/src/lib/voice/realtime.ts` handles `conversation.item.input_audio_transcription.completed`
+  (L936) and `.failed` (L980) but has NO `.delta` case** — deltas fall into `default:` (L1044-1046,
+  comment: "ignore — many events (audio/transcription deltas …) are fine to drop"). Meanwhile the
+  ASSISTANT's transcript already streams (`response.audio_transcript.delta` L844 → `partial:true` L857).
+  So in the live caddie the CADDIE's words stream in and the OWNER's do not. That asymmetry IS the
+  owner's complaint. `RealtimeMessage` already carries `partial?: boolean` (L50).
+- **The visual primitive already exists and is UNUSED.** `frontend/src/components/yardage/Transcript.tsx`
+  (the ONE shared turn primitive) types `streaming` for the USER speaker as "blinking listening caret"
+  (L59-72) and implements it (L152-165); `CaddieSheet.tsx:1837` already maps `streaming: m.partial`;
+  `yardage/Voice.tsx:259` already sets a streaming user turn with no partial text to feed it.
+  => emitting `{role:'user', partial:true}` renders live text with ~zero new UI. One widening needed:
+  `frontend/src/lib/caddie/transport.ts::messagesToTurns` L162-166 flattens `partial` away.
+- **Deepgram already does partials, on the OTHER stack.** `deepgram-live.ts` requests
+  `interim_results=true` (L38), and interim text renders in SIX places (useLooperDictation.interim,
+  CaddieSheet ListeningIndicator L2062, ScoreSheet L797, LooperSheet L323, CourseSearch types interim
+  into the input L455, CaddieOrb chip via CaddieOrbSheet L302). Two stacks split BY SURFACE:
+  Deepgram = orb/search/score/classic-sheet (live text works); OpenAI Realtime WebRTC = round-page
+  hold-to-talk + CaddieSheet live mode (user text only on final).
+- **No backend WS proxy for Deepgram** — `deepgram.py:78 grant_live_token(ttl=60)` +
+  `POST /api/voice/live-token`; the BROWSER opens the socket with a `['token', tok]` subprotocol
+  (deepgram-live.ts:207). The ephemeral-mint security shape gpt-live-transcribe needs is ALREADY the
+  house pattern (`realtime_relay.py:44` client_secrets). `routes/realtime.py:9` pins "EC2 stateless —
+  no WebSocket bridge."
+- **Transport risk:** the caddie realtime path is **WebRTC** (`/v1/realtime/calls`), the iOS-proven
+  OpenAI transport in the Capacitor WebView. A gpt-live-transcribe WS + `openai-insecure-api-key.<eph>`
+  subprotocol is UNPROVEN on device (Deepgram's WS+subprotocol shipping today is suggestive, not proof).
+- **Clean drop-in seam for the vendor swap:** `DeepgramLiveEvents` (deepgram-live.ts:76-86) —
+  `{onInterim,onFinal,onUtteranceEnd,onError}` + `isSupported()/start/stop`; 6 call sites depend on
+  nothing else. NON-OBVIOUS: `onUtteranceEnd` comes from Deepgram's `utterance_end_ms=1200` and drives
+  hands-free AUTO-SEND in 3 places; OpenAI's nearest equivalent is server-VAD
+  `input_audio_buffer.speech_stopped` with different timing — silent-regression risk.
+- **Test pin to preserve (never weaken):** `realtime-dedup.test.ts:170-188` R5 asserts `.delta` events
+  never COMMIT a user message.
+- **A/B is net-new infra.** Zero audio files repo-wide; voice-tests all start from a text string.
+  `backend/app/services/openai_tts.py` can synthesize fixtures (honest caveat: clean TTS audio is a
+  weak proxy for on-course wind/distance, the exact failure mode).
+- **Strategic fit:** specs/caddie-input-grounding-plan.md L4 records the cascaded-STT confidence gate
+  (avenue #3 of specs/voice-transcription-reliability-research.md) as queued-and-never-built; a
+  transcription session producing ground-truth TEXT fills exactly that slot.
+- Doc bug found: CLAUDE.md cites `frontend/src/components/CaddiePanel.tsx` — that file does not exist.
+
+AWAITING: fable Plan → specs/live-transcription-plan.md. Then builder → designer (BLOCKING on the
+live-text idiom) → reviewer → qa. If this dies here: no code written; resume from the plan file.
