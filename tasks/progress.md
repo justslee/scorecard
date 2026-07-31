@@ -4086,3 +4086,25 @@ If this cycle dies here: nothing is built yet; re-read this block and resume at 
 
 AWAITING: fable Plan → specs/live-transcription-plan.md. Then builder → designer (BLOCKING on the
 live-text idiom) → reviewer → qa. If this dies here: no code written; resume from the plan file.
+
+### AWAITING (live-transcription, cycle open) — fable Plan agent writing specs/live-transcription-plan.md
+Baseline on this branch verified GREEN before any code: voice-tests 278/278, `tsc --noEmit` clean,
+`ruff check .` clean. `frontend/node_modules` installed via `npm ci`.
+Two corrections were relayed INTO the running plan agent and must appear in the plan:
+ (a) the R5 pin `frontend/src/lib/voice/realtime-dedup.test.ts:170-188` uses a `userMessages()` helper
+     (L46-48) that does NOT filter on `partial`, so emitting user partials turns it RED as written.
+     Intent-preserving fix = the file's OWN assistant idiom three lines up at L165:
+     `.filter((m) => !m.partial)` — R5's name is "never COMMIT a user message", so the filter preserves
+     the stated invariant exactly; ADD (never replace) an assertion that partials DID flow.
+     This is the likeliest reviewer blocker — the project rule is never edit tests to make them pass.
+ (b) R5 already emits `{type:'conversation.item.input_audio_transcription.delta', item_id, delta}` over
+     the WebRTC data channel, i.e. the delta shape is already understood in the CURRENT gpt-4o-transcribe
+     session. Strong evidence the owner's FEATURE ships with zero vendor change and zero added $/min;
+     gpt-live-transcribe is then an ACCURACY/consolidation decision the A/B must justify, not a
+     prerequisite for live text. Still needs a runtime confirmation that deltas actually arrive on device.
+RESUME INSTRUCTIONS if this cycle died here: read specs/live-transcription-plan.md (the Plan agent writes
+it directly, so it survives my death). If present → dispatch builder against it on integration/next, then
+designer (BLOCKING on the live-text idiom), reviewer (fresh; no client-side key exposure; fallback flag
+genuinely works), qa (278 voice-tests + the A/B numbers). If absent → re-dispatch the fable Plan with the
+research + seam map recorded in the two blocks above; do NOT redo the research or the seam sweep.
+NO application code has been written this cycle. Only records + one CLAUDE.md doc correction (@d2e36fa).
