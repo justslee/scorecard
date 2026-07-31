@@ -4008,3 +4008,36 @@ nothing destructive. PR #157 (the mid-outage checkpoint) superseded by this reco
 Follow-ups standing: SSO app-side wiring (Google client IDs + Apple entitlement + Info.plist
 URL scheme — owner's Clerk side is DONE, Apple enabled on prod); clerk-native-revoked-client-
 token-probe (LOW). Box quiet; loop remains stopped per owner.
+
+## AWAITING (2026-07-31) — live-transcription cycle: gpt-live-transcribe research + seam map
+Owner directive 2026-07-31: replace Deepgram with OpenAI `gpt-live-transcribe` for caddie chats,
+and — the REAL want — render his words LIVE as he speaks (incremental partials in the caddie
+surface). One eng-lead pass, base origin/integration/next, land on the next bundle. Do NOT ship/ping.
+
+RESEARCH LANDED (web, post-cutoff model — verified against OpenAI docs):
+- `gpt-live-transcribe` is REAL and is purpose-built for this: "a streaming speech-to-text model
+  for applications that need low-latency transcript deltas from live audio."
+- Endpoint constraint (LOAD-BEARING): the model card states **only `v1/realtime/transcription_sessions`
+  is supported**. So it is a TRANSCRIPTION-TYPE realtime session — it likely CANNOT be dropped in as
+  `session.audio.input.transcription.model` inside our conversational (`type:"realtime"`) caddie
+  speech-to-speech session. Verify at runtime before planning a caddie-session swap.
+- Session shape: `{"type":"session.update","session":{"type":"transcription","audio":{"input":
+  {"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"gpt-live-transcribe",
+  "prompt":..., "keywords":[...], "languages":[...], "delay":"low"},"turn_detection":...}}}}`
+  `delay` ∈ {minimal, low, medium, high, xhigh}. `keywords` = literal domain terms → our
+  GOLF_KEYTERMS finally get first-class biasing (today they only reach Deepgram).
+- Events: partial = `conversation.item.input_audio_transcription.delta` (field `delta`);
+  final = `conversation.item.input_audio_transcription.completed` (field `transcript`).
+- Transport: `wss://api.openai.com/v1/realtime?intent=transcription`; browser auth via ephemeral
+  client secret (subprotocol `openai-insecure-api-key.<ephemeral>`), minted server-side, ~60s TTL.
+- COST (honest): gpt-live-transcribe **$0.017/min** vs Deepgram nova-3 streaming **$0.0077/min**
+  → ~2.2x more expensive per minute. No public WER/latency benchmark exists for gpt-live-transcribe
+  yet (launched ~2026-07-29) — hence the owner's A/B is the ONLY basis for the cutover call.
+- Prior art in-repo: specs/voice-transcription-reliability-research.md (avenue 3 = cascaded STT),
+  specs/caddie-realtime-transcription-vocab-bias-plan.md (mint path + prompt seam), PR #126 spike.
+
+AWAITING: Explore agent mapping the Deepgram WS protocol, the frontend transcript consumers,
+whether realtime deltas are already arriving and being DROPPED client-side, and the caddie chat
+render surface. NEXT on its return → fable Plan (specs/live-transcription-plan.md) → builder →
+designer (BLOCKING on the live-text idiom) → reviewer → qa.
+If this cycle dies here: nothing is built yet; re-read this block and resume at the fable plan.
