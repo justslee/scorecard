@@ -4352,3 +4352,50 @@ pattern in routes/realtime.py; trim later.
  onUtteranceEnd timing). AWAITING that.
 QA: still running (full build + ~2900 vitest + ~3400 pytest legitimately takes a long time).
 LESSON RE-LEARNED THIS CYCLE: do not read child silence as child death (see the CORRECTION above).
+
+### REVIEWER (fable) correctness verdict: **SHIP** — with one PROVEN defect I am fixing anyway
+Reviewer ran full vitest 2910/2910, tsc clean, ruff clean, test_live_stt_session 14/14. It did NOT
+re-run voice-smoke or `next build` (relied on the builder there) — QA covers those.
+1. **R5 pin: legitimate, NOT weakened.** The old `toHaveLength(0)` was only synonymous with the
+   stated invariant while deltas emitted nothing at all — the exact behavior this feature changes.
+   The new filter is byte-identical to the assistant idiom at L165, and coverage strictly increased.
+   CRUCIALLY it also swept EVERY changed test file for a second, unannounced relaxation and found
+   NONE: transport.test.ts's `toEqual` objects gained `partial:false` (a STRENGTHENING forced by the
+   shape change), the 4 CaddieSheet suites got mock plumbing only (zero assertion changes), the rest
+   are additions.
+2. **Order reservation: proven by execution** — drove speech_started-dropped -> delta -> assistant
+   deltas -> late `.completed`; partial and final share one slot and `userFinal.order <
+   assistantFinal.order` holds.
+3. **Guard table holds**, incl. a neat transitive proof that deltas never write `processedUserItems`
+   (if they did, R5's "final commits" assertion would fail — it passes), and a behavioral proof the
+   no-input clarifier is unchanged.
+4. **PROVEN DEFECT (realtime.ts ~L1052-1065):** the `.failed` handler is NOT guarded by
+   `processedUserItems`, and `userPartialEmitted` is never cleared when `.completed` commits real
+   text. So `speech_started -> delta -> .completed("what club here") -> .failed(same item)` fires
+   `retractUserPartial`, and every consumer DELETES the already-committed user turn by id. Violates
+   the file's own R3 standard ("a re-delivered event for an already-processed item is fully inert") —
+   and this codebase hardened against duplicates precisely because the data channel was observed
+   redelivering events. Reachability is narrow (undocumented cross-type completed->failed pair), so
+   the reviewer left it non-blocking; I am fixing it because it is ONE LINE and destructive when hit.
+   Fix in the `.completed` real-text branch (~L1036-1044): also `delete` the item from
+   `userPartialEmitted` and `partials` — which additionally stops a slow unbounded growth of
+   `this.partials` (one small user entry per utterance, never evicted).
+5. Latent-assumption sweep found exactly 4 render sites reading `partial`; the only unintended one is
+   the designer's VoiceRoundSetupRealtime:367 opacity dim. `useVoiceCaddie.ts:345`'s persistence
+   filter is assistant-role-gated, so user partials can NEVER be persisted or reach LLM context. Good.
+6. **Fallback ladder genuine, not tautological** — routing tested in live-stt.test.ts at the right
+   altitude, the real transcriber exercised separately in openai-live.test.ts against a fake WS;
+   teardown real; MediaStream deliberately caller-owned so the Deepgram rung can reuse it. Bonus:
+   an OLDER deployed backend with no /live-session at all lands in the mint_failed rung and still
+   yields Deepgram — good rollout safety.
+7. **Flag inertness: equivalent, honestly not byte-identical** — one POST changes URL; Deepgram
+   interim/final/onUtteranceEnd logic and utterance_end_ms=1200 untouched, so auto-send timing has no
+   mechanism to change. Reviewer explicitly could NOT verify on-device timing (no Deepgram key here);
+   the plan §6 iOS sim proof remains outstanding and unperformed.
+Deferred nits: the 502 detail interpolation in `_openai_secret_from_mint`; `openai-live.ts`
+handleMessage ignores vendor `type:"error"` frames (cosmetic while flag-off).
+
+FIXES I AM APPLYING IN-BUNDLE (both one-liners, then re-verify):
+ F1 realtime.ts .completed real-text branch — clear userPartialEmitted + partials (reviewer defect 4).
+ F2 VoiceRoundSetupRealtime.tsx:367 — exempt the user role from the partial opacity dim (designer 1).
+AWAITING qa before touching the tree, so its gate run stays pinned to one head.
