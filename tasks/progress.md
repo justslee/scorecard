@@ -4157,3 +4157,42 @@ idiom) + reviewer (fresh, /security-review — new endpoint) + qa (278 voice-tes
 BLOCKING findings -> back to builder, then re-review. Do NOT re-run finished children; reconcile
 from `git log origin/integration/next`.
 Per the owner's directive for this arc: do NOT ship and do NOT ping when it goes green.
+
+## CHECKPOINT (2026-07-31) — live-transcription: plan landed, step 1 landed, builder stalled at step 2
+State on integration/next: `cf55d27` = plan §11 step 1 ONLY.
+`MessageOrderTracker.peekOrderForUserTranscript(itemId?)` — returns a user turn's reserved order
+slot WITHOUT consuming it, so `.delta` partials can render in the right position while
+`orderForUserTranscript()` on the `.completed` path stays the sole consumer; reserves a fresh slot
+on first peek when `speech_started` was dropped (so the later final finds the SAME slot); no-id case
+peeks the FIFO head without shifting. +4 tests (idempotent repeat peeks; peek-then-consume returns
+the same key; a peek never drains another turn's reservation; cross-item isolation).
+
+GATES RE-VERIFIED BY ME at cf55d27 (not asserted — run):
+`npx vitest run src/lib/voice/realtime-ordering.test.ts` -> 15/15 passed ·
+`npx tsc --noEmit` -> clean · `npx tsx voice-tests/runner.ts --smoke` -> 278/278.
+The branch is SAFE to build on. Step 1 is inert on its own (a new unused method), so it can also sit
+on the bundle indefinitely with zero user-visible effect.
+
+BUILDER STALLED: after cf55d27 it produced no further commits and did not answer a direct status
+request, working tree clean. Its remaining work (steps 2-7) was NOT done. It may still be alive — if
+later commits appear on origin/integration/next, RECONCILE FROM `git log origin/integration/next`,
+not from this note, and do NOT re-run anything it already landed.
+
+NEXT CYCLE — resume at plan §11 step 2. Priority order (from the plan, do not re-derive):
+ 2. `frontend/src/lib/voice/realtime.ts`: add the `case 'conversation.item.input_audio_transcription.delta'`
+    per plan §3.2 (the guard table is prescriptive: pre-open gate YES; `processedUserItems` read-only
+    YES; `isPrimingEcho` stops EMISSION only; `setInputClass`/`resolveHeldFor` NEVER from a partial;
+    never consume the order reservation), retraction/settle per §3.3, telemetry P1 per §1.4.
+    Align the R5 pin per §3.4 using the file's OWN assistant idiom `.filter((m) => !m.partial)`
+    (realtime-dedup.test.ts L165 already uses it) and ADD partial-arrival assertions — this is the
+    likeliest reviewer blocker, frame it as intent-preserving, never as loosening.
+    Add `frontend/src/lib/voice/realtime-user-partials.test.ts`.
+ 3. Consumers: `lib/caddie/transport.ts` messagesToTurns must carry `partial` through (L162-166
+    currently flattens it away, starving the orb path), `yardage/Voice.tsx` streaming flag,
+    `useCaddieLiveSession.ts` + `useVoiceCaddie.ts` retraction-delete + terminal settle.
+ STEPS 2-3 ALONE = the complete owner-visible feature. Steps 4-7 (backend `POST /api/voice/live-session`
+ mint, `OpenAILiveTranscriber`, the A/B bench) are the SILENT rider and are droppable — the plan's §13
+ already defers the flag flip and the Deepgram removal regardless.
+Then: designer (BLOCKING on the live-text idiom), reviewer + /security-review (only needed once step 4
+adds the endpoint; steps 2-3 are frontend-only), qa.
+Per the owner's directive for this arc: do NOT ship and do NOT ping.
