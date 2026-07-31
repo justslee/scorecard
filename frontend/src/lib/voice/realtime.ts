@@ -1042,6 +1042,19 @@ export class RealtimeCaddieClient {
             // Identity-matched to this turn's speech_started by item_id.
             order: this.order.orderForUserTranscript(itemId),
           });
+          if (itemId) {
+            // The turn is COMMITTED — forget that a partial was ever shown, so
+            // a late/re-delivered `.failed` for this same item_id can no longer
+            // fire retractUserPartial and delete the committed turn out from
+            // under the user. Matches the R3 standard elsewhere in this file
+            // ("a re-delivered event for an already-processed item is fully
+            // inert") — the data channel HAS been observed re-delivering, which
+            // is why processedUserItems exists at all. Also releases this
+            // item's accumulator, which would otherwise never be evicted on the
+            // success path (one small entry per utterance, for session life).
+            this.userPartialEmitted.delete(itemId);
+            this.partials.delete(itemId);
+          }
         } else if (itemId) {
           // Empty completed transcript also drops the turn (§3.3) — retract
           // any partial the UI already saw rather than leave it lingering.

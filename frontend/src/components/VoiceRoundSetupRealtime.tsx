@@ -364,7 +364,13 @@ export default function VoiceRoundSetupRealtime({
                 fontStyle: m.role === "user" ? "normal" : "italic",
                 fontSize: 15,
                 lineHeight: 1.35,
-                opacity: m.partial ? 0.7 : 1,
+                // Dim only the CADDIE's in-flight text. The golfer's own live
+                // speech must render at full strength — dimmed live text reads
+                // as broken (standing designer call, mirrored in CaddieSheet's
+                // LiveVoiceBody). Before user turns carried `partial`, this
+                // line could only ever hit assistant bubbles; live user
+                // transcription made it reachable for the user's own words.
+                opacity: m.role !== "user" && m.partial ? 0.7 : 1,
               }}
             >
               {m.text}

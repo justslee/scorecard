@@ -262,6 +262,48 @@ describe('RealtimeCaddieClient — user transcription .delta partials (live text
     client.stop();
   });
 
+  it('a late .failed for an item whose .completed already COMMITTED real text does not retract the committed turn', async () => {
+    // Regression pin for the defect the fable reviewer proved by execution on
+    // PR #158: `.failed` called retractUserPartial unconditionally, and
+    // userPartialEmitted was never cleared once a real transcript committed.
+    // So speech_started -> delta -> .completed('what club here') -> .failed
+    // (same item_id) emitted the empty-string retraction sentinel, and every
+    // consumer DELETED the user's already-committed question by id — the
+    // golfer's own words vanishing from the transcript after the caddie had
+    // already answered them. Narrow to reach (a re-delivered/late .failed
+    // after a .completed), but destructive when hit, and the data channel HAS
+    // been observed re-delivering events — which is why processedUserItems
+    // and the R3 "re-delivered events are fully inert" standard exist.
+    const onMessage = vi.fn();
+    const client = await makeClient(onMessage);
+    const dc = getLastPc()!.dataChannel!;
+
+    dc.emit({ type: 'input_audio_buffer.speech_started', item_id: 'item-late-fail' });
+    dc.emit({ type: 'conversation.item.input_audio_transcription.delta', item_id: 'item-late-fail', delta: 'what club' });
+    dc.emit({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'item-late-fail',
+      transcript: 'what club here',
+    });
+
+    const committed = userMessages(onMessage).filter((m) => !m.partial);
+    expect(committed).toHaveLength(1);
+    expect(committed[0].text).toBe('what club here');
+
+    const beforeFailed = onMessage.mock.calls.length;
+    dc.emit({ type: 'conversation.item.input_audio_transcription.failed', item_id: 'item-late-fail' });
+
+    // No retraction sentinel: the committed turn is untouched and nothing new
+    // was emitted at all for this item.
+    expect(onMessage.mock.calls.length).toBe(beforeFailed);
+    expect(userMessages(onMessage).filter((m) => !m.partial && m.text === '')).toHaveLength(0);
+    const stillCommitted = userMessages(onMessage).filter((m) => !m.partial);
+    expect(stillCommitted).toHaveLength(1);
+    expect(stillCommitted[0].text).toBe('what club here');
+
+    client.stop();
+  });
+
   it('terminal teardown: stop() mid-partial transitions status to closed without throwing or re-emitting the partial', async () => {
     // realtime.ts itself does NOT settle an outstanding user partial in
     // place on teardown — that in-place "caret stops blinking, text stays"

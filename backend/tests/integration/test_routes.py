@@ -68,6 +68,26 @@ class TestAuthRequired:
             f"Expected 401 or 503 without auth, got {r.status_code}"
         )
 
+    async def test_live_stt_session_requires_auth(self, client):
+        # /voice/live-session MINTS a live speech-to-text credential (a Deepgram
+        # or OpenAI ephemeral token that bills per minute of audio).  An
+        # anonymous caller must never be handed one.  The unit suite
+        # (tests/test_live_stt_session.py) calls the handler directly with a
+        # hardcoded user_id, so it cannot see the Depends() gate — this is the
+        # only test that exercises it.
+        r = await client.post("/api/voice/live-session", json={})
+        assert r.status_code in (401, 503), (
+            f"Expected 401 or 503 without auth, got {r.status_code}"
+        )
+
+    async def test_live_token_requires_auth(self, client):
+        # The legacy sibling mint kept for one release as the fallback rung —
+        # same credential-issuing risk, same gate.
+        r = await client.post("/api/voice/live-token")
+        assert r.status_code in (401, 503), (
+            f"Expected 401 or 503 without auth, got {r.status_code}"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. IDOR PROTECTION — owner A's data is invisible to owner B
