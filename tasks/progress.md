@@ -4322,3 +4322,33 @@ AWAITING (3 in parallel): designer BLOCKING on the live-text idiom · reviewer +
 (new authed endpoint + a new vendor transport) · qa (gate re-run + A/B status).
 BLOCKING findings -> back to the builder, then re-review. Item is NOTICEABLE. Per the owner's
 directive for this arc: do NOT ship and do NOT ping when green.
+
+### Review results so far (live-transcription @aec5cc7)
+DESIGNER: **PASS** (no blocking). Verified the feature reuses the shared `yardage/Transcript.tsx`
+primitive with ZERO new visual language (CaddieSheet's LiveVoiceBody was not even touched by the
+feature commits), honors the standing streaming-not-muted decision, and settles in place via
+same-id upsert (no remount/jump). Ran 4 suites, 58/58.
+ Non-blocking, ranked, ACTIONABLE THIS BUNDLE:
+ 1. `frontend/src/components/VoiceRoundSetupRealtime.tsx:367` — pre-existing
+    `opacity: m.partial ? 0.7 : 1` previously only ever hit ASSISTANT streaming bubbles because user
+    messages never carried `partial:true` before 3232127. Now the golfer's OWN live speech dims to
+    70% while he talks — the literal anti-pattern this bundle's own brief rules out ("dimmed live
+    text reads as broken"). One-line fix; first-tee setup is often a new user's first interaction.
+    I CONFIRMED this line myself. Fixing in-bundle.
+ 2. `Transcript.tsx` has no AnimatePresence exit on turn removal, so a retraction pops instead of
+    fading (framer-motion already imported there for the caret). Deferred follow-up.
+ 3. `Voice.tsx:261,274` keys turns by array index not id — pre-existing, low risk. Deferred.
+REVIEWER (fable) — /security-review leg: **no HIGH/MEDIUM findings.** Verified endpoint is
+Clerk-authed + rate-limited; browser receives ONLY a ~60s ephemeral (no OPENAI_API_KEY client-side,
+grep-confirmed); user keyterms are clamped server-side (80 chars, cap 50) and enter ONLY the literal
+`keywords` list while the free-text `prompt` stays closed-set server constants (no injection surface);
+no token logged in telemetry (fixed reason strings); no SQL/command/path injection; no XSS (React text
+nodes only). One sub-threshold nit: `_openai_secret_from_mint` interpolates the raw mint response into
+a client-facing 502 detail — no privilege gain (recipient is the authed user), mirrors an existing
+pattern in routes/realtime.py; trim later.
+ The reviewer's first return covered ONLY security — I sent it back for the CORRECTNESS verdict
+ (R5 adjudication + a sweep for any OTHER weakened assertion, order-reservation lifecycle, the §3.2
+ guard table, retraction-sentinel stress, fallback-ladder tautology check, flag inertness incl.
+ onUtteranceEnd timing). AWAITING that.
+QA: still running (full build + ~2900 vitest + ~3400 pytest legitimately takes a long time).
+LESSON RE-LEARNED THIS CYCLE: do not read child silence as child death (see the CORRECTION above).
