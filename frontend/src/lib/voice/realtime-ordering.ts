@@ -112,6 +112,34 @@ export class MessageOrderTracker {
   }
 
   /**
+   * PEEK the order key for a user item's transcript WITHOUT consuming the
+   * reservation — used by `.delta` partials, which render live but must never
+   * be the thing that resolves the slot (`orderForUserTranscript` on the
+   * `.completed` path remains the sole consumer, so partial emission can never
+   * desync user/assistant ordering).
+   *
+   * - Reservation exists for `itemId` -> return it, leave it in the map.
+   * - `itemId` present but no reservation (speech_started dropped) -> reserve a
+   *   FRESH slot keyed by `itemId` now, so the later final finds and consumes
+   *   the SAME slot instead of minting a second one.
+   * - No `itemId` -> peek the FIFO head without shifting; else a `++seq`
+   *   fallback (mirrors `orderForUserTranscript`'s no-id fallback, but as a
+   *   peek the fallback is unavoidable — there's nothing to reserve against).
+   */
+  peekOrderForUserTranscript(itemId?: string): number {
+    if (itemId) {
+      const reserved = this.orderByUserItemId.get(itemId);
+      if (reserved !== undefined) return reserved;
+      const order = ++this.seq;
+      this.orderByUserItemId.set(itemId, order);
+      evictOldest(this.orderByUserItemId);
+      return order;
+    }
+    const fifo = this.pendingUserOrders[0];
+    return fifo ?? ++this.seq;
+  }
+
+  /**
    * Stable order key for an assistant response, shared across all its streamed
    * deltas (assigned once on first sighting of the response id).
    */
