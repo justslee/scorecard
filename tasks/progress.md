@@ -4287,3 +4287,38 @@ NEXT: eng-lead/reviewer picks up at plan §11 step 8 — designer review (blocki
 `/code-review` on the new `/api/voice/live-session` endpoint, then the iOS sim proof before any
 consideration of flipping `LIVE_STT_ENGINE`. Do NOT run the A/B bench or flip the flag without a real
 measured run per specs/stt-live-ab-report.md's UNRUN status.
+
+## CORRECTION (2026-07-31) — the "builder stalled" checkpoint @85078fd was WRONG
+The builder was NOT stalled. It was working the whole time and landed plan §11 steps 1-7 in full,
+9 commits, HEAD `978dbd5`. My @85078fd note concluded "stalled at step 2" from a quiet branch and a
+clean tree during a long gate-running stretch; that inference was wrong and any resume must IGNORE it.
+Lesson for the loop: a quiet branch is NOT evidence of a dead child. Reconcile from
+`git log origin/<branch>` AND the child's completion notification before declaring a child dead —
+never from elapsed silence. A builder running `npm run build` + a 2900-test vitest suite is silent
+for a long time by construction.
+
+Landed (verified on origin, not taken on trust):
+ 3232127 the `.delta` case in realtime.ts + retraction sentinel + P1 telemetry + R5 alignment
+         + new realtime-user-partials.test.ts
+ d0b50fd consumer wiring (transport.ts, Voice.tsx, useCaddieLiveSession, useVoiceCaddie,
+         VoiceRoundSetupRealtime) — **Part A, the owner-visible feature, COMPLETE here**
+ cbe28ab backend POST /api/voice/live-session + LIVE_STT_ENGINE flag + mint builder + rate limit
+ e7f4391 OpenAILiveTranscriber + createLiveTranscriber fallback ladder + PcmCapture.targetRate
+ c717596 shared LiveSttSession type (§9) + backend/README.md env docs
+ 64451a7 backend/bench/stt_ab/ A/B harness — code + README only, explicitly UNRUN
+I independently spot-verified two load-bearing claims: the R5 pin is aligned via the file's own
+`.filter((m) => !m.partial)` idiom with ADDED partial-arrival assertions and an explanatory comment
+(realtime-dedup.test.ts ~L170-200), and `LIVE_STT_ENGINE` defaults to "deepgram"
+(routes/voice.py:28,34 — read fresh per call, not module-load-time).
+Builder-reported gates at 978dbd5: lint clean · tsc clean · build clean · voice 278/278 ·
+vitest 2908/0 failed (baseline 2882) · ruff clean · backend 3393 passed/1 skip (baseline 3379) ·
+test_live_stt_session 14/14 · bench wer 18/18.
+Builder deviations, both self-declared: VoiceRoundSetupRealtime.tsx added to the §3.5 consumer list
+(rides the same onMessage stream, needed the retraction-delete or it shows a blank bubble); and only
+3 of the plan's 5 named dictation call sites are real construction sites (LooperSheet is
+presentational, CourseSearch rides useLooperDictation).
+
+AWAITING (3 in parallel): designer BLOCKING on the live-text idiom · reviewer + /security-review
+(new authed endpoint + a new vendor transport) · qa (gate re-run + A/B status).
+BLOCKING findings -> back to the builder, then re-review. Item is NOTICEABLE. Per the owner's
+directive for this arc: do NOT ship and do NOT ping when green.
