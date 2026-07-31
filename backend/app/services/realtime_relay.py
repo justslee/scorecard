@@ -15,6 +15,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.caddie.language import desired_language
+from app.caddie.keyterms import golf_baseline_prompt
 from app.caddie.tools import realtime_tools
 from app.caddie.types import VALID_REALTIME_VOICES
 
@@ -42,6 +43,17 @@ OPENAI_REALTIME_VAD = os.getenv("OPENAI_REALTIME_VAD", "server_vad")
 # endpoint returns the client secret at top-level "value"; the browser then
 # connects WebRTC at /v1/realtime/calls (see frontend realtime.ts).
 _REALTIME_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets"
+
+# Part C (specs/live-transcription-plan.md §4) — the standalone dictation-
+# engine model, flagged OFF by default (LIVE_STT_ENGINE in routes/voice.py).
+# Distinct from OPENAI_REALTIME_TRANSCRIBE_MODEL above: that one transcribes
+# INSIDE the conversational caddie's `type:"realtime"` session; this one mints
+# a bare `type:"transcription"` session for the dictation surfaces (score
+# entry, search, etc.) — gpt-live-transcribe is NOT among the values
+# type:"realtime" accepts at session.audio.input.transcription.model (its
+# model card lists only v1/realtime/transcription_sessions support), so the
+# two are structurally separate mints, not interchangeable.
+LIVE_STT_OPENAI_MODEL = os.getenv("LIVE_STT_OPENAI_MODEL", "gpt-live-transcribe")
 
 
 # ── Tools the model can call. The frontend dispatches these against FastAPI. ──
@@ -212,4 +224,74 @@ async def mint_ephemeral_session(
         resp = await client.post(_REALTIME_CLIENT_SECRETS_URL, headers=headers, json=payload)
     if resp.status_code >= 400:
         raise HTTPException(resp.status_code, f"OpenAI Realtime mint failed: {resp.text}")
+    return resp.json()
+
+
+def build_transcription_session_payload(
+    keyterms: list[str], *, model: str = LIVE_STT_OPENAI_MODEL
+) -> dict:
+    """Build the bare `type:"transcription"` session payload for the Part C
+    dictation engine (specs/live-transcription-plan.md §4.2) — pure,
+    dependency-free, unit-testable without a network call. Mirrors
+    build_session_payload()'s structure above but for the standalone
+    transcription-only session shape (audio in, text deltas out — no model
+    reply, no tools).
+
+    `keyterms` is caller-sanitized (routes/voice.py clamps [:80]/50, same as
+    /transcribe) — this function does not re-validate length, only passes
+    the list through as the GA `keywords` field (literal vocabulary list,
+    not a prompt — no instruction-injection surface).
+
+    `silence_duration_ms=1200` deliberately mirrors Deepgram's
+    `utterance_end_ms=1200` (frontend/src/lib/voice/deepgram-live.ts:41) so
+    the hands-free auto-send timing the dictation surfaces already tune for
+    doesn't regress on an engine swap.
+    """
+    return {
+        "session": {
+            "type": "transcription",
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "transcription": {
+                        "model": model,
+                        "languages": ["en"],
+                        "delay": "low",
+                        "keywords": keyterms,
+                        "prompt": golf_baseline_prompt(),
+                    },
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 1200,
+                    },
+                },
+            },
+        },
+    }
+
+
+async def mint_transcription_session(keyterms: list[str]) -> dict:
+    """Mint a Part C `type:"transcription"` session (specs/live-transcription
+    -plan.md §4.2) — same ephemeral-secret mint endpoint and posture as
+    mint_ephemeral_session() above (server-side only, 60s TTL, EC2 stays
+    mint-only/stateless — no WebSocket bridge, per routes/realtime.py's
+    stated invariant).
+
+    Returns the raw OpenAI response (same shape mint_ephemeral_session()
+    returns — the client_secret value lives at top-level "value").
+    """
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OPENAI_API_KEY not configured")
+
+    payload = build_transcription_session_payload(keyterms)
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(_REALTIME_CLIENT_SECRETS_URL, headers=headers, json=payload)
+    if resp.status_code >= 400:
+        raise HTTPException(resp.status_code, f"OpenAI transcription mint failed: {resp.text}")
     return resp.json()
