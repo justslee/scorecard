@@ -4435,3 +4435,21 @@ fades rather than pops; Voice.tsx index-keyed turns; the 502 detail interpolatio
 _openai_secret_from_mint; openai-live.ts ignoring vendor `type:"error"` frames (cosmetic while
 flag-off); the iOS sim proof (plan §6) before any flag flip; and the A/B run itself, which per
 plan §7 gates any cutover — UNRUN means LIVE_STT_ENGINE stays "deepgram".
+
+### CI GREEN — verified pinned to the head SHA (2026-07-31)
+`gh pr checks 158 --json name,bucket,state` at PR head `7d19fa7` (== `git rev-parse
+origin/integration/next`, confirmed identical):
+  Frontend gates (lint · typecheck · voice-tests · unit · build) — state SUCCESS (2m51s)
+  Backend gate (ruff + pytest incl. route/integration)           — state SUCCESS (1m31s)
+  E2E smoke advisory (auth gate + core journeys)                 — state SUCCESS (1m12s)
+pending==0, fail==0, and NO gate in cancel/skipping — each required gate asserted SUCCESS on MY
+pushed head, per the ship-gate discipline (not merely "fail count == 0", the #118/#100 lesson).
+LOAD-BEARING: the Backend gate runs route/integration, so the F3 auth tests for
+/api/voice/live-session + /live-token — which I could NOT run locally (no Postgres) — actually
+EXECUTED and PASSED in CI. That closes the one verification hole I'd flagged as unrun.
+(Any records-only commit after 7d19fa7 touches no code, so this verdict covers all code in the
+bundle; CI re-runs on the new head regardless.)
+
+## ITEM COMPLETE — live transcription, bundle PR #158, NOT shipped / NOT pinged
+Per the owner's directive for this arc the ship ask belongs to the coordinator. The bundle now
+contains ONE noticeable change and is approval-ready whenever he wants it.
