@@ -134,10 +134,26 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
   const upsertMessage = useCallback((msg: RealtimeMessage) => {
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.id === msg.id);
+      // Retraction sentinel (specs/live-transcription-plan.md §3.3): a user
+      // `.delta` partial the UI already saw was dropped by .completed
+      // (empty/priming-echo) or .failed — remove it rather than render an
+      // empty final bubble. No-op if the partial was never in state.
+      if (msg.role === 'user' && !msg.partial && msg.text.trim() === '') {
+        return idx === -1 ? prev : prev.filter((_, j) => j !== idx);
+      }
       const merged = idx === -1 ? [...prev, msg] : prev.map((m, j) => (j === idx ? msg : m));
       // Conversation order, not arrival order — see lib/voice/realtime-ordering.ts.
       return sortByOrder(merged);
     });
+  }, []);
+
+  /** Terminal-status settle (specs/live-transcription-plan.md §3.3/§3.5): a
+   *  user `.delta` partial left mid-utterance when the socket dies never
+   *  gets a final — settle it to non-partial in place (caret stops
+   *  blinking, text stays) instead of leaving it blinking forever.
+   *  Idempotent — safe to call from every closed/error branch. */
+  const settleUserPartials = useCallback(() => {
+    setMessages((prev) => prev.map((m) => (m.role === 'user' && m.partial ? { ...m, partial: false } : m)));
   }, []);
 
   /** Shared connection-status handling for BOTH a cold burst's client and an
@@ -165,6 +181,11 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
         // (or never released) while the connection was being set up.
         clientRef.current?.setMuted(!heldRef.current);
       }
+      if (s === 'closed' || s === 'error') {
+        // §3.3/§3.5 terminal settle — regardless of which branch below runs
+        // next (clean idle / degrade-to-text).
+        settleUserPartials();
+      }
       if (s === 'closed') {
         if (everConnectedRef.current) {
           // Clean close (90s idle disconnect) — tier stays healthy.
@@ -186,7 +207,7 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
     },
     // `rtTurn` (a useRef .current) is stable for the component's lifetime —
     // listed for exhaustiveness only.
-    [degradeToText, rtTurn],
+    [degradeToText, rtTurn, settleUserPartials],
   );
 
   const startBurst = useCallback(() => {

@@ -105,6 +105,17 @@ export default function VoiceRoundSetupRealtime({
   const upsert = useCallback((m: RealtimeMessage) => {
     setMessages((prev) => {
       const i = prev.findIndex((x) => x.id === m.id);
+      // Retraction sentinel (specs/live-transcription-plan.md §3.3): this
+      // component renders EVERY message in `messages` directly (no
+      // messagesToTurns empty-text filter, unlike the round-page orb), so
+      // without this a dropped turn that had shown a partial would leave a
+      // blank bubble on screen — the exact leak the retraction exists to
+      // prevent. Not in the plan's §3.5 consumer list (only enumerated for
+      // the round-page hooks), but this component rides the same onMessage
+      // stream (§2), so it now receives the same sentinel — closing the gap.
+      if (m.role === 'user' && !m.partial && m.text.trim() === '') {
+        return i === -1 ? prev : prev.filter((_, j) => j !== i);
+      }
       const merged = i === -1 ? [...prev, m] : prev.map((x, j) => (j === i ? m : x));
       // Render in conversation order, not arrival order: the user transcript
       // event lands after the reply it triggered, so a plain append would show
@@ -353,7 +364,13 @@ export default function VoiceRoundSetupRealtime({
                 fontStyle: m.role === "user" ? "normal" : "italic",
                 fontSize: 15,
                 lineHeight: 1.35,
-                opacity: m.partial ? 0.7 : 1,
+                // Dim only the CADDIE's in-flight text. The golfer's own live
+                // speech must render at full strength — dimmed live text reads
+                // as broken (standing designer call, mirrored in CaddieSheet's
+                // LiveVoiceBody). Before user turns carried `partial`, this
+                // line could only ever hit assistant bubbles; live user
+                // transcription made it reachable for the user's own words.
+                opacity: m.role !== "user" && m.partial ? 0.7 : 1,
               }}
             >
               {m.text}

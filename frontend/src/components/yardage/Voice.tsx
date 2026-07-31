@@ -15,7 +15,12 @@ const HOLD_STYLE = {
 } as CSSProperties;
 
 export type VoiceState = "idle" | "listening" | "thinking" | "speaking";
-export type VoiceTurn = { role: "user" | "caddy"; text: string };
+/** `partial` (specs/live-transcription-plan.md §3.5): true while a user turn's
+ *  text is still streaming in live (the caddie's `.delta` events, carried
+ *  through by lib/caddie/transport.ts's messagesToTurns) — undefined for a
+ *  caddie turn (assistant streaming is driven by `voiceState` instead) or a
+ *  fully-settled turn. */
+export type VoiceTurn = { role: "user" | "caddy"; text: string; partial?: boolean };
 
 export function VoiceOrb({
   state = "idle",
@@ -256,7 +261,13 @@ export function VoiceSheet({
                   key: String(i),
                   speaker: isCaddie ? "caddie" : "user",
                   text: t.text,
-                  streaming: !isCaddie && isLast && voiceState === "listening",
+                  // Live user text (specs/live-transcription-plan.md §3.5):
+                  // prefer the turn's OWN partial flag (fed by realtime.ts's
+                  // `.delta` events) so text fills in as the golfer speaks;
+                  // fall back to the old last-turn/listening heuristic for a
+                  // turn that never carries `partial` (e.g. before the flag
+                  // exists on a stale ledger entry).
+                  streaming: !isCaddie && (t.partial ?? (isLast && voiceState === "listening")),
                 };
                 return (
                   <ConversationTurn

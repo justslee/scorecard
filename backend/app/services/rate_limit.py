@@ -362,3 +362,30 @@ async def caddie_rate_limited_user(user_id: str = Depends(current_user_id)) -> s
     user id, so callers need no other signature change (see plan §4)."""
     await _limiter.enforce(user_id)
     return user_id
+
+
+# ── Cheap abuse-protection limiter for session-mint endpoints ──────────────
+#
+# A live-STT/live-token mint is cheap (no LLM tokens burned) — this is NOT
+# the caddie LLM budget above, just a generous RPM ceiling against a runaway
+# client loop (specs/live-transcription-plan.md §4.2). In-process sliding
+# window only — no daily file-backed budget tier, unlike CaddieRateLimiter.
+_LIVE_SESSION_LIMITER = SlidingWindowLimiter(rpm=20, window_s=60)
+
+
+async def live_session_rate_limited_user(user_id: str = Depends(current_user_id)) -> str:
+    """Drop-in replacement for ``Depends(current_user_id)`` on the live-STT
+    session mint endpoint (POST /api/voice/live-session) — generous RPM abuse
+    protection, not budget control (mint is cheap)."""
+    retry_after = _LIVE_SESSION_LIMITER.check(user_id)
+    if retry_after is not None:
+        retry_int = max(1, ceil(retry_after))
+        log.warning(
+            "live_session ratelimit hit user=%s retry_after=%ds", user_id[:12], retry_int
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=_CALM_429_DETAIL,
+            headers={"Retry-After": str(retry_int)},
+        )
+    return user_id

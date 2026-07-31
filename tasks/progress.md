@@ -3998,3 +3998,458 @@ Services ID, Info.plist URL scheme — and the flows are unit-tested against a M
 live-proven). Enabling the Clerk connections is necessary but NOT sufficient. The owner must sign
 in with **Continue with email**; if he taps a social button he will find it dead and reasonably
 conclude the fix failed.
+
+## Bundle #156 SHIP COMPLETE (2026-07-27, coordinator)
+v1.1.23 uploaded to TestFlight on retry attempt 3 (build 202607262041) after Apple's ASC API
+outage cleared (5 identical HTTP-500s at export, external — the archive + no-diag scan passed
+every attempt). Merge @8ac6adc; frontend-only (no backend redeploy needed, deployed HEAD
+correctly unchanged @6dcc32c). Owner instruction delivered: update + "Continue with email",
+nothing destructive. PR #157 (the mid-outage checkpoint) superseded by this record — close it.
+Follow-ups standing: SSO app-side wiring (Google client IDs + Apple entitlement + Info.plist
+URL scheme — owner's Clerk side is DONE, Apple enabled on prod); clerk-native-revoked-client-
+token-probe (LOW). Box quiet; loop remains stopped per owner.
+
+## AWAITING (2026-07-31) — live-transcription cycle: gpt-live-transcribe research + seam map
+Owner directive 2026-07-31: replace Deepgram with OpenAI `gpt-live-transcribe` for caddie chats,
+and — the REAL want — render his words LIVE as he speaks (incremental partials in the caddie
+surface). One eng-lead pass, base origin/integration/next, land on the next bundle. Do NOT ship/ping.
+
+RESEARCH LANDED (web, post-cutoff model — verified against OpenAI docs):
+- `gpt-live-transcribe` is REAL and is purpose-built for this: "a streaming speech-to-text model
+  for applications that need low-latency transcript deltas from live audio."
+- Endpoint constraint (LOAD-BEARING): the model card states **only `v1/realtime/transcription_sessions`
+  is supported**. So it is a TRANSCRIPTION-TYPE realtime session — it likely CANNOT be dropped in as
+  `session.audio.input.transcription.model` inside our conversational (`type:"realtime"`) caddie
+  speech-to-speech session. Verify at runtime before planning a caddie-session swap.
+- Session shape: `{"type":"session.update","session":{"type":"transcription","audio":{"input":
+  {"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"gpt-live-transcribe",
+  "prompt":..., "keywords":[...], "languages":[...], "delay":"low"},"turn_detection":...}}}}`
+  `delay` ∈ {minimal, low, medium, high, xhigh}. `keywords` = literal domain terms → our
+  GOLF_KEYTERMS finally get first-class biasing (today they only reach Deepgram).
+- Events: partial = `conversation.item.input_audio_transcription.delta` (field `delta`);
+  final = `conversation.item.input_audio_transcription.completed` (field `transcript`).
+- Transport: `wss://api.openai.com/v1/realtime?intent=transcription`; browser auth via ephemeral
+  client secret (subprotocol `openai-insecure-api-key.<ephemeral>`), minted server-side, ~60s TTL.
+- COST (honest): gpt-live-transcribe **$0.017/min** vs Deepgram nova-3 streaming **$0.0077/min**
+  → ~2.2x more expensive per minute. No public WER/latency benchmark exists for gpt-live-transcribe
+  yet (launched ~2026-07-29) — hence the owner's A/B is the ONLY basis for the cutover call.
+- Prior art in-repo: specs/voice-transcription-reliability-research.md (avenue 3 = cascaded STT),
+  specs/caddie-realtime-transcription-vocab-bias-plan.md (mint path + prompt seam), PR #126 spike.
+
+AWAITING: Explore agent mapping the Deepgram WS protocol, the frontend transcript consumers,
+whether realtime deltas are already arriving and being DROPPED client-side, and the caddie chat
+render surface. NEXT on its return → fable Plan (specs/live-transcription-plan.md) → builder →
+designer (BLOCKING on the live-text idiom) → reviewer → qa.
+If this cycle dies here: nothing is built yet; re-read this block and resume at the fable plan.
+
+### Seam map VERIFIED (2026-07-31) — the feature is a dropped event, not a missing vendor
+- **`frontend/src/lib/voice/realtime.ts` handles `conversation.item.input_audio_transcription.completed`
+  (L936) and `.failed` (L980) but has NO `.delta` case** — deltas fall into `default:` (L1044-1046,
+  comment: "ignore — many events (audio/transcription deltas …) are fine to drop"). Meanwhile the
+  ASSISTANT's transcript already streams (`response.audio_transcript.delta` L844 → `partial:true` L857).
+  So in the live caddie the CADDIE's words stream in and the OWNER's do not. That asymmetry IS the
+  owner's complaint. `RealtimeMessage` already carries `partial?: boolean` (L50).
+- **The visual primitive already exists and is UNUSED.** `frontend/src/components/yardage/Transcript.tsx`
+  (the ONE shared turn primitive) types `streaming` for the USER speaker as "blinking listening caret"
+  (L59-72) and implements it (L152-165); `CaddieSheet.tsx:1837` already maps `streaming: m.partial`;
+  `yardage/Voice.tsx:259` already sets a streaming user turn with no partial text to feed it.
+  => emitting `{role:'user', partial:true}` renders live text with ~zero new UI. One widening needed:
+  `frontend/src/lib/caddie/transport.ts::messagesToTurns` L162-166 flattens `partial` away.
+- **Deepgram already does partials, on the OTHER stack.** `deepgram-live.ts` requests
+  `interim_results=true` (L38), and interim text renders in SIX places (useLooperDictation.interim,
+  CaddieSheet ListeningIndicator L2062, ScoreSheet L797, LooperSheet L323, CourseSearch types interim
+  into the input L455, CaddieOrb chip via CaddieOrbSheet L302). Two stacks split BY SURFACE:
+  Deepgram = orb/search/score/classic-sheet (live text works); OpenAI Realtime WebRTC = round-page
+  hold-to-talk + CaddieSheet live mode (user text only on final).
+- **No backend WS proxy for Deepgram** — `deepgram.py:78 grant_live_token(ttl=60)` +
+  `POST /api/voice/live-token`; the BROWSER opens the socket with a `['token', tok]` subprotocol
+  (deepgram-live.ts:207). The ephemeral-mint security shape gpt-live-transcribe needs is ALREADY the
+  house pattern (`realtime_relay.py:44` client_secrets). `routes/realtime.py:9` pins "EC2 stateless —
+  no WebSocket bridge."
+- **Transport risk:** the caddie realtime path is **WebRTC** (`/v1/realtime/calls`), the iOS-proven
+  OpenAI transport in the Capacitor WebView. A gpt-live-transcribe WS + `openai-insecure-api-key.<eph>`
+  subprotocol is UNPROVEN on device (Deepgram's WS+subprotocol shipping today is suggestive, not proof).
+- **Clean drop-in seam for the vendor swap:** `DeepgramLiveEvents` (deepgram-live.ts:76-86) —
+  `{onInterim,onFinal,onUtteranceEnd,onError}` + `isSupported()/start/stop`; 6 call sites depend on
+  nothing else. NON-OBVIOUS: `onUtteranceEnd` comes from Deepgram's `utterance_end_ms=1200` and drives
+  hands-free AUTO-SEND in 3 places; OpenAI's nearest equivalent is server-VAD
+  `input_audio_buffer.speech_stopped` with different timing — silent-regression risk.
+- **Test pin to preserve (never weaken):** `realtime-dedup.test.ts:170-188` R5 asserts `.delta` events
+  never COMMIT a user message.
+- **A/B is net-new infra.** Zero audio files repo-wide; voice-tests all start from a text string.
+  `backend/app/services/openai_tts.py` can synthesize fixtures (honest caveat: clean TTS audio is a
+  weak proxy for on-course wind/distance, the exact failure mode).
+- **Strategic fit:** specs/caddie-input-grounding-plan.md L4 records the cascaded-STT confidence gate
+  (avenue #3 of specs/voice-transcription-reliability-research.md) as queued-and-never-built; a
+  transcription session producing ground-truth TEXT fills exactly that slot.
+- Doc bug found: CLAUDE.md cites `frontend/src/components/CaddiePanel.tsx` — that file does not exist.
+
+AWAITING: fable Plan → specs/live-transcription-plan.md. Then builder → designer (BLOCKING on the
+live-text idiom) → reviewer → qa. If this dies here: no code written; resume from the plan file.
+
+### AWAITING (live-transcription, cycle open) — fable Plan agent writing specs/live-transcription-plan.md
+Baseline on this branch verified GREEN before any code: voice-tests 278/278, `tsc --noEmit` clean,
+`ruff check .` clean. `frontend/node_modules` installed via `npm ci`.
+Two corrections were relayed INTO the running plan agent and must appear in the plan:
+ (a) the R5 pin `frontend/src/lib/voice/realtime-dedup.test.ts:170-188` uses a `userMessages()` helper
+     (L46-48) that does NOT filter on `partial`, so emitting user partials turns it RED as written.
+     Intent-preserving fix = the file's OWN assistant idiom three lines up at L165:
+     `.filter((m) => !m.partial)` — R5's name is "never COMMIT a user message", so the filter preserves
+     the stated invariant exactly; ADD (never replace) an assertion that partials DID flow.
+     This is the likeliest reviewer blocker — the project rule is never edit tests to make them pass.
+ (b) R5 already emits `{type:'conversation.item.input_audio_transcription.delta', item_id, delta}` over
+     the WebRTC data channel, i.e. the delta shape is already understood in the CURRENT gpt-4o-transcribe
+     session. Strong evidence the owner's FEATURE ships with zero vendor change and zero added $/min;
+     gpt-live-transcribe is then an ACCURACY/consolidation decision the A/B must justify, not a
+     prerequisite for live text. Still needs a runtime confirmation that deltas actually arrive on device.
+RESUME INSTRUCTIONS if this cycle died here: read specs/live-transcription-plan.md (the Plan agent writes
+it directly, so it survives my death). If present → dispatch builder against it on integration/next, then
+designer (BLOCKING on the live-text idiom), reviewer (fresh; no client-side key exposure; fallback flag
+genuinely works), qa (278 voice-tests + the A/B numbers). If absent → re-dispatch the fable Plan with the
+research + seam map recorded in the two blocks above; do NOT redo the research or the seam sweep.
+NO application code has been written this cycle. Only records + one CLAUDE.md doc correction (@d2e36fa).
+
+## STOPPED CLEANLY (2026-07-31) — live-transcription cycle ended at the plan await
+The fable Plan agent did not write specs/live-transcription-plan.md within the cycle's wait budget
+(>1h wall clock). Stopping rather than hanging the loop, per the no-hung-cycle rule. Everything is
+committed and pushed to integration/next; NO application code was written, so nothing is half-built.
+The Plan agent writes its file directly — if it finishes after this stop, specs/live-transcription-plan.md
+will simply appear on disk and the next cycle should USE it rather than re-plan.
+
+NEXT CYCLE, in order:
+1. `test -f specs/live-transcription-plan.md` — if present, skip straight to the builder.
+   If absent, re-dispatch the fable Plan feeding it the two committed blocks above (research findings
+   @1f7c069, seam map @1ebc0ba) plus the R5 resolution @12a34b2. Do NOT redo the web research or the
+   seam sweep — both are done and recorded.
+2. builder on integration/next; 3. designer BLOCKING on the live-text idiom; 4. reviewer (fresh:
+   no client-side key exposure, fallback flag genuinely works); 5. qa (voice-tests 278 stay green
+   + the A/B numbers). Classify NOTICEABLE. Do NOT ship/ping per the owner's directive for this arc.
+
+HEADLINE FINDING TO CARRY FORWARD (already evidence-backed, do not re-litigate):
+The owner's feature — seeing his words as he speaks — does NOT require gpt-live-transcribe. In the
+in-round live caddie, OpenAI already streams `conversation.item.input_audio_transcription.delta` and
+`frontend/src/lib/voice/realtime.ts` throws it away in its `default:` case (L1044-1046) while streaming
+the CADDIE's half (L844/L857). The renderer for the missing half already exists and is unused
+(`yardage/Transcript.tsx` streaming caret L152-165; `CaddieSheet.tsx:1837` already maps
+`streaming: m.partial`). gpt-live-transcribe is a separate, defensible ACCURACY + vendor-consolidation
+decision at $0.017/min vs Deepgram's $0.0077/min (~2.2x), and per the owner's own bench discipline it
+must be justified by the A/B, not by the launch announcement. Recommend shipping the live-text feature
+first (cheap, zero vendor risk) and deciding the vendor swap on measurements.
+
+## AWAITING (2026-07-31) — builder on specs/live-transcription-plan.md @b6757af
+The fable plan LANDED after the earlier stop note: its harness was read-only, so it returned the
+document instead of writing it; I saved it verbatim to specs/live-transcription-plan.md @b6757af.
+Disregard the "STOPPED CLEANLY" block above — the cycle resumed.
+
+Seam chosen (plan §2): **D = A + C**.
+- **A (the NOTICEABLE feature):** handle `conversation.item.input_audio_transcription.delta` in
+  frontend/src/lib/voice/realtime.ts and emit `{role:'user', partial:true}`. Zero vendor change,
+  zero added $/min, renders through the already-built-and-unused `Transcript.tsx` streaming caret.
+- **C (silent rider, inert by default):** `OpenAILiveTranscriber` (gpt-live-transcribe) implementing
+  the exact `DeepgramLiveEvents` contract behind server flag `LIVE_STT_ENGINE`, default `deepgram`,
+  with a genuine Deepgram fallback ladder. Option B (a parallel transcription session next to the
+  caddie realtime session) was REJECTED: $0.17-0.51/round + double uplink + a two-transcript merge.
+Cutover rule (plan §7): the A/B gates it; **UNRUN A/B == NO cutover**, flag stays `deepgram`.
+
+Bundle PR #158 open (integration/next -> main). Item classified NOTICEABLE.
+AWAITING: builder (plan §11 steps 1-7). SHIP-shaped return -> designer (BLOCKING on the live-text
+idiom) + reviewer (fresh, /security-review — new endpoint) + qa (278 voice-tests + full vitest).
+BLOCKING findings -> back to builder, then re-review. Do NOT re-run finished children; reconcile
+from `git log origin/integration/next`.
+Per the owner's directive for this arc: do NOT ship and do NOT ping when it goes green.
+
+## CHECKPOINT (2026-07-31) — live-transcription: plan landed, step 1 landed, builder stalled at step 2
+State on integration/next: `cf55d27` = plan §11 step 1 ONLY.
+`MessageOrderTracker.peekOrderForUserTranscript(itemId?)` — returns a user turn's reserved order
+slot WITHOUT consuming it, so `.delta` partials can render in the right position while
+`orderForUserTranscript()` on the `.completed` path stays the sole consumer; reserves a fresh slot
+on first peek when `speech_started` was dropped (so the later final finds the SAME slot); no-id case
+peeks the FIFO head without shifting. +4 tests (idempotent repeat peeks; peek-then-consume returns
+the same key; a peek never drains another turn's reservation; cross-item isolation).
+
+GATES RE-VERIFIED BY ME at cf55d27 (not asserted — run):
+`npx vitest run src/lib/voice/realtime-ordering.test.ts` -> 15/15 passed ·
+`npx tsc --noEmit` -> clean · `npx tsx voice-tests/runner.ts --smoke` -> 278/278.
+The branch is SAFE to build on. Step 1 is inert on its own (a new unused method), so it can also sit
+on the bundle indefinitely with zero user-visible effect.
+
+BUILDER STALLED: after cf55d27 it produced no further commits and did not answer a direct status
+request, working tree clean. Its remaining work (steps 2-7) was NOT done. It may still be alive — if
+later commits appear on origin/integration/next, RECONCILE FROM `git log origin/integration/next`,
+not from this note, and do NOT re-run anything it already landed.
+
+NEXT CYCLE — resume at plan §11 step 2. Priority order (from the plan, do not re-derive):
+ 2. `frontend/src/lib/voice/realtime.ts`: add the `case 'conversation.item.input_audio_transcription.delta'`
+    per plan §3.2 (the guard table is prescriptive: pre-open gate YES; `processedUserItems` read-only
+    YES; `isPrimingEcho` stops EMISSION only; `setInputClass`/`resolveHeldFor` NEVER from a partial;
+    never consume the order reservation), retraction/settle per §3.3, telemetry P1 per §1.4.
+    Align the R5 pin per §3.4 using the file's OWN assistant idiom `.filter((m) => !m.partial)`
+    (realtime-dedup.test.ts L165 already uses it) and ADD partial-arrival assertions — this is the
+    likeliest reviewer blocker, frame it as intent-preserving, never as loosening.
+    Add `frontend/src/lib/voice/realtime-user-partials.test.ts`.
+ 3. Consumers: `lib/caddie/transport.ts` messagesToTurns must carry `partial` through (L162-166
+    currently flattens it away, starving the orb path), `yardage/Voice.tsx` streaming flag,
+    `useCaddieLiveSession.ts` + `useVoiceCaddie.ts` retraction-delete + terminal settle.
+ STEPS 2-3 ALONE = the complete owner-visible feature. Steps 4-7 (backend `POST /api/voice/live-session`
+ mint, `OpenAILiveTranscriber`, the A/B bench) are the SILENT rider and are droppable — the plan's §13
+ already defers the flag flip and the Deepgram removal regardless.
+Then: designer (BLOCKING on the live-text idiom), reviewer + /security-review (only needed once step 4
+adds the endpoint; steps 2-3 are frontend-only), qa.
+Per the owner's directive for this arc: do NOT ship and do NOT ping.
+
+## DONE (2026-07-31) — live-transcription: ALL of specs/live-transcription-plan.md §11 steps 1-7 built, green, pushed (builder, lane worktree-agent-a7ff743ade6e18867)
+
+Implemented the full plan (Part A owner-visible feature + Part C flagged silent rider + the A/B
+bench), one commit per step, each pushed to `integration/next` as it landed so the branch survived
+every await point:
+
+1. `cf55d27` — `MessageOrderTracker.peekOrderForUserTranscript` (non-consuming order reservation).
+2. `3232127` — the `.delta` event case in `realtime.ts` (guard table byte-exact: pre-open gate YES,
+   `processedUserItems` read-only, priming-echo stops emission only, `setInputClass`/`resolveHeldFor`
+   NEVER from a partial, order PEEKed never consumed), retraction (empty/priming-echo/`.failed` drops
+   emit a `{text:'',partial:false}` sentinel) + P1 telemetry (`input_delta_first`). R5 pin aligned per
+   §3.4 — applied the file's OWN idiom (`assistantMessages(...).filter((m) => !m.partial)`, already
+   used 3 lines above by R4) to the user side, then ADDED assertions proving the partials arrived
+   (accumulating text, same order key the final later carries) — coverage strictly increased, nothing
+   loosened. New `realtime-user-partials.test.ts` (10 tests).
+3. `d0b50fd` — consumer wiring: `transport.ts` `messagesToTurns` carries `partial` through,
+   `Voice.tsx` streaming flag prefers the turn's own partial flag, `useCaddieLiveSession.ts` +
+   `useVoiceCaddie.ts` retraction-delete + terminal-status settle-in-place, plus
+   `VoiceRoundSetupRealtime.tsx` (NOT in the plan's file list but rides the same onMessage stream —
+   added the same retraction-delete there too, one deliberate minimal plan deviation, noted in the
+   commit). **Part A (the complete owner-visible feature) is done here.**
+4. `cbe28ab` — backend: `LIVE_STT_ENGINE` flag (default `deepgram`, inert), `LIVE_STT_OPENAI_MODEL`,
+   `build_transcription_session_payload`/`mint_transcription_session` in `realtime_relay.py`,
+   `POST /api/voice/live-session` in `routes/voice.py`, a separate cheap `live_session_rate_limited_user`
+   (20rpm, not the LLM budget limiter). New `test_live_stt_session.py` (14 tests, DB-free).
+5. `e7f4391` — frontend: `PcmCapture` gains `targetRate` (24kHz for OpenAI); `DeepgramLiveTranscriber`
+   gains a pre-fetched-token constructor option; new `OpenAILiveTranscriber` (openai-live.ts) + new
+   `createLiveTranscriber` fallback ladder (live-stt.ts) — engine "openai" that fails ANY way (mint,
+   WS handshake, first-frame) GENUINELY falls back to Deepgram via the legacy self-fetch path, proven
+   by `live-stt.test.ts`'s mocked-class ladder tests (7) and `openai-live.test.ts`'s event-mapping/
+   utterance-end-guard/session.update tests (12). Switched the 3 REAL construction sites
+   (`useLooperDictation.ts`, `CaddieSheet.tsx`, `ScoreSheet.tsx` — CourseSearch/LooperSheet/
+   CaddieOrbSheet all ride on `useLooperDictation`, confirmed by grep, no separate edit needed despite
+   being named in the plan's file list). Had to extend 4 `CaddieSheet.*.test.tsx` suites' mocks
+   (`@/lib/api`'s `fetchAPI`, `importOriginal`-spread) since the new factory's own `/live-session` mint
+   call now precedes the already-mocked `DeepgramLiveTranscriber` — root-caused via a RED run
+   (`CaddieSheet.handsfree.test.tsx` 7 failures) before fixing, not guessed.
+6. `c717596` — types sync: promoted the response shape to one exported `LiveSttSession` (was
+   duplicated locally in two files) mirroring backend's `LiveSttSessionResponse`; `backend/README.md`
+   (was empty) documents the 3 new env vars — `.env.example` matches the guard hook's `**/.env*`
+   block per the plan's own caveat, never touched it.
+7. `64451a7` — `backend/bench/stt_ab/` (wer.py pure+unit-tested 18 tests, synthesize.py, run_ab.py,
+   utterances.json, README.md incl. the P2 probe curl) + `specs/stt-live-ab-report.md`. Per this
+   cycle's explicit instruction: code + README ONLY, deliberately NOT run (no API keys on this
+   machine, no EC2 access attempted) — report states UNRUN, `LIVE_STT_ENGINE` stays `deepgram` per
+   the plan's own "UNRUN -> NO CUTOVER" rule.
+
+**Final gates (all re-run clean at HEAD `64451a7`, not asserted):** frontend `npm run lint` clean (1
+pre-existing unrelated warning); `npx tsc --noEmit` clean; `npm run build` clean; voice-tests smoke
+278/278; full `npx vitest run` 159 files / 2908 tests, 0 failed (baseline before this cycle was 156
+files / 2882 tests — net +3 files / +26 tests once the 4 CaddieSheet suites' fix is counted, 0
+regressions); backend `ruff check .` clean; `pytest tests/test_live_stt_session.py` 14/14; backend
+`pytest tests/ --ignore=tests/integration` 3393 passed/1 skipped (baseline 3379/1, +14, 0
+regressions); `pytest bench/stt_ab/test_wer.py` 18/18.
+
+**Part C is fully inert with the flag off** — `LIVE_STT_ENGINE` unset/`deepgram` is byte-equivalent to
+pre-existing behavior at every layer (mint endpoint returns the same `grant_live_token()` shape;
+`createLiveTranscriber`'s deepgram branch reuses that token, same WS/subprotocol Deepgram path as
+before). The fallback ladder is proven genuine (not just documented) by `live-stt.test.ts`'s
+"engine openai FAILURE" test — constructs+starts OpenAILiveTranscriber, it throws, asserts Deepgram
+is THEN constructed+started with telemetry, exactly the flag-on-with-a-bad-key scenario the reviewer
+is expected to check.
+
+**Not done by me (explicitly out of scope, per the task brief):** step 8 — iOS sim run
+(`frontend/ios/SIMTEST.md`), designer review (BLOCKING per plan §8), `/security-review` +
+`/code-review` (plan §5 — required before this is ready-to-ship, since it added a new auth'd
+endpoint + user-facing capability). The bench run itself (needs API keys, not on this machine).
+
+**One deviation from the plan, already called out per-commit above:** `VoiceRoundSetupRealtime.tsx`
+got the same retraction-delete fix as the two hooks even though the plan's §3.5 consumer list didn't
+name it — it rides the identical `onMessage` stream (§2) and would otherwise render a blank bubble
+for a dropped-turn retraction sentinel. Minimal, same idiom as the two files the plan DID list.
+
+Files touched (frontend): `lib/voice/realtime-ordering.ts`(+test), `lib/voice/realtime.ts`,
+`lib/voice/realtime-dedup.test.ts`, `lib/voice/realtime-user-partials.test.ts`(new),
+`lib/caddie/transport.ts`(+test), `components/yardage/Voice.tsx`,
+`components/VoiceRoundSetupRealtime.tsx`, `hooks/useCaddieLiveSession.ts`, `hooks/useVoiceCaddie.ts`,
+`hooks/useDetachedCaddieLive.test.tsx`, `lib/voice/pcm-capture.ts`(+test),
+`lib/voice/deepgram-live.ts`, `lib/voice/deepgram-live-prefetch.test.ts`(new),
+`lib/voice/openai-live.ts`(new,+test), `lib/voice/live-stt.ts`(new,+test),
+`hooks/useLooperDictation.ts`, `components/CaddieSheet.tsx`(+4 test files),
+`components/yardage/ScoreSheet.tsx`. Backend: `app/services/realtime_relay.py`,
+`app/services/rate_limit.py`, `app/routes/voice.py`, `tests/test_live_stt_session.py`(new),
+`app/services/openai_tts.py`, `bench/stt_ab/*`(new), `README.md`, `pyproject.toml`, `uv.lock`.
+Repo root: `.gitignore`, `specs/stt-live-ab-report.md`(new).
+
+NEXT: eng-lead/reviewer picks up at plan §11 step 8 — designer review (blocking), `/security-review` +
+`/code-review` on the new `/api/voice/live-session` endpoint, then the iOS sim proof before any
+consideration of flipping `LIVE_STT_ENGINE`. Do NOT run the A/B bench or flip the flag without a real
+measured run per specs/stt-live-ab-report.md's UNRUN status.
+
+## CORRECTION (2026-07-31) — the "builder stalled" checkpoint @85078fd was WRONG
+The builder was NOT stalled. It was working the whole time and landed plan §11 steps 1-7 in full,
+9 commits, HEAD `978dbd5`. My @85078fd note concluded "stalled at step 2" from a quiet branch and a
+clean tree during a long gate-running stretch; that inference was wrong and any resume must IGNORE it.
+Lesson for the loop: a quiet branch is NOT evidence of a dead child. Reconcile from
+`git log origin/<branch>` AND the child's completion notification before declaring a child dead —
+never from elapsed silence. A builder running `npm run build` + a 2900-test vitest suite is silent
+for a long time by construction.
+
+Landed (verified on origin, not taken on trust):
+ 3232127 the `.delta` case in realtime.ts + retraction sentinel + P1 telemetry + R5 alignment
+         + new realtime-user-partials.test.ts
+ d0b50fd consumer wiring (transport.ts, Voice.tsx, useCaddieLiveSession, useVoiceCaddie,
+         VoiceRoundSetupRealtime) — **Part A, the owner-visible feature, COMPLETE here**
+ cbe28ab backend POST /api/voice/live-session + LIVE_STT_ENGINE flag + mint builder + rate limit
+ e7f4391 OpenAILiveTranscriber + createLiveTranscriber fallback ladder + PcmCapture.targetRate
+ c717596 shared LiveSttSession type (§9) + backend/README.md env docs
+ 64451a7 backend/bench/stt_ab/ A/B harness — code + README only, explicitly UNRUN
+I independently spot-verified two load-bearing claims: the R5 pin is aligned via the file's own
+`.filter((m) => !m.partial)` idiom with ADDED partial-arrival assertions and an explanatory comment
+(realtime-dedup.test.ts ~L170-200), and `LIVE_STT_ENGINE` defaults to "deepgram"
+(routes/voice.py:28,34 — read fresh per call, not module-load-time).
+Builder-reported gates at 978dbd5: lint clean · tsc clean · build clean · voice 278/278 ·
+vitest 2908/0 failed (baseline 2882) · ruff clean · backend 3393 passed/1 skip (baseline 3379) ·
+test_live_stt_session 14/14 · bench wer 18/18.
+Builder deviations, both self-declared: VoiceRoundSetupRealtime.tsx added to the §3.5 consumer list
+(rides the same onMessage stream, needed the retraction-delete or it shows a blank bubble); and only
+3 of the plan's 5 named dictation call sites are real construction sites (LooperSheet is
+presentational, CourseSearch rides useLooperDictation).
+
+AWAITING (3 in parallel): designer BLOCKING on the live-text idiom · reviewer + /security-review
+(new authed endpoint + a new vendor transport) · qa (gate re-run + A/B status).
+BLOCKING findings -> back to the builder, then re-review. Item is NOTICEABLE. Per the owner's
+directive for this arc: do NOT ship and do NOT ping when green.
+
+### Review results so far (live-transcription @aec5cc7)
+DESIGNER: **PASS** (no blocking). Verified the feature reuses the shared `yardage/Transcript.tsx`
+primitive with ZERO new visual language (CaddieSheet's LiveVoiceBody was not even touched by the
+feature commits), honors the standing streaming-not-muted decision, and settles in place via
+same-id upsert (no remount/jump). Ran 4 suites, 58/58.
+ Non-blocking, ranked, ACTIONABLE THIS BUNDLE:
+ 1. `frontend/src/components/VoiceRoundSetupRealtime.tsx:367` — pre-existing
+    `opacity: m.partial ? 0.7 : 1` previously only ever hit ASSISTANT streaming bubbles because user
+    messages never carried `partial:true` before 3232127. Now the golfer's OWN live speech dims to
+    70% while he talks — the literal anti-pattern this bundle's own brief rules out ("dimmed live
+    text reads as broken"). One-line fix; first-tee setup is often a new user's first interaction.
+    I CONFIRMED this line myself. Fixing in-bundle.
+ 2. `Transcript.tsx` has no AnimatePresence exit on turn removal, so a retraction pops instead of
+    fading (framer-motion already imported there for the caret). Deferred follow-up.
+ 3. `Voice.tsx:261,274` keys turns by array index not id — pre-existing, low risk. Deferred.
+REVIEWER (fable) — /security-review leg: **no HIGH/MEDIUM findings.** Verified endpoint is
+Clerk-authed + rate-limited; browser receives ONLY a ~60s ephemeral (no OPENAI_API_KEY client-side,
+grep-confirmed); user keyterms are clamped server-side (80 chars, cap 50) and enter ONLY the literal
+`keywords` list while the free-text `prompt` stays closed-set server constants (no injection surface);
+no token logged in telemetry (fixed reason strings); no SQL/command/path injection; no XSS (React text
+nodes only). One sub-threshold nit: `_openai_secret_from_mint` interpolates the raw mint response into
+a client-facing 502 detail — no privilege gain (recipient is the authed user), mirrors an existing
+pattern in routes/realtime.py; trim later.
+ The reviewer's first return covered ONLY security — I sent it back for the CORRECTNESS verdict
+ (R5 adjudication + a sweep for any OTHER weakened assertion, order-reservation lifecycle, the §3.2
+ guard table, retraction-sentinel stress, fallback-ladder tautology check, flag inertness incl.
+ onUtteranceEnd timing). AWAITING that.
+QA: still running (full build + ~2900 vitest + ~3400 pytest legitimately takes a long time).
+LESSON RE-LEARNED THIS CYCLE: do not read child silence as child death (see the CORRECTION above).
+
+### REVIEWER (fable) correctness verdict: **SHIP** — with one PROVEN defect I am fixing anyway
+Reviewer ran full vitest 2910/2910, tsc clean, ruff clean, test_live_stt_session 14/14. It did NOT
+re-run voice-smoke or `next build` (relied on the builder there) — QA covers those.
+1. **R5 pin: legitimate, NOT weakened.** The old `toHaveLength(0)` was only synonymous with the
+   stated invariant while deltas emitted nothing at all — the exact behavior this feature changes.
+   The new filter is byte-identical to the assistant idiom at L165, and coverage strictly increased.
+   CRUCIALLY it also swept EVERY changed test file for a second, unannounced relaxation and found
+   NONE: transport.test.ts's `toEqual` objects gained `partial:false` (a STRENGTHENING forced by the
+   shape change), the 4 CaddieSheet suites got mock plumbing only (zero assertion changes), the rest
+   are additions.
+2. **Order reservation: proven by execution** — drove speech_started-dropped -> delta -> assistant
+   deltas -> late `.completed`; partial and final share one slot and `userFinal.order <
+   assistantFinal.order` holds.
+3. **Guard table holds**, incl. a neat transitive proof that deltas never write `processedUserItems`
+   (if they did, R5's "final commits" assertion would fail — it passes), and a behavioral proof the
+   no-input clarifier is unchanged.
+4. **PROVEN DEFECT (realtime.ts ~L1052-1065):** the `.failed` handler is NOT guarded by
+   `processedUserItems`, and `userPartialEmitted` is never cleared when `.completed` commits real
+   text. So `speech_started -> delta -> .completed("what club here") -> .failed(same item)` fires
+   `retractUserPartial`, and every consumer DELETES the already-committed user turn by id. Violates
+   the file's own R3 standard ("a re-delivered event for an already-processed item is fully inert") —
+   and this codebase hardened against duplicates precisely because the data channel was observed
+   redelivering events. Reachability is narrow (undocumented cross-type completed->failed pair), so
+   the reviewer left it non-blocking; I am fixing it because it is ONE LINE and destructive when hit.
+   Fix in the `.completed` real-text branch (~L1036-1044): also `delete` the item from
+   `userPartialEmitted` and `partials` — which additionally stops a slow unbounded growth of
+   `this.partials` (one small user entry per utterance, never evicted).
+5. Latent-assumption sweep found exactly 4 render sites reading `partial`; the only unintended one is
+   the designer's VoiceRoundSetupRealtime:367 opacity dim. `useVoiceCaddie.ts:345`'s persistence
+   filter is assistant-role-gated, so user partials can NEVER be persisted or reach LLM context. Good.
+6. **Fallback ladder genuine, not tautological** — routing tested in live-stt.test.ts at the right
+   altitude, the real transcriber exercised separately in openai-live.test.ts against a fake WS;
+   teardown real; MediaStream deliberately caller-owned so the Deepgram rung can reuse it. Bonus:
+   an OLDER deployed backend with no /live-session at all lands in the mint_failed rung and still
+   yields Deepgram — good rollout safety.
+7. **Flag inertness: equivalent, honestly not byte-identical** — one POST changes URL; Deepgram
+   interim/final/onUtteranceEnd logic and utterance_end_ms=1200 untouched, so auto-send timing has no
+   mechanism to change. Reviewer explicitly could NOT verify on-device timing (no Deepgram key here);
+   the plan §6 iOS sim proof remains outstanding and unperformed.
+Deferred nits: the 502 detail interpolation in `_openai_secret_from_mint`; `openai-live.ts`
+handleMessage ignores vendor `type:"error"` frames (cosmetic while flag-off).
+
+FIXES I AM APPLYING IN-BUNDLE (both one-liners, then re-verify):
+ F1 realtime.ts .completed real-text branch — clear userPartialEmitted + partials (reviewer defect 4).
+ F2 VoiceRoundSetupRealtime.tsx:367 — exempt the user role from the partial opacity dim (designer 1).
+AWAITING qa before touching the tree, so its gate run stays pinned to one head.
+
+## QA PASS + all three review findings FIXED @3dc6cdd
+QA independently re-ran all 9 gates and every number matched the builder's claims EXACTLY
+(278/278 voice · 2908/0 vitest · 3393 passed/1 skip pytest · 14/14 live-session · 18/18 bench WER ·
+lint/tsc/build clean). It also verified the A/B report states UNRUN honestly and that the bench is
+NOT wired into CI or the smoke gate (pyproject testpaths=["tests"] excludes bench/; ci.yml never
+references it). Playwright E2E NOT run — no Vercel preview exists for PR #158 (per-PR previews are
+still an ungated future step in tasks/todo.md); QA said so plainly rather than implying coverage.
+PROCESS FINDING from QA: the reviewer's scratch test file briefly appeared in this SHARED worktree
+mid-run and transiently made vitest report 160 files/2911/1 failed. Concurrent agents in one
+worktree contradicts the "parallel lanes use worktrees" memory. Next time give reviewer + qa
+ISOLATED worktrees when they run concurrently.
+
+FIXES LANDED @3dc6cdd (all three, gates re-run by me):
+ F1 realtime.ts — the reviewer's proven `.failed`-after-committed-`.completed` defect. The
+    `.completed` real-text branch now clears userPartialEmitted + partials, so a late/re-delivered
+    `.failed` is inert instead of deleting the user's committed question. TEETH-VERIFIED RED->GREEN:
+    reverted the fix, new pin failed (3 emissions — the sentinel); restored, passed (2).
+    Also stops a slow `partials` leak on the success path.
+ F2 VoiceRoundSetupRealtime.tsx — opacity dim is now caddie-only, so the golfer's own live speech
+    renders at full strength (designer's #1).
+ F3 tests/integration/test_routes.py — requires_auth cases for /api/voice/live-session AND the
+    legacy /live-token (QA's gap: the unit suite calls the handler directly with a hardcoded
+    user_id and so cannot see the Depends() gate; these routes mint per-minute-billed speech
+    credentials). DB-backed, so CI verifies — I could NOT run it locally (no Postgres).
+My re-run at 3dc6cdd: lint 0 err · tsc clean · build clean · voice 278/278 · vitest 2909/2909
+(+1 = the new pin) · ruff clean · backend DB-free 3393 passed/1 skip.
+
+STATUS: item COMPLETE and green. designer PASS · reviewer SHIP · qa PASS · all findings folded in.
+Bundle PR #158 contains ONE NOTICEABLE change (live user transcription) + silent riders.
+NOT shipped, NOT pinged — per the owner's directive for this arc. The ship ask is the coordinator's.
+Deferred follow-ups (filed, none blocking): Transcript.tsx AnimatePresence exit so a retraction
+fades rather than pops; Voice.tsx index-keyed turns; the 502 detail interpolation in
+_openai_secret_from_mint; openai-live.ts ignoring vendor `type:"error"` frames (cosmetic while
+flag-off); the iOS sim proof (plan §6) before any flag flip; and the A/B run itself, which per
+plan §7 gates any cutover — UNRUN means LIVE_STT_ENGINE stays "deepgram".
+
+### CI GREEN — verified pinned to the head SHA (2026-07-31)
+`gh pr checks 158 --json name,bucket,state` at PR head `7d19fa7` (== `git rev-parse
+origin/integration/next`, confirmed identical):
+  Frontend gates (lint · typecheck · voice-tests · unit · build) — state SUCCESS (2m51s)
+  Backend gate (ruff + pytest incl. route/integration)           — state SUCCESS (1m31s)
+  E2E smoke advisory (auth gate + core journeys)                 — state SUCCESS (1m12s)
+pending==0, fail==0, and NO gate in cancel/skipping — each required gate asserted SUCCESS on MY
+pushed head, per the ship-gate discipline (not merely "fail count == 0", the #118/#100 lesson).
+LOAD-BEARING: the Backend gate runs route/integration, so the F3 auth tests for
+/api/voice/live-session + /live-token — which I could NOT run locally (no Postgres) — actually
+EXECUTED and PASSED in CI. That closes the one verification hole I'd flagged as unrun.
+(Any records-only commit after 7d19fa7 touches no code, so this verdict covers all code in the
+bundle; CI re-runs on the new head regardless.)
+
+## ITEM COMPLETE — live transcription, bundle PR #158, NOT shipped / NOT pinged
+Per the owner's directive for this arc the ship ask belongs to the coordinator. The bundle now
+contains ONE noticeable change and is approval-ready whenever he wants it.

@@ -1,0 +1,55 @@
+{
+  "_comment": "specs/live-transcription-plan.md §7 — ~10 golf-vocabulary-dense lines drawn from frontend/voice-tests/corpus/seed-utterances.jsonl (club names, formats, player names) plus the known confusion targets from frontend/voice-tests/generators/stt-noise.ts WORD_SWAPS (four->fore/ford, stableford->stable ford, three->tree, nassau->nassow, best ball->bestball, match play->matchplay). `scored_terms` is the golf-term error rate's scored-term list for that utterance — see wer.py::golf_term_error_rate.",
+  "utterances": [
+    {
+      "id": "u01",
+      "text": "start skins with Justin, Bob, Mike, and Sam",
+      "scored_terms": ["skins"]
+    },
+    {
+      "id": "u02",
+      "text": "we are playing stableford with Justin and Bob",
+      "scored_terms": ["stableford"]
+    },
+    {
+      "id": "u03",
+      "text": "give me the yardage to the pin, I'm in the fairway",
+      "scored_terms": ["yardage", "pin", "fairway"]
+    },
+    {
+      "id": "u04",
+      "text": "that was a smooth up and down for a birdie",
+      "scored_terms": ["up and down", "birdie"]
+    },
+    {
+      "id": "u05",
+      "text": "I hit driver off the tee box then a lob wedge in",
+      "scored_terms": ["driver", "tee box", "lob wedge"]
+    },
+    {
+      "id": "u06",
+      "text": "match play between Justin and Bob, four strokes given",
+      "scored_terms": ["match play", "four"]
+    },
+    {
+      "id": "u07",
+      "text": "new nassau with Justin, Bob, and Mike, three strokes each",
+      "scored_terms": ["nassau", "three"]
+    },
+    {
+      "id": "u08",
+      "text": "took a mulligan then made a gimme putt for bogey",
+      "scored_terms": ["mulligan", "gimme", "bogey"]
+    },
+    {
+      "id": "u09",
+      "text": "best ball two versus two with the group, dogleg left off the tee",
+      "scored_terms": ["best ball", "dogleg"]
+    },
+    {
+      "id": "u10",
+      "text": "layup short of the water then pin high with a wedge",
+      "scored_terms": ["layup", "pin high"]
+    }
+  ]
+}

@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
+import { createLiveTranscriber, type LiveTranscriber } from "@/lib/voice/live-stt";
 import { pickDictationTranscript, isEmptyTranscript } from "@/lib/caddie/dictation";
 import { voiceEvent } from "@/lib/voice/telemetry";
 
@@ -51,7 +52,7 @@ export function useLooperDictation(options?: LooperDictationOptions): LooperDict
   });
   const utteranceFiredRef = useRef(false);
   const recorderRef = useRef<VoiceRecorder | null>(null);
-  const liveRef = useRef<DeepgramLiveTranscriber | null>(null);
+  const liveRef = useRef<LiveTranscriber | null>(null);
   const liveTranscriptRef = useRef("");
   const liveFailedRef = useRef(false);
   const genRef = useRef(0);
@@ -86,7 +87,15 @@ export function useLooperDictation(options?: LooperDictationOptions): LooperDict
       const stream = recorder.getStream();
       if (stream && DeepgramLiveTranscriber.isSupported()) {
         try {
-          const live = new DeepgramLiveTranscriber(
+          // specs/live-transcription-plan.md §4.4 — engine chosen server-side
+          // (LIVE_STT_ENGINE, default "deepgram"), decided lazily inside
+          // start() with a genuine fallback to Deepgram on any OpenAI
+          // failure. The isSupported() gate above stays on
+          // DeepgramLiveTranscriber (the default/inert-flag path's actual
+          // capability check); a flag-on OpenAI attempt that turns out
+          // unsupported on this device fails inside start() and the ladder
+          // catches it the same way it catches any other OpenAI failure.
+          const live = createLiveTranscriber(
             {
               onInterim: (t) => {
                 if (genRef.current !== gen) return;

@@ -22,7 +22,15 @@ See @tasks/todo.md for the build plan and @ops/mac/RUN.md for how the team runs.
 - Types source of truth: `frontend/src/lib/types.ts` + `backend/app/models.py` — keep in sync
 - Voice pipeline: `frontend/src/lib/voice/*` (Zod schemas + heuristics + repair loop)
 - Games engine: `frontend/src/lib/games.ts` (15 formats; isolated — safe to extend with tests)
-- Caddie: `frontend/src/components/CaddiePanel.tsx` + `backend/app/caddie/*`
+- Caddie: `frontend/src/components/CaddieSheet.tsx` (round sheet, classic + live modes),
+  `frontend/src/components/yardage/Voice.tsx` (round-page orb sheet),
+  `frontend/src/components/LooperSheet.tsx` + `CaddieOrb.tsx` (omnipresent orb),
+  shared turn primitive `frontend/src/components/yardage/Transcript.tsx` + `backend/app/caddie/*`
+- Speech-to-text: TWO stacks, split by surface — Deepgram nova-3 (browser opens the WS directly
+  with a 60s token minted by `POST /api/voice/live-token`; `frontend/src/lib/voice/deepgram-live.ts`)
+  for the orb/search/score/classic-sheet dictation, and the OpenAI Realtime WebRTC session
+  (`backend/app/services/realtime_relay.py` mints the ephemeral client secret;
+  `frontend/src/lib/voice/realtime.ts`) for the in-round live caddie
 - Course / GolfAPI: `frontend/src/lib/golf-api.ts` + `backend/app/routes/golf.py`
 - Backend storage = Postgres + PostGIS via async SQLAlchemy (`backend/app/db/`),
   schema versioned with Alembic (`backend/migrations/versions/`, guarded — don't edit)

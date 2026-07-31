@@ -39,6 +39,7 @@ import { Transcript, ConversationTurn } from "@/components/yardage/Transcript";
 import { captionPersonaName } from "@/lib/caddie/persona";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
+import { createLiveTranscriber, type LiveTranscriber } from "@/lib/voice/live-stt";
 import { pickDictationTranscript, isEmptyTranscript, humanizeVoiceError } from "@/lib/caddie/dictation";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import {
@@ -439,7 +440,7 @@ export default function CaddieSheet({
   const recorderRef = useRef<VoiceRecorder | null>(null);
   // Live dictation (specs/caddie-live-dictation-plan.md): the streaming
   // transcript is authoritative — the recorded blob is only the fallback.
-  const liveRef = useRef<DeepgramLiveTranscriber | null>(null);
+  const liveRef = useRef<LiveTranscriber | null>(null);
   const liveTranscriptRef = useRef("");
   const liveFailedRef = useRef(false);
   // Bumped on every open/close so stale async (a late interim, a late
@@ -937,7 +938,12 @@ export default function CaddieSheet({
       const stream = recorder.getStream();
       if (stream && DeepgramLiveTranscriber.isSupported()) {
         try {
-          const live = new DeepgramLiveTranscriber(
+          // specs/live-transcription-plan.md §4.4 — engine chosen
+          // server-side (LIVE_STT_ENGINE, default "deepgram"), with a
+          // genuine fallback to Deepgram inside start() on any OpenAI
+          // failure. See useLooperDictation.ts for the identical note on
+          // why the isSupported() gate above stays on DeepgramLiveTranscriber.
+          const live = createLiveTranscriber(
             {
               onInterim: (t) => {
                 // Speech detected — cancel dead air, let UtteranceEnd finish the turn.

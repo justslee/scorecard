@@ -397,6 +397,21 @@ export class RealtimeCaddieClient {
   // exactly ONE response.create, after every output has posted.
   private toolBatch = new Map<string, { pending: number; created: boolean }>();
 
+  // ── User transcription `.delta` partials (specs/live-transcription-plan.md §3.2) ──
+  // item_id -> a partial WAS emitted to the UI for it — read by the
+  // retraction path (only retract what the UI actually saw) and gates the
+  // once-per-item P1 telemetry breadcrumb below. Same MAX_DEDUP_ENTRIES /
+  // evict-oldest posture as processedUserItems.
+  private userPartialEmitted = new Set<string>();
+  // item_id -> Date.now() at input_audio_buffer.speech_started — feeds the
+  // P1 "input_delta_first" telemetry breadcrumb (ms from speech_started to
+  // the first rendered partial). Same bounded/evict-oldest posture.
+  private speechStartedAt = new Map<string, number>();
+  // Best-effort (the event carries no item_id): whether speech_stopped has
+  // fired since the most recent speech_started — feeds the P1 before_stop
+  // flag (§1.4).
+  private speechStoppedSeen = false;
+
   constructor(opts: RealtimeCaddieOptions, events: RealtimeCaddieEvents = {}) {
     this.opts = opts;
     this.events = events;
@@ -796,6 +811,11 @@ export class RealtimeCaddieClient {
     this.processedUserItems.clear();
     this.finalizedResponses.clear();
     this.toolBatch.clear();
+    // User `.delta` partial bookkeeping — same lifecycle as everything above
+    // (specs/live-transcription-plan.md §3.2/§3.3).
+    this.userPartialEmitted.clear();
+    this.speechStartedAt.clear();
+    this.speechStoppedSeen = false;
   }
 
   private setStatus(status: RealtimeStatus) {
@@ -933,6 +953,49 @@ export class RealtimeCaddieClient {
         this.setStatus('connected');
         break;
       }
+      case 'conversation.item.input_audio_transcription.delta': {
+        // "see my text as I say it" (specs/live-transcription-plan.md §3.2) —
+        // this event was previously swallowed by `default:` below; the
+        // ASSISTANT's words already stream via response.audio_transcript.delta
+        // above, the USER's never did. Same pre-open gate as every transcript
+        // event — a warm/withheld session must never leak a phantom partial.
+        if (!this.opened) break;
+        const itemId = evt.item_id ? String(evt.item_id) : undefined;
+        if (!itemId) break; // nothing sane to key/accumulate a partial by
+        // Read-only dedupe check: a delta for an already-committed item is
+        // inert. Deltas NEVER add to processedUserItems — only .completed
+        // commits (guard table, §3.2).
+        if (this.processedUserItems.has(itemId)) break;
+        const delta = String(evt.delta || '');
+        const existing = this.partials.get(itemId);
+        // PEEK the order slot, never consume — orderForUserTranscript() on
+        // the .completed path remains the SOLE consumer (§3.1), so partial
+        // emission can never desync user/assistant ordering.
+        const order = existing?.order ?? this.order.peekOrderForUserTranscript(itemId);
+        const accumulated = (existing?.text ?? '') + delta;
+        const updated: RealtimeMessage = { id: itemId, role: 'user', text: accumulated, partial: true, order };
+        this.partials.set(itemId, updated);
+        // Priming-echo gate, checked per delta: keep ACCUMULATING even once
+        // the text classifies as an echo (the .completed handler remains the
+        // sole authority that drops/commits a turn — a rendered-then-dropped
+        // partial is retracted via retractUserPartial() below), but stop
+        // EMITTING further partial frames once it does.
+        if (isPrimingEcho(accumulated)) break;
+        if (!this.userPartialEmitted.has(itemId)) {
+          this.markUserPartialEmitted(itemId);
+          const startedAt = this.speechStartedAt.get(itemId);
+          voiceEvent('caddie', 'input_delta_first', {
+            ms: startedAt !== undefined ? Date.now() - startedAt : undefined,
+            detail: `before_stop=${!this.speechStoppedSeen}`,
+          });
+        }
+        // Do NOT touch status (speech_started already set 'listening'). Do
+        // NOT call setInputClass()/resolveHeldFor() — only .completed/.failed
+        // classify input or release/suppress a held clarifier response
+        // (guard table, §3.2).
+        this.events.onMessage?.(updated);
+        break;
+      }
       case 'conversation.item.input_audio_transcription.completed': {
         // THE invariant this guards: with the mic withheld, no audio is ever
         // sent, so this should never fire pre-open — but drop it anyway
@@ -963,6 +1026,11 @@ export class RealtimeCaddieClient {
           // are identity-keyed (realtime-ordering.ts), so the unconsumed
           // speech_started slot for this item_id is simply never looked up.
           voiceEvent('caddie', 'realtime_priming_echo_dropped', { detail: `len=${text.length}` });
+          // A partial the UI already saw for this item must not linger as a
+          // hallucinated echo (§3.3) — retract it. peekOrderForUserTranscript
+          // is safe here even though the reservation is never otherwise
+          // consumed for a dropped turn: peeking never mutates it.
+          if (itemId) this.retractUserPartial(itemId);
           break;
         }
         if (text) {
@@ -974,6 +1042,23 @@ export class RealtimeCaddieClient {
             // Identity-matched to this turn's speech_started by item_id.
             order: this.order.orderForUserTranscript(itemId),
           });
+          if (itemId) {
+            // The turn is COMMITTED — forget that a partial was ever shown, so
+            // a late/re-delivered `.failed` for this same item_id can no longer
+            // fire retractUserPartial and delete the committed turn out from
+            // under the user. Matches the R3 standard elsewhere in this file
+            // ("a re-delivered event for an already-processed item is fully
+            // inert") — the data channel HAS been observed re-delivering, which
+            // is why processedUserItems exists at all. Also releases this
+            // item's accumulator, which would otherwise never be evicted on the
+            // success path (one small entry per utterance, for session life).
+            this.userPartialEmitted.delete(itemId);
+            this.partials.delete(itemId);
+          }
+        } else if (itemId) {
+          // Empty completed transcript also drops the turn (§3.3) — retract
+          // any partial the UI already saw rather than leave it lingering.
+          this.retractUserPartial(itemId);
         }
         break;
       }
@@ -986,6 +1071,9 @@ export class RealtimeCaddieClient {
         if (itemId) {
           this.setInputClass(itemId, 'real');
           this.resolveHeldFor(itemId);
+          // A failed transcription drops the turn same as an empty/echo
+          // completed — retract any partial the UI already saw (§3.3).
+          this.retractUserPartial(itemId);
         }
         break;
       }
@@ -997,11 +1085,16 @@ export class RealtimeCaddieClient {
         // Track this speech turn as a candidate trigger for the response it's
         // about to prompt (specs/caddie-noise-clarification-reply-plan.md §2.3).
         // No item_id → push nothing; that response becomes unconditional (err-keep).
-        if (evt.item_id) this.pendingSpeechItems.push(String(evt.item_id));
+        if (evt.item_id) {
+          this.pendingSpeechItems.push(String(evt.item_id));
+          this.noteSpeechStartedForTelemetry(String(evt.item_id)); // P1 (§1.4)
+        }
+        this.speechStoppedSeen = false;
         this.setStatus('listening');
         break;
       }
       case 'input_audio_buffer.speech_stopped': {
+        this.speechStoppedSeen = true;
         this.setStatus('connected');
         break;
       }
@@ -1149,6 +1242,50 @@ export class RealtimeCaddieClient {
       if (oldest === undefined) break;
       this.finalizedResponses.delete(oldest);
     }
+  }
+
+  // ── User transcription `.delta` partial helpers (specs/live-transcription-plan.md §3.2/§3.3) ──
+
+  /** Record that a `.delta` partial was emitted for `itemId`. Same
+   *  cap/eviction posture as markUserItemProcessed()/markResponseFinalized(). */
+  private markUserPartialEmitted(itemId: string): void {
+    this.userPartialEmitted.add(itemId);
+    while (this.userPartialEmitted.size > RealtimeCaddieClient.MAX_DEDUP_ENTRIES) {
+      const oldest = this.userPartialEmitted.values().next().value;
+      if (oldest === undefined) break;
+      this.userPartialEmitted.delete(oldest);
+    }
+  }
+
+  /** Note `speech_started` for `itemId` (P1 telemetry only) — bounded /
+   *  evict-oldest, same posture as the other per-item maps above. */
+  private noteSpeechStartedForTelemetry(itemId: string): void {
+    this.speechStartedAt.set(itemId, Date.now());
+    while (this.speechStartedAt.size > RealtimeCaddieClient.MAX_DEDUP_ENTRIES) {
+      const oldest = this.speechStartedAt.keys().next().value;
+      if (oldest === undefined) break;
+      this.speechStartedAt.delete(oldest);
+    }
+  }
+
+  /** Emit the retraction sentinel for a user `.delta` partial the UI already
+   *  saw, when `.completed` drops the turn (empty transcript or priming
+   *  echo) or `.failed` fires (§3.3) — without this, a hallucinated echo (or
+   *  an utterance that transcribes to nothing) would linger on screen as
+   *  live text. No-op if no partial was ever emitted for this item. Order:
+   *  PEEK, never consume — a retracted item's reservation is never looked up
+   *  again by anything else either way (§3.1). */
+  private retractUserPartial(itemId: string): void {
+    if (!this.userPartialEmitted.has(itemId)) return;
+    this.userPartialEmitted.delete(itemId);
+    this.partials.delete(itemId);
+    this.events.onMessage?.({
+      id: itemId,
+      role: 'user',
+      text: '',
+      partial: false,
+      order: this.order.peekOrderForUserTranscript(itemId),
+    });
   }
 
   /** Clear the hold's timer + bookkeeping for `id`, then emit its accumulated

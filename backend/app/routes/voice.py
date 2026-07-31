@@ -12,10 +12,26 @@ import re
 from app.services.deepgram import transcribe_audio, grant_live_token
 from app.services.openai_tts import synthesize_speech
 from app.services.clerk_auth import current_user_id
-from app.services.rate_limit import caddie_rate_limited_user
+from app.services.rate_limit import caddie_rate_limited_user, live_session_rate_limited_user
+from app.services.realtime_relay import mint_transcription_session, LIVE_STT_OPENAI_MODEL
 from app.caddie.personalities import load_personality
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
+
+# Part C dictation engine flag (specs/live-transcription-plan.md §4.1) — read
+# server-side ONLY, here, at request time via get_live_session() below (not
+# cached at import time into a plain module constant the tests can't flip
+# without reloading the module — see LIVE_STT_ENGINE() helper). Default
+# "deepgram" is BYTE-EQUIVALENT to pre-this-endpoint behavior: the browser
+# learns the engine from the response, never a build-time/NEXT_PUBLIC_ flag,
+# so the flag flips without a TestFlight round.
+_LIVE_STT_ENGINE_DEFAULT = "deepgram"
+
+
+def _live_stt_engine() -> str:
+    """Read LIVE_STT_ENGINE fresh on every call (not a module-load-time
+    constant) so tests can monkeypatch the env var without reimporting."""
+    return os.getenv("LIVE_STT_ENGINE", _LIVE_STT_ENGINE_DEFAULT)
 
 
 # ── Short-lived Deepgram token for browser-side live WebSocket ──
@@ -35,6 +51,80 @@ async def get_live_token(user_id: str = Depends(current_user_id)):
     Returns {access_token, expires_in}.
     """
     return await grant_live_token()
+
+
+# ── Engine-flagged live-STT session mint (specs/live-transcription-plan.md §4) ──
+
+
+class LiveSttSessionRequest(BaseModel):
+    keyterms: Optional[list[str]] = None
+
+
+class LiveSttSessionResponse(BaseModel):
+    engine: str
+    access_token: str
+    expires_in: int
+    model: Optional[str] = None
+
+
+def _sanitize_live_stt_keyterms(raw: Optional[list[str]]) -> list[str]:
+    """Same clamp as /transcribe (L69-76 below): [:80] chars/term, capped at
+    50 terms, blanks dropped. Applied regardless of which engine is active —
+    the OpenAI path's `keywords` field is a literal vocabulary list (no
+    instruction-injection surface), but the clamp is cheap and uniform."""
+    if not raw:
+        return []
+    return [str(t)[:80] for t in raw if str(t).strip()][:50]
+
+
+def _openai_secret_from_mint(mint: dict) -> str:
+    """Extract the client_secret value from an OpenAI mint response — mirrors
+    routes/realtime.py::_client_secret_from_mint (GA /v1/realtime/
+    client_secrets returns it at top-level "value"; legacy shape nests it
+    under client_secret.value)."""
+    value = mint.get("value")
+    if not value:
+        obj = mint.get("client_secret")
+        if isinstance(obj, dict):
+            value = obj.get("value")
+    if not value:
+        raise HTTPException(502, f"OpenAI did not return a client_secret: {mint}")
+    return value
+
+
+@router.post("/live-session", response_model=LiveSttSessionResponse)
+async def get_live_session(
+    req: LiveSttSessionRequest = LiveSttSessionRequest(),
+    user_id: str = Depends(live_session_rate_limited_user),
+):
+    """Mint a live-STT session for the browser's dictation surfaces, engine
+    chosen by the server-side LIVE_STT_ENGINE flag (default "deepgram" —
+    byte-equivalent to the pre-existing /live-token path). The browser reads
+    `engine` off THIS response and constructs the matching transcriber
+    (lib/voice/live-stt.ts) — no build-time flag, so flipping it needs no
+    TestFlight round. The legacy POST /live-token above stays untouched for
+    one release (older clients + the fallback ladder's Deepgram leg both
+    still use it directly).
+
+    Auth required (Clerk) + a generous abuse-protection rate limit (mint is
+    cheap; this isn't budget control). `keyterms` is sanitized exactly like
+    /transcribe.
+    """
+    terms = _sanitize_live_stt_keyterms(req.keyterms)
+
+    if _live_stt_engine() == "openai":
+        mint = await mint_transcription_session(terms)
+        secret = _openai_secret_from_mint(mint)
+        return LiveSttSessionResponse(
+            engine="openai", access_token=secret, expires_in=60, model=LIVE_STT_OPENAI_MODEL
+        )
+
+    token = await grant_live_token()
+    return LiveSttSessionResponse(
+        engine="deepgram",
+        access_token=token["access_token"],
+        expires_in=token["expires_in"],
+    )
 
 
 # ── One-shot speech-to-text via Deepgram ──

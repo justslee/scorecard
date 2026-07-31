@@ -28,8 +28,16 @@ _SPEECH_SPEED = 1.15
 _DEFAULT_VOICE = "sage"
 
 
-async def synthesize_speech(text: str, voice_id: Optional[str]) -> bytes:
-    """Synthesize `text` to mp3 bytes via OpenAI TTS.
+async def synthesize_speech(
+    text: str, voice_id: Optional[str], *, response_format: str = "mp3"
+) -> bytes:
+    """Synthesize `text` to audio bytes via OpenAI TTS (mp3 by default).
+
+    `response_format` (backend/bench/stt_ab/synthesize.py's ONLY caller of
+    this param — every existing call site leaves it at the default "mp3",
+    byte-identical to before this param existed) lets the STT A/B bench
+    request "wav" instead, so it can augment with numpy/the stdlib `wave`
+    module without an mp3 decoder dependency.
 
     Raises HTTPException(500) if OPENAI_API_KEY is not configured, or on any
     OpenAI transport failure (status >= 400). Text is clamped to ~4096 chars
@@ -58,7 +66,7 @@ async def synthesize_speech(text: str, voice_id: Optional[str]) -> bytes:
         "model": OPENAI_TTS_MODEL,
         "voice": voice_id or _DEFAULT_VOICE,
         "input": clamped,
-        "response_format": "mp3",
+        "response_format": response_format,
         "speed": _SPEECH_SPEED,
     }
 

@@ -157,10 +157,19 @@ export function mapStatusToVoiceState(status: RealtimeStatus, held: boolean): Vo
 /**
  * Map the live Realtime transcript onto the VoiceSheet's turn list.
  * Messages arrive pre-sorted by conversation order (see realtime-ordering.ts);
- * empty partials are dropped so the sheet never renders a blank bubble.
+ * empty partials are dropped so the sheet never renders a blank bubble — this
+ * is also the belt that keeps a retraction sentinel (empty text, `partial:
+ * false`) from ever reaching the UI as a turn (specs/live-transcription-plan
+ * .md §3.5; the hooks upstream already delete it from state on the same
+ * empty+non-partial signature — this filter is defense-in-depth for anything
+ * that slips through).
  */
 export function messagesToTurns(messages: RealtimeMessage[]): VoiceTurn[] {
   return messages
     .filter((m) => m.text.trim().length > 0)
-    .map((m) => ({ role: m.role === 'user' ? ('user' as const) : ('caddy' as const), text: m.text }));
+    .map((m) => ({
+      role: m.role === 'user' ? ('user' as const) : ('caddy' as const),
+      text: m.text,
+      partial: m.partial,
+    }));
 }

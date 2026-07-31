@@ -181,6 +181,65 @@ describe('MessageOrderTracker — voice-setup chat ordering', () => {
   });
 });
 
+describe('MessageOrderTracker.peekOrderForUserTranscript — partial reservation lifecycle', () => {
+  it('is idempotent: repeated peeks for the same reserved item return the same key without consuming it', () => {
+    const t = new MessageOrderTracker();
+    t.noteUserTurnStarted('u1');
+    const first = t.peekOrderForUserTranscript('u1');
+    const second = t.peekOrderForUserTranscript('u1');
+    const third = t.peekOrderForUserTranscript('u1');
+    expect(first).toBe(second);
+    expect(second).toBe(third);
+  });
+
+  it('peek-then-consume returns the SAME key the final transcript resolves to', () => {
+    const t = new MessageOrderTracker();
+    t.noteUserTurnStarted('u1');
+    const peeked = t.peekOrderForUserTranscript('u1');
+    const consumed = t.orderForUserTranscript('u1');
+    expect(consumed).toBe(peeked);
+  });
+
+  it('never shifts (consumes) another turn\'s FIFO reservation — repeated no-id peeks do not drain the queue', () => {
+    const t = new MessageOrderTracker();
+    // Two no-id speech_started reservations queue up FIFO.
+    t.noteUserTurnStarted();
+    t.noteUserTurnStarted();
+    const peek1 = t.peekOrderForUserTranscript();
+    const peek2 = t.peekOrderForUserTranscript();
+    const peek3 = t.peekOrderForUserTranscript();
+    // All peeks see the SAME (oldest, unconsumed) head — peeking never shifts.
+    expect(peek1).toBe(peek2);
+    expect(peek2).toBe(peek3);
+    // The real consumer (orderForUserTranscript) still drains FIFO in order:
+    // first call gets the peeked head, second call gets the second reservation.
+    const first = t.orderForUserTranscript();
+    const second = t.orderForUserTranscript();
+    expect(first).toBe(peek1);
+    expect(second).not.toBe(peek1);
+  });
+
+  it('reserves a fresh slot keyed by itemId when speech_started was dropped, and the later final finds the SAME slot', () => {
+    const t = new MessageOrderTracker();
+    // No noteUserTurnStarted('u1') call — simulates a dropped speech_started.
+    const peeked = t.peekOrderForUserTranscript('u1');
+    const consumed = t.orderForUserTranscript('u1');
+    expect(consumed).toBe(peeked);
+  });
+
+  it('a peek for one item never disturbs the reserved order of a DIFFERENT item', () => {
+    const t = new MessageOrderTracker();
+    t.noteUserTurnStarted('a');
+    t.noteUserTurnStarted('b');
+    const reservedA = t.peekOrderForUserTranscript('a');
+    // Peeking 'a' repeatedly must not affect 'b's reservation.
+    t.peekOrderForUserTranscript('a');
+    t.peekOrderForUserTranscript('a');
+    expect(t.orderForUserTranscript('b')).not.toBe(reservedA);
+    expect(t.orderForUserTranscript('a')).toBe(reservedA);
+  });
+});
+
 describe('sortByOrder', () => {
   it('does not mutate its input and is stable for equal keys', () => {
     const input = [
