@@ -4399,3 +4399,39 @@ FIXES I AM APPLYING IN-BUNDLE (both one-liners, then re-verify):
  F1 realtime.ts .completed real-text branch — clear userPartialEmitted + partials (reviewer defect 4).
  F2 VoiceRoundSetupRealtime.tsx:367 — exempt the user role from the partial opacity dim (designer 1).
 AWAITING qa before touching the tree, so its gate run stays pinned to one head.
+
+## QA PASS + all three review findings FIXED @3dc6cdd
+QA independently re-ran all 9 gates and every number matched the builder's claims EXACTLY
+(278/278 voice · 2908/0 vitest · 3393 passed/1 skip pytest · 14/14 live-session · 18/18 bench WER ·
+lint/tsc/build clean). It also verified the A/B report states UNRUN honestly and that the bench is
+NOT wired into CI or the smoke gate (pyproject testpaths=["tests"] excludes bench/; ci.yml never
+references it). Playwright E2E NOT run — no Vercel preview exists for PR #158 (per-PR previews are
+still an ungated future step in tasks/todo.md); QA said so plainly rather than implying coverage.
+PROCESS FINDING from QA: the reviewer's scratch test file briefly appeared in this SHARED worktree
+mid-run and transiently made vitest report 160 files/2911/1 failed. Concurrent agents in one
+worktree contradicts the "parallel lanes use worktrees" memory. Next time give reviewer + qa
+ISOLATED worktrees when they run concurrently.
+
+FIXES LANDED @3dc6cdd (all three, gates re-run by me):
+ F1 realtime.ts — the reviewer's proven `.failed`-after-committed-`.completed` defect. The
+    `.completed` real-text branch now clears userPartialEmitted + partials, so a late/re-delivered
+    `.failed` is inert instead of deleting the user's committed question. TEETH-VERIFIED RED->GREEN:
+    reverted the fix, new pin failed (3 emissions — the sentinel); restored, passed (2).
+    Also stops a slow `partials` leak on the success path.
+ F2 VoiceRoundSetupRealtime.tsx — opacity dim is now caddie-only, so the golfer's own live speech
+    renders at full strength (designer's #1).
+ F3 tests/integration/test_routes.py — requires_auth cases for /api/voice/live-session AND the
+    legacy /live-token (QA's gap: the unit suite calls the handler directly with a hardcoded
+    user_id and so cannot see the Depends() gate; these routes mint per-minute-billed speech
+    credentials). DB-backed, so CI verifies — I could NOT run it locally (no Postgres).
+My re-run at 3dc6cdd: lint 0 err · tsc clean · build clean · voice 278/278 · vitest 2909/2909
+(+1 = the new pin) · ruff clean · backend DB-free 3393 passed/1 skip.
+
+STATUS: item COMPLETE and green. designer PASS · reviewer SHIP · qa PASS · all findings folded in.
+Bundle PR #158 contains ONE NOTICEABLE change (live user transcription) + silent riders.
+NOT shipped, NOT pinged — per the owner's directive for this arc. The ship ask is the coordinator's.
+Deferred follow-ups (filed, none blocking): Transcript.tsx AnimatePresence exit so a retraction
+fades rather than pops; Voice.tsx index-keyed turns; the 502 detail interpolation in
+_openai_secret_from_mint; openai-live.ts ignoring vendor `type:"error"` frames (cosmetic while
+flag-off); the iOS sim proof (plan §6) before any flag flip; and the A/B run itself, which per
+plan §7 gates any cutover — UNRUN means LIVE_STT_ENGINE stays "deepgram".
