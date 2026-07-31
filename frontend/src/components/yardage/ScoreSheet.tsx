@@ -7,6 +7,7 @@ import { Waveform } from "./Voice";
 import type { SeedPlayer } from "./Scorecard";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
+import { createLiveTranscriber, type LiveTranscriber } from "@/lib/voice/live-stt";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import { parseVoiceScoresLocally } from "@/lib/voice/parseVoiceScores";
 import { missingScoreNote } from "@/lib/voice/confirm-guidance";
@@ -300,7 +301,7 @@ export default function ScoreSheet({
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recorderRef = useRef<VoiceRecorder | null>(null);
   // Ref for the live-streaming Deepgram transcriber (interim display only).
-  const liveRef = useRef<DeepgramLiveTranscriber | null>(null);
+  const liveRef = useRef<LiveTranscriber | null>(null);
 
   // Open-generation counter — incremented every time the sheet opens.
   // Async operations (startVoice, stopAndParse) snapshot the gen before each
@@ -389,7 +390,12 @@ export default function ScoreSheet({
       const stream = recorder.getStream();
       if (stream && DeepgramLiveTranscriber.isSupported()) {
         try {
-          const live = new DeepgramLiveTranscriber(
+          // specs/live-transcription-plan.md §4.4 — engine chosen
+          // server-side (LIVE_STT_ENGINE, default "deepgram"), with a
+          // genuine fallback to Deepgram inside start() on any OpenAI
+          // failure. See useLooperDictation.ts for the identical note on
+          // why the isSupported() gate above stays on DeepgramLiveTranscriber.
+          const live = createLiveTranscriber(
             {
               onInterim: (t) => {
                 // Guard against stale gen — sheet may have closed or reopened.

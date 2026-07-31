@@ -32,6 +32,23 @@ describe("downsampleTo16k", () => {
   it("handles empty input", () => {
     expect(downsampleTo16k(new Float32Array(0), 48000).length).toBe(0);
   });
+
+  it("targetRate (specs/live-transcription-plan.md §4.3): 24k passthrough at 24k input matches sample-for-sample (PcmCapture's OpenAI live-STT rate)", () => {
+    const out = downsampleTo16k(new Float32Array([0, 0.5, -0.5, 1, -1]), 24000, 24000);
+    expect(Array.from(out)).toEqual([0, 16384, -16384, 32767, -32768]);
+  });
+
+  it("targetRate: upsampling 16k input to a 24k target produces MORE samples, not fewer", () => {
+    const input = new Float32Array(1600); // 100ms at 16k
+    const out = downsampleTo16k(input, 16000, 24000);
+    expect(out.length).toBe(2400); // 100ms at 24k
+  });
+
+  it("targetRate: omitted defaults to 16000 — the Deepgram path is byte-unchanged", () => {
+    const withDefault = downsampleTo16k(new Float32Array([0, 0.5, -0.5, 1, -1]), 48000);
+    const withExplicit16k = downsampleTo16k(new Float32Array([0, 0.5, -0.5, 1, -1]), 48000, 16000);
+    expect(Array.from(withDefault)).toEqual(Array.from(withExplicit16k));
+  });
 });
 
 describe("encodeWav16kMono", () => {

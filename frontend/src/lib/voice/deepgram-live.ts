@@ -85,7 +85,7 @@ export interface DeepgramLiveEvents {
   onError?: (e: Error) => void;
 }
 
-interface LiveTokenResponse {
+export interface LiveTokenResponse {
   access_token: string;
   expires_in: number;
 }
@@ -164,10 +164,21 @@ export class DeepgramLiveTranscriber {
   private latestInterim = '';
 
   private keyterms: readonly string[];
+  // Pre-fetched token (specs/live-transcription-plan.md §4.4) — set when the
+  // caller (lib/voice/live-stt.ts's factory) already minted a token via
+  // POST /api/voice/live-session and wants to avoid a second network round
+  // trip. undefined (the default, every existing call site) means start()
+  // self-fetches via POST /api/voice/live-token exactly as before this
+  // option existed — byte-identical behavior.
+  private prefetchedToken?: LiveTokenResponse;
 
-  constructor(events: DeepgramLiveEvents, opts?: { keyterms?: readonly string[] }) {
+  constructor(
+    events: DeepgramLiveEvents,
+    opts?: { keyterms?: readonly string[]; token?: LiveTokenResponse },
+  ) {
     this.events = events;
     this.keyterms = opts?.keyterms ?? [];
+    this.prefetchedToken = opts?.token;
   }
 
   /**
@@ -193,11 +204,14 @@ export class DeepgramLiveTranscriber {
    * authoritative; worst case = no live display, scoring unchanged).
    */
   async start(stream: MediaStream): Promise<void> {
-    // Fetch a short-lived token from our backend (keeps the API key server-side).
-    const { access_token: token } = await fetchAPI<LiveTokenResponse>(
-      '/api/voice/live-token',
-      { method: 'POST' },
-    );
+    // Reuse a pre-fetched token (specs/live-transcription-plan.md §4.4 —
+    // set by lib/voice/live-stt.ts's factory when it already minted one via
+    // /api/voice/live-session) instead of fetching a second one; every
+    // existing call site leaves this unset and self-fetches exactly as
+    // before this option existed.
+    const { access_token: token } =
+      this.prefetchedToken ??
+      (await fetchAPI<LiveTokenResponse>('/api/voice/live-token', { method: 'POST' }));
 
     const transport = pickTransport();
     if (!transport) throw new Error('No live-audio transport available');

@@ -130,6 +130,24 @@ vi.mock("@/lib/voice/deepgram-live", () => ({
     async start() {}
   },
 }));
+// live-stt.ts's factory (specs/live-transcription-plan.md §4.4, now what
+// CaddieSheet.tsx actually constructs) POSTs /api/voice/live-session BEFORE
+// ever touching the mocked DeepgramLiveTranscriber above — mock ONLY that
+// one fetchAPI call (engine defaults to "deepgram") so it resolves instantly
+// instead of hitting a real, unmocked network call. Everything else in
+// @/lib/api stays real (importOriginal spread).
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    fetchAPI: vi.fn(async (path: string, opts?: RequestInit) => {
+      if (path === "/api/voice/live-session") {
+        return { engine: "deepgram", access_token: "test-live-session-token", expires_in: 60 };
+      }
+      return actual.fetchAPI(path, opts);
+    }),
+  };
+});
 vi.mock("@/lib/voice/tts-pref", () => ({
   getSheetTtsEnabled: () => false,
   setSheetTtsEnabled: vi.fn(),

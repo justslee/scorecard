@@ -7,9 +7,15 @@
 //
 // The resampler + WAV encoder are exported pure functions (unit-tested).
 
-/** Linear-interpolation resample of one Float32 block to 16 kHz Int16 PCM. */
-export function downsampleTo16k(input: Float32Array, inputRate: number): Int16Array {
-  const TARGET = 16000;
+/** Linear-interpolation resample of one Float32 block to Int16 PCM at
+ *  `targetRate` (default 16 kHz — the Deepgram path; the OpenAI live-STT
+ *  engine (specs/live-transcription-plan.md §4.3) needs 24 kHz instead). */
+export function downsampleTo16k(
+  input: Float32Array,
+  inputRate: number,
+  targetRate: number = 16000,
+): Int16Array {
+  const TARGET = targetRate;
   if (input.length === 0) return new Int16Array(0);
   if (inputRate === TARGET) {
     const out = new Int16Array(input.length);
@@ -77,6 +83,14 @@ export class PcmCapture {
   private worklet: AudioWorkletNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private onChunk: ((pcm: Int16Array) => void) | null = null;
+  /** Output sample rate (specs/live-transcription-plan.md §4.3) — default
+   *  16 kHz keeps the Deepgram dictation path byte-identical; the OpenAI
+   *  live-STT engine passes 24000 (its documented required input rate). */
+  private targetRate: number;
+
+  constructor(targetRate: number = 16000) {
+    this.targetRate = targetRate;
+  }
 
   static isSupported(): boolean {
     return typeof window !== "undefined" && typeof AudioContext !== "undefined";
@@ -94,7 +108,7 @@ export class PcmCapture {
     const rate = ctx.sampleRate;
 
     const handleBlock = (block: Float32Array) => {
-      const pcm = downsampleTo16k(block, rate);
+      const pcm = downsampleTo16k(block, rate, this.targetRate);
       if (pcm.length > 0) this.onChunk?.(pcm);
     };
 
